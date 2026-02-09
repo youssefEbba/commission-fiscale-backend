@@ -1,0 +1,19 @@
+package mr.gov.finances.sgci.domain.enums;
+
+public enum TypeDocument {
+    LETTRE_SAISINE,
+    PV_OUVERTURE,
+    ATTESTATION_FISCALE,
+    OFFRE_FINANCIERE,
+    TABLEAU_MODELE,
+    DAO_DQE,
+    LISTE_ITEMS,
+    CONTRAT,
+    CERTIFICAT_NIF,
+    LETTRE_CORRECTION,
+    BULLETIN_LIQUIDATION,
+    DECLARATION_DOUANE,
+    FACTURE,
+    CONNAISSEMENT,
+    DECOMPTE
+}
