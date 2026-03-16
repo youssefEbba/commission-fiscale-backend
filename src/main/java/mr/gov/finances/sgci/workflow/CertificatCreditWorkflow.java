@@ -12,14 +12,16 @@ import java.util.Set;
 
 /**
  * Workflow Certificat de Crédit (Processus 4-5, 8-11).
- * DEMANDE → EMIS → OUVERT → MODIFIE / CLOTURE / ANNULE
  */
 @Component
 public class CertificatCreditWorkflow {
 
     private static final Map<StatutCertificat, Set<StatutCertificat>> TRANSITIONS = Map.ofEntries(
-            Map.entry(DEMANDE, EnumSet.of(EMIS, ANNULE)),
-            Map.entry(EMIS, EnumSet.of(OUVERT, ANNULE)),
+            Map.entry(DEMANDE, EnumSet.of(EN_VERIFICATION_DGI, EN_OUVERTURE_DGTCP, ANNULE)),
+            Map.entry(EN_VERIFICATION_DGI, EnumSet.of(EN_VALIDATION_PRESIDENT, EN_OUVERTURE_DGTCP, ANNULE)),
+            Map.entry(EN_VALIDATION_PRESIDENT, EnumSet.of(VALIDE_PRESIDENT, ANNULE)),
+            Map.entry(VALIDE_PRESIDENT, EnumSet.of(EN_OUVERTURE_DGTCP, ANNULE)),
+            Map.entry(EN_OUVERTURE_DGTCP, EnumSet.of(OUVERT, ANNULE)),
             Map.entry(OUVERT, EnumSet.of(MODIFIE, CLOTURE, ANNULE)),
             Map.entry(MODIFIE, EnumSet.of(OUVERT, CLOTURE, ANNULE)),
             Map.entry(CLOTURE, EnumSet.noneOf(StatutCertificat.class)),

@@ -20,9 +20,10 @@ public class CreateCertificatCreditRequest {
 
     private Long lettreCorrectionId;
 
+    private Long demandeCorrectionId;
+
     private Instant dateValidite;
 
-    @NotNull(message = "Le montant cordon est obligatoire")
     private BigDecimal montantCordon;
 
     private BigDecimal montantTVAInterieure;

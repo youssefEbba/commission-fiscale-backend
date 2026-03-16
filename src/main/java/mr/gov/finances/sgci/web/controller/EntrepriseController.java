@@ -6,6 +6,7 @@ import mr.gov.finances.sgci.service.EntrepriseService;
 import mr.gov.finances.sgci.web.dto.EntrepriseDto;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -19,6 +20,7 @@ public class EntrepriseController {
     private final EntrepriseService service;
 
     @GetMapping
+    @PreAuthorize("isAuthenticated()")
     public List<EntrepriseDto> getAll() {
         return service.findAll();
     }

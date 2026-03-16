@@ -1,0 +1,83 @@
+<section class="dashboard">
+  <div class="dashboard-header">
+    <div>
+      <p class="eyebrow">Vue d'ensemble</p>
+      <h1>Tableau de bord SGCI</h1>
+      <p class="subtitle">Statut API: <span [class.online]="healthStatus === 'UP'">{{ healthStatus || '...' }}</span></p>
+    </div>
+    <button class="logout" (click)="logout()">Se déconnecter</button>
+  </div>
+
+  <div class="stats-grid">
+    <article>
+      <h3>Autorités</h3>
+      <p>{{ autorites.length }}</p>
+    </article>
+    <article>
+      <h3>Entreprises</h3>
+      <p>{{ entreprises.length }}</p>
+    </article>
+    <article>
+      <h3>Demandes</h3>
+      <p>{{ demandes.length }}</p>
+    </article>
+    <article>
+      <h3>Certificats</h3>
+      <p>{{ certificats.length }}</p>
+    </article>
+    <article>
+      <h3>Utilisations</h3>
+      <p>{{ utilisations.length }}</p>
+    </article>
+  </div>
+
+  <div class="content-grid">
+    <section>
+      <h2>Dernières demandes de correction</h2>
+      <div class="list" *ngIf="demandes.length; else emptyDemandes">
+        <div class="list-item" *ngFor="let item of demandes | slice:0:5">
+          <div>
+            <p class="title">{{ item.numero }}</p>
+            <p class="meta">{{ item.autoriteContractanteNom || 'Autorité inconnue' }}</p>
+          </div>
+          <span class="pill">{{ item.statut }}</span>
+        </div>
+      </div>
+      <ng-template #emptyDemandes>
+        <p class="empty">Aucune demande disponible.</p>
+      </ng-template>
+    </section>
+
+    <section>
+      <h2>Certificats récents</h2>
+      <div class="list" *ngIf="certificats.length; else emptyCerts">
+        <div class="list-item" *ngFor="let item of certificats | slice:0:5">
+          <div>
+            <p class="title">{{ item.numero }}</p>
+            <p class="meta">{{ item.entrepriseRaisonSociale || 'Entreprise inconnue' }}</p>
+          </div>
+          <span class="pill">{{ item.statut }}</span>
+        </div>
+      </div>
+      <ng-template #emptyCerts>
+        <p class="empty">Aucun certificat disponible.</p>
+      </ng-template>
+    </section>
+
+    <section class="wide">
+      <h2>Journal d'audit (aperçu)</h2>
+      <div class="list" *ngIf="auditLogs.length; else emptyLogs">
+        <div class="list-item" *ngFor="let log of auditLogs | slice:0:6">
+          <div>
+            <p class="title">{{ log.action }} {{ log.entityType }}</p>
+            <p class="meta">{{ log.username }} • {{ log.timestamp | date:'short' }}</p>
+          </div>
+          <span class="pill">{{ log.entityId || '-' }}</span>
+        </div>
+      </div>
+      <ng-template #emptyLogs>
+        <p class="empty">Aucun log disponible.</p>
+      </ng-template>
+    </section>
+  </div>
+</section>

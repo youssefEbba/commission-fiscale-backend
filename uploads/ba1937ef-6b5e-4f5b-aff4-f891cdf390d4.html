@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Formulaire fiscal intelligent · CORRIGÉ</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+        body {
+            background: #f3f6fc;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            padding: 2rem 1rem;
+        }
+        .container {
+            max-width: 1400px;
+            width: 100%;
+        }
+
+        /* header & badges */
+        .header {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        .title-section h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #0b2b4a;
+            margin: 0 0 0.25rem 0;
+            letter-spacing: -0.02em;
+        }
+        .subtitle {
+            color: #2c3e50;
+            font-size: 1rem;
+            background: #e9ecef;
+            padding: 0.3rem 1rem;
+            border-radius: 30px;
+            display: inline-block;
+        }
+        .project-type-switch {
+            background: white;
+            padding: 0.7rem 1.5rem;
+            border-radius: 40px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.02);
+            display: flex;
+            gap: 2rem;
+            border: 1px solid #d0ddee;
+        }
+        .switch-option {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        .switch-option input[type="radio"] {
+            accent-color: #1e4f8a;
+            width: 1.1rem;
+            height: 1.1rem;
+            margin: 0;
+        }
+        .switch-option label {
+            font-weight: 500;
+            color: #1e3a5f;
+            cursor: pointer;
+        }
+        .show-nomenclature {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            background: white;
+            padding: 0.5rem 1.2rem;
+            border-radius: 40px;
+            border: 1px solid #d0ddee;
+        }
+        .show-nomenclature input[type="checkbox"] {
+            width: 1.2rem;
+            height: 1.2rem;
+            accent-color: #1e4f8a;
+        }
+
+        /* cartes sections */
+        .card {
+            background: white;
+            border-radius: 28px;
+            padding: 1.8rem 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 12px 30px rgba(0,20,50,0.08);
+            border: 1px solid #eef2f8;
+            transition: box-shadow 0.2s;
+        }
+        .card:hover {
+            box-shadow: 0 18px 36px -12px rgba(0,40,100,0.15);
+        }
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: 0;
+            margin-bottom: 1.8rem;
+            font-weight: 600;
+            font-size: 1.6rem;
+            color: #103a5e;
+            border-bottom: 2px solid #e4ecf7;
+            padding-bottom: 0.6rem;
+        }
+        .section-title span {
+            background: #1e4f8a;
+            color: white;
+            font-size: 1rem;
+            padding: 0.2rem 0.9rem;
+            border-radius: 30px;
+            margin-left: 0.8rem;
+        }
+        .badge-option {
+            font-size: 0.75rem;
+            background: #edf2fa;
+            color: #1e4f8a;
+            border-radius: 20px;
+            padding: 0.25rem 1rem;
+            border: 1px dashed #7a9bcb;
+        }
+
+        /* tables */
+        .table-responsive {
+            overflow-x: auto;
+            margin: 1rem 0 1.5rem 0;
+            border-radius: 18px;
+            border: 1px solid #e2e9f2;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            min-width: 900px;
+        }
+        th {
+            background: #f0f5fd;
+            color: #103a5e;
+            font-weight: 600;
+            padding: 0.9rem 0.8rem;
+            white-space: nowrap;
+            border-bottom: 1px solid #cdddec;
+        }
+        td {
+            padding: 0.7rem 0.8rem;
+            border-bottom: 1px solid #eef2f7;
+            background: white;
+        }
+        input[type="number"], input[type="text"] {
+            width: 100%;
+            padding: 0.5rem 0.6rem;
+            border: 1.5px solid #dae1ec;
+            border-radius: 14px;
+            font-size: 0.9rem;
+            transition: 0.15s;
+            background: #fbfdff;
+        }
+        input[type="number"]:focus, input[type="text"]:focus {
+            border-color: #1e4f8a;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(30,79,138,0.15);
+            background: white;
+        }
+        input[readonly] {
+            background-color: #f3f7fc;
+            border-color: #dce5f0;
+            color: #1b2f44;
+            font-weight: 500;
+        }
+        .col-small {
+            width: 70px;
+            min-width: 70px;
+        }
+        .nomenclature-col {
+            display: table-cell;
+        }
+        .hidden-col {
+            display: none;
+        }
+        .totaux-ligne {
+            background: #f8fafd;
+            font-weight: 600;
+            border-top: 2px solid #cbd6e6;
+        }
+        .totaux-ligne td {
+            background: #f8fafd;
+        }
+        .recap-box {
+            background: #e7f0fb;
+            border-radius: 24px;
+            padding: 1.5rem 2rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2.5rem;
+            align-items: baseline;
+            justify-content: space-around;
+            border: 1px solid #bed3f0;
+        }
+        .recap-item {
+            text-align: center;
+        }
+        .recap-label {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #1e3a5f;
+            opacity: 0.8;
+        }
+        .recap-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #003366;
+            line-height: 1.2;
+        }
+        .recap-currency {
+            font-size: 1rem;
+            color: #2a4d7a;
+        }
+        .footer-note {
+            margin-top: 2rem;
+            background: #dceafa;
+            border-radius: 40px;
+            padding: 1.2rem 2rem;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95rem;
+            color: #103a5e;
+        }
+        .btn-print {
+            background: #0b2b4a;
+            color: white;
+            border: none;
+            padding: 0.7rem 2rem;
+            border-radius: 40px;
+            font-weight: 500;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: 0.15s;
+            border: 1px solid #0b2b4a;
+        }
+        .btn-print:hover {
+            background: #1f4a7a;
+        }
+        .btn-calc {
+            background: #1e4f8a;
+            color: white;
+            border: none;
+            padding: 0.5rem 1.5rem;
+            border-radius: 40px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+        .small-note {
+            font-size: 0.85rem;
+            color: #32658c;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <!-- En‑tête paramétrable -->
+    <div class="header">
+        <div class="title-section">
+            <h1>📋 Modèle fiscal unique · CORRIGÉ</h1>
+            <div class="subtitle">🏗️ Mode BTP / marché public (vue détaillée)</div>
+        </div>
+        <div class="project-type-switch" id="projectTypeSwitch">
+            <div class="switch-option">
+                <input type="radio" name="projectType" id="typeBTP" value="BTP" checked>
+                <label for="typeBTP">🏗️ Projet BTP (GTS Lot 2A)</label>
+            </div>
+            <div class="switch-option">
+                <input type="radio" name="projectType" id="typeEquip" value="EQUIP">
+                <label for="typeEquip">🔧 Équipements industriels (AAOI / KFW)</label>
+            </div>
+        </div>
+        <div class="show-nomenclature">
+            <input type="checkbox" id="showNomen" checked>
+            <label for="showNomen">📌 Afficher nomenclature douanière</label>
+        </div>
+    </div>
+
+    <!-- Section 1 : DOUANE / IMPORTATION -->
+    <div class="card">
+        <div class="section-title">
+            <span>🔵 1</span> Importations & Douane
+            <button class="btn-calc" id="forceCalcBtn" style="margin-left: auto;">🔄 Recalculer maintenant</button>
+        </div>
+        <div class="table-responsive">
+            <table id="importTable">
+                <thead>
+                    <tr>
+                        <th>Désignation</th>
+                        <th>Unité</th>
+                        <th class="col-small">Qté</th>
+                        <th class="col-small">PU</th>
+                        <th class="nomenclature-col">Nomenclature</th>
+                        <th>Taux DD %</th>
+                        <th>Taux RS %</th>
+                        <th>Taux PSC %</th>
+                        <th>Taux TVA %</th>
+                        <th>Valeur Douane</th>
+                        <th>DD</th>
+                        <th>RS</th>
+                        <th>PSC</th>
+                        <th>Base TVA</th>
+                        <th>TVA douane</th>
+                        <th>Total taxes</th>
+                    </tr>
+                </thead>
+                <tbody id="importBody">
+                    <!-- Les lignes seront générées par JavaScript -->
+                </tbody>
+                <tfoot id="importFoot" class="totaux-ligne">
+                    <!-- généré par js -->
+                </tfoot>
+            </table>
+        </div>
+        
+        <!-- Message d'instruction -->
+        <div style="background: #e8f4fd; padding: 0.8rem 1.5rem; border-radius: 40px; margin-bottom: 1rem;">
+            <strong>✏️ Comment utiliser :</strong> Modifiez les <strong>taux (DD, RS, PSC, TVA)</strong> ou les <strong>quantités/prix</strong> → les colonnes de droite se mettent à jour automatiquement !
+        </div>
+        
+        <div style="margin-top: 1.2rem; display: flex; gap: 2rem; flex-wrap: wrap; background: #e3eefa; border-radius: 40px; padding: 0.8rem 2rem;">
+            <div><strong>Total VD</strong>  <span id="totalVD">0.00</span></div>
+            <div><strong>Total DD</strong>  <span id="totalDD">0.00</span></div>
+            <div><strong>Total TVA douane</strong>  <span id="totalTvaDouane">0.00</span></div>
+            <div><strong>Crédit extérieur</strong>  <span id="creditExterieur">0.00</span></div>
+        </div>
+    </div>
+
+    <!-- Section 2 : FISCALITÉ INTÉRIEURE (DGI) -->
+    <div class="card">
+        <div class="section-title">
+            <span>🟠 2</span> Fiscalité intérieure (DGI)
+        </div>
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr><th>Montant HT</th><th>Taux TVA %</th><th>Autres taxes</th><th>TVA collectée</th><th>TVA déductible (douane)</th><th>TVA nette</th><th>Crédit intérieur</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><input type="number" id="htMontant" value="250000.00" step="0.01"></td>
+                        <td><input type="number" id="tauxTvaInterne" value="18.00" step="0.1"></td>
+                        <td><input type="number" id="autresTaxes" value="0.00" step="0.01"></td>
+                        <td><input type="number" id="tvaCollectee" readonly></td>
+                        <td><input type="number" id="tvaDeductible" readonly></td>
+                        <td><input type="number" id="tvaNette" readonly></td>
+                        <td><input type="number" id="creditInterieur" readonly></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div style="background: #f6f8fb; border-radius: 20px; padding: 0.8rem 1.8rem;">
+            <span>⚙️ TVA collectée = HT × taux · TVA déductible = TVA douane (totale) · TVA nette = collectée – déductible · Crédit intérieur = TVA nette (si négatif = crédit)</span>
+        </div>
+    </div>
+
+    <!-- Section 3 : RÉCAPITULATIF CRÉDIT TOTAL -->
+    <div class="card" style="background: linear-gradient(145deg, #ffffff 0%, #f5faff 100%);">
+        <div class="section-title">
+            <span>🔴 3</span> Récapitulatif
+        </div>
+        <div class="recap-box">
+            <div class="recap-item">
+                <div class="recap-label">Crédit extérieur (douane)</div>
+                <div class="recap-value" id="recapCreditExt">0.00</div>
+            </div>
+            <div class="recap-item">
+                <div class="recap-label">Crédit intérieur (DGI)</div>
+                <div class="recap-value" id="recapCreditInt">0.00</div>
+            </div>
+            <div class="recap-item">
+                <div class="recap-label">💰 Crédit total</div>
+                <div class="recap-value" id="recapCreditTotal">0.00</div>
+            </div>
+        </div>
+        <p class="small-note" style="text-align: center; margin-top: 0.5rem;">Crédit total = Crédit extérieur + Crédit intérieur (crédit négatif = dette)</p>
+    </div>
+
+    <!-- Footer commandes / impression -->
+    <div class="footer-note">
+        <div>✔️ Modèle commun normalisé – Taux paramétrables, nomenclature affichable.</div>
+        <button class="btn-print" onclick="window.print()">🖨️ Exporter / Imprimer</button>
+    </div>
+</div>
+
+<script>
+(function() {
+    // --- DONNÉES DE DÉMONSTRATION AVEC VALEURS RÉELLES ---
+    const defaultRows = [
+        { 
+            designation: "Équipement A (groupe froid)", 
+            unite: "U", 
+            qte: 10, 
+            pu: 4500, 
+            nomen: "8418.69", 
+            tauxDD: 5, 
+            tauxRS: 1.5, 
+            tauxPSC: 0.75, 
+            tauxTVA: 18 
+        },
+        { 
+            designation: "Fourniture BTP (ciment spécial)", 
+            unite: "T", 
+            qte: 100, 
+            pu: 120, 
+            nomen: "2523.29", 
+            tauxDD: 8, 
+            tauxRS: 2.0, 
+            tauxPSC: 0.5, 
+            tauxTVA: 18 
+        },
+        { 
+            designation: "Module contrôle KFW", 
+            unite: "U", 
+            qte: 4, 
+            pu: 12500, 
+            nomen: "9032.89", 
+            tauxDD: 3, 
+            tauxRS: 1.0, 
+            tauxPSC: 0.2, 
+            tauxTVA: 18 
+        }
+    ];
+
+    const tbody = document.getElementById('importBody');
+
+    // --- FONCTION POUR CRÉER UNE LIGNE ---
+    function createRow(rowData, index) {
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-row', index);
+        
+        // Désignation (texte)
+        const td1 = document.createElement('td');
+        const inpDes = document.createElement('input');
+        inpDes.type = 'text';
+        inpDes.value = rowData.designation;
+        inpDes.setAttribute('data-field', `des_${index}`);
+        inpDes.classList.add('input-designation');
+        td1.appendChild(inpDes);
+        tr.appendChild(td1);
+        
+        // Unité (texte)
+        const td2 = document.createElement('td');
+        const inpUnite = document.createElement('input');
+        inpUnite.type = 'text';
+        inpUnite.value = rowData.unite;
+        inpUnite.setAttribute('data-field', `unite_${index}`);
+        td2.appendChild(inpUnite);
+        tr.appendChild(td2);
+        
+        // Qté (number)
+        const td3 = document.createElement('td');
+        const inpQte = document.createElement('input');
+        inpQte.type = 'number';
+        inpQte.value = rowData.qte;
+        inpQte.step = '0.01';
+        inpQte.setAttribute('data-field', `qte_${index}`);
+        inpQte.classList.add('input-qte');
+        td3.appendChild(inpQte);
+        tr.appendChild(td3);
+        
+        // PU (number)
+        const td4 = document.createElement('td');
+        const inpPu = document.createElement('input');
+        inpPu.type = 'number';
+        inpPu.value = rowData.pu;
+        inpPu.step = '0.01';
+        inpPu.setAttribute('data-field', `pu_${index}`);
+        inpPu.classList.add('input-pu');
+        td4.appendChild(inpPu);
+        tr.appendChild(td4);
+        
+        // Nomenclature (texte)
+        const td5 = document.createElement('td');
+        td5.className = 'nomenclature-col';
+        const inpNomen = document.createElement('input');
+        inpNomen.type = 'text';
+        inpNomen.value = rowData.nomen;
+        inpNomen.setAttribute('data-field', `nomen_${index}`);
+        td5.appendChild(inpNomen);
+        tr.appendChild(td5);
+        
+        // Taux DD (number)
+        const td6 = document.createElement('td');
+        const inpTxDD = document.createElement('input');
+        inpTxDD.type = 'number';
+        inpTxDD.value = rowData.tauxDD;
+        inpTxDD.step = '0.01';
+        inpTxDD.setAttribute('data-field', `txDD_${index}`);
+        inpTxDD.classList.add('input-txDD');
+        td6.appendChild(inpTxDD);
+        tr.appendChild(td6);
+        
+        // Taux RS (number)
+        const td7 = document.createElement('td');
+        const inpTxRS = document.createElement('input');
+        inpTxRS.type = 'number';
+        inpTxRS.value = rowData.tauxRS;
+        inpTxRS.step = '0.01';
+        inpTxRS.setAttribute('data-field', `txRS_${index}`);
+        inpTxRS.classList.add('input-txRS');
+        td7.appendChild(inpTxRS);
+        tr.appendChild(td7);
+        
+        // Taux PSC (number)
+        const td8 = document.createElement('td');
+        const inpTxPSC = document.createElement('input');
+        inpTxPSC.type = 'number';
+        inpTxPSC.value = rowData.tauxPSC;
+        inpTxPSC.step = '0.01';
+        inpTxPSC.setAttribute('data-field', `txPSC_${index}`);
+        inpTxPSC.classList.add('input-txPSC');
+        td8.appendChild(inpTxPSC);
+        tr.appendChild(td8);
+        
+        // Taux TVA (number)
+        const td9 = document.createElement('td');
+        const inpTxTVA = document.createElement('input');
+        inpTxTVA.type = 'number';
+        inpTxTVA.value = rowData.tauxTVA;
+        inpTxTVA.step = '0.01';
+        inpTxTVA.setAttribute('data-field', `txTVA_${index}`);
+        inpTxTVA.classList.add('input-txTVA');
+        td9.appendChild(inpTxTVA);
+        tr.appendChild(td9);
+        
+        // Valeur Douane (readonly)
+        const td10 = document.createElement('td');
+        const inpVD = document.createElement('input');
+        inpVD.type = 'number';
+        inpVD.readOnly = true;
+        inpVD.step = '0.01';
+        inpVD.setAttribute('data-field', `vd_${index}`);
+        inpVD.classList.add('output-vd');
+        td10.appendChild(inpVD);
+        tr.appendChild(td10);
+        
+        // DD (readonly)
+        const td11 = document.createElement('td');
+        const inpDD = document.createElement('input');
+        inpDD.type = 'number';
+        inpDD.readOnly = true;
+        inpDD.step = '0.01';
+        inpDD.setAttribute('data-field', `dd_${index}`);
+        inpDD.classList.add('output-dd');
+        td11.appendChild(inpDD);
+        tr.appendChild(td11);
+        
+        // RS (readonly)
+        const td12 = document.createElement('td');
+        const inpRS = document.createElement('input');
+        inpRS.type = 'number';
+        inpRS.readOnly = true;
+        inpRS.step = '0.01';
+        inpRS.setAttribute('data-field', `rs_${index}`);
+        inpRS.classList.add('output-rs');
+        td12.appendChild(inpRS);
+        tr.appendChild(td12);
+        
+        // PSC (readonly)
+        const td13 = document.createElement('td');
+        const inpPSC = document.createElement('input');
+        inpPSC.type = 'number';
+        inpPSC.readOnly = true;
+        inpPSC.step = '0.01';
+        inpPSC.setAttribute('data-field', `psc_${index}`);
+        inpPSC.classList.add('output-psc');
+        td13.appendChild(inpPSC);
+        tr.appendChild(td13);
+        
+        // Base TVA (readonly)
+        const td14 = document.createElement('td');
+        const inpBase = document.createElement('input');
+        inpBase.type = 'number';
+        inpBase.readOnly = true;
+        inpBase.step = '0.01';
+        inpBase.setAttribute('data-field', `base_${index}`);
+        td14.appendChild(inpBase);
+        tr.appendChild(td14);
+        
+        // TVA douane (readonly)
+        const td15 = document.createElement('td');
+        const inpTVAD = document.createElement('input');
+        inpTVAD.type = 'number';
+        inpTVAD.readOnly = true;
+        inpTVAD.step = '0.01';
+        inpTVAD.setAttribute('data-field', `tvaD_${index}`);
+        td15.appendChild(inpTVAD);
+        tr.appendChild(td15);
+        
+        // Total taxes (readonly)
+        const td16 = document.createElement('td');
+        const inpTotalTax = document.createElement('input');
+        inpTotalTax.type = 'number';
+        inpTotalTax.readOnly = true;
+        inpTotalTax.step = '0.01';
+        inpTotalTax.setAttribute('data-field', `totalTax_${index}`);
+        td16.appendChild(inpTotalTax);
+        tr.appendChild(td16);
+        
+        return tr;
+    }
+
+    // --- GÉNÉRER TOUTES LES LIGNES ---
+    function renderAllRows() {
+        tbody.innerHTML = '';
+        defaultRows.forEach((row, idx) => {
+            const tr = createRow(row, idx);
+            tbody.appendChild(tr);
+        });
+    }
+    
+    renderAllRows();
+
+    // --- FONCTION DE CALCUL PRINCIPALE ---
+    function recalcAll() {
+        console.log('Recalcul en cours...');
+        
+        // Récupérer toutes les lignes
+        const rows = document.querySelectorAll('#importBody tr');
+        let totalVD = 0, totalDD = 0, totalTvaDouane = 0, totalTaxesLignes = 0;
+
+        rows.forEach((tr, idx) => {
+            // Récupérer les inputs par leurs data-field
+            const qteInp = tr.querySelector(`input[data-field="qte_${idx}"]`);
+            const puInp = tr.querySelector(`input[data-field="pu_${idx}"]`);
+            const txDDInp = tr.querySelector(`input[data-field="txDD_${idx}"]`);
+            const txRSInp = tr.querySelector(`input[data-field="txRS_${idx}"]`);
+            const txPSCInp = tr.querySelector(`input[data-field="txPSC_${idx}"]`);
+            const txTVAInp = tr.querySelector(`input[data-field="txTVA_${idx}"]`);
+            
+            // Lire les valeurs
+            const qte = parseFloat(qteInp?.value) || 0;
+            const pu = parseFloat(puInp?.value) || 0;
+            const tauxDD = parseFloat(txDDInp?.value) || 0;
+            const tauxRS = parseFloat(txRSInp?.value) || 0;
+            const tauxPSC = parseFloat(txPSCInp?.value) || 0;
+            const tauxTVA = parseFloat(txTVAInp?.value) || 0;
+
+            // Calculs
+            const vd = qte * pu;
+            const dd = vd * tauxDD / 100;
+            const rs = vd * tauxRS / 100;
+            const psc = vd * tauxPSC / 100;
+            const baseTVA = vd + dd + rs + psc;
+            const tvaD = baseTVA * tauxTVA / 100;
+            const totalTaxes = dd + rs + psc + tvaD;
+
+            // Mise à jour des champs readonly
+            const vdInp = tr.querySelector(`input[data-field="vd_${idx}"]`);
+            if (vdInp) vdInp.value = vd.toFixed(2);
+            
+            const ddInp = tr.querySelector(`input[data-field="dd_${idx}"]`);
+            if (ddInp) ddInp.value = dd.toFixed(2);
+            
+            const rsInp = tr.querySelector(`input[data-field="rs_${idx}"]`);
+            if (rsInp) rsInp.value = rs.toFixed(2);
+            
+            const pscInp = tr.querySelector(`input[data-field="psc_${idx}"]`);
+            if (pscInp) pscInp.value = psc.toFixed(2);
+            
+            const baseInp = tr.querySelector(`input[data-field="base_${idx}"]`);
+            if (baseInp) baseInp.value = baseTVA.toFixed(2);
+            
+            const tvaDInp = tr.querySelector(`input[data-field="tvaD_${idx}"]`);
+            if (tvaDInp) tvaDInp.value = tvaD.toFixed(2);
+            
+            const totalTaxInp = tr.querySelector(`input[data-field="totalTax_${idx}"]`);
+            if (totalTaxInp) totalTaxInp.value = totalTaxes.toFixed(2);
+
+            // Cumuls
+            totalVD += vd;
+            totalDD += dd;
+            totalTvaDouane += tvaD;
+            totalTaxesLignes += totalTaxes;
+        });
+
+        // Mise à jour des totaux section 1
+        document.getElementById('totalVD').innerText = totalVD.toFixed(2);
+        document.getElementById('totalDD').innerText = totalDD.toFixed(2);
+        document.getElementById('totalTvaDouane').innerText = totalTvaDouane.toFixed(2);
+        document.getElementById('creditExterieur').innerText = totalTaxesLignes.toFixed(2);
+
+        // Section 2 : intérieur
+        const ht = parseFloat(document.getElementById('htMontant').value) || 0;
+        const tauxTvaInt = parseFloat(document.getElementById('tauxTvaInterne').value) || 0;
+        const autres = parseFloat(document.getElementById('autresTaxes').value) || 0;
+        const tvaCollectee = ht * tauxTvaInt / 100;
+        const tvaDeductible = totalTvaDouane;
+        const tvaNette = tvaCollectee - tvaDeductible;
+        const creditInt = tvaNette;
+
+        document.getElementById('tvaCollectee').value = tvaCollectee.toFixed(2);
+        document.getElementById('tvaDeductible').value = tvaDeductible.toFixed(2);
+        document.getElementById('tvaNette').value = tvaNette.toFixed(2);
+        document.getElementById('creditInterieur').value = creditInt.toFixed(2);
+
+        // Récapitulatif
+        document.getElementById('recapCreditExt').innerText = totalTaxesLignes.toFixed(2);
+        document.getElementById('recapCreditInt').innerText = creditInt.toFixed(2);
+        document.getElementById('recapCreditTotal').innerText = (totalTaxesLignes + creditInt).toFixed(2);
+        
+        console.log('Recalcul terminé');
+    }
+
+    // --- ATTACHER LES ÉVÉNEMENTS À TOUS LES CHAMPS MODIFIABLES ---
+    function attachEvents() {
+        // Tous les champs de saisie (inputs non-readonly) dans le tableau d'import
+        const allInputs = document.querySelectorAll('#importBody input:not([readonly])');
+        allInputs.forEach(inp => {
+            inp.addEventListener('input', recalcAll);
+            inp.addEventListener('change', recalcAll);
+        });
+        
+        // Champs de la section intérieure
+        document.getElementById('htMontant').addEventListener('input', recalcAll);
+        document.getElementById('tauxTvaInterne').addEventListener('input', recalcAll);
+        document.getElementById('autresTaxes').addEventListener('input', recalcAll);
+    }
+
+    // --- BOUTON DE RECALCUL MANUEL ---
+    document.getElementById('forceCalcBtn').addEventListener('click', function() {
+        recalcAll();
+        alert('Recalcul effectué ! Les colonnes DD, RS, PSC sont maintenant remplies.');
+    });
+
+    // --- GESTION AFFICHAGE NOMENCLATURE ---
+    const chkNomen = document.getElementById('showNomen');
+    function toggleNomenclature() {
+        const nomenCells = document.querySelectorAll('.nomenclature-col');
+        nomenCells.forEach(cell => {
+            if (chkNomen.checked) {
+                cell.classList.remove('hidden-col');
+            } else {
+                cell.classList.add('hidden-col');
+            }
+        });
+        // aussi l'en‑tête "Nomenclature" (le th à index 4)
+        const headers = document.querySelectorAll('#importTable thead th');
+        if (headers.length >= 5) {
+            if (chkNomen.checked) {
+                headers[4].classList.remove('hidden-col');
+            } else {
+                headers[4].classList.add('hidden-col');
+            }
+        }
+    }
+    chkNomen.addEventListener('change', toggleNomenclature);
+    toggleNomenclature();
+
+    // --- CHANGEMENT DE TYPE DE PROJET (cosmétique) ---
+    const radioBTP = document.getElementById('typeBTP');
+    const radioEquip = document.getElementById('typeEquip');
+    function updateProjectStyle() {
+        const subtitle = document.querySelector('.subtitle');
+        if (radioEquip.checked) {
+            subtitle.innerText = '🔧 Mode équipements industriels (nomenclature active)';
+        } else {
+            subtitle.innerText = '🏗️ Mode BTP / marché public (vue détaillée)';
+        }
+    }
+    radioBTP.addEventListener('change', updateProjectStyle);
+    radioEquip.addEventListener('change', updateProjectStyle);
+
+    // --- INITIALISATION : PREMIER RECALCUL APRÈS CHARGEMENT ---
+    setTimeout(() => {
+        recalcAll();
+        attachEvents();
+        
+        // Mettre en évidence les colonnes qui vont se remplir
+        const ddHeaders = document.querySelectorAll('#importTable thead th');
+        if (ddHeaders.length >= 11) {
+            ddHeaders[10].classList.add('highlight'); // DD
+            ddHeaders[11].classList.add('highlight'); // RS
+            ddHeaders[12].classList.add('highlight'); // PSC
+        }
+    }, 100);
+})();
+</script>
+
+<!-- style pour masquer col et highlight -->
+<style>
+    .hidden-col { display: none; }
+    .highlight {
+        background-color: #cfe2ff !important;
+        border-bottom: 3px solid #0b2b4a;
+    }
+    @media print {
+        .btn-print, .btn-calc { display: none; }
+        body { background: white; }
+        .card { box-shadow: none; border: 1px solid #ccc; }
+    }
+</style>
+</body>
+</html>

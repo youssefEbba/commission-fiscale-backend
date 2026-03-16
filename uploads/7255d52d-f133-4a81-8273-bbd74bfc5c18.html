@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spécification des Besoins | Commission Fiscale</title>
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:system-ui,-apple-system,sans-serif;background:#f1f5f9;color:#0f172a;line-height:1.6}
+        .nav{position:fixed;top:0;left:0;right:0;background:#0f172a;padding:14px 24px;z-index:100}
+        .nav-content{max-width:1100px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
+        .nav-logo{font-weight:700;color:#fff;font-size:14px}
+        .nav a{color:rgba(255,255,255,.8);text-decoration:none;padding:8px 14px;font-size:13px}
+        .header{padding:90px 24px 40px;background:linear-gradient(135deg,#1e3a5f,#0f172a);color:#fff}
+        .wrap{max-width:1100px;margin:0 auto}
+        .header h1{font-size:28px;margin-bottom:10px}
+        .header p{opacity:.85;font-size:15px}
+        .badges{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+        .badge{padding:6px 14px;border-radius:20px;background:rgba(255,255,255,.12);font-size:12px;font-weight:600}
+        .badge.hl{background:rgba(59,130,246,.5)}
+        .main{max-width:1100px;margin:0 auto;padding:30px 24px}
+        .section{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:24px;margin-bottom:24px}
+        .section h2{font-size:18px;margin-bottom:18px;padding-bottom:12px;border-bottom:2px solid #e2e8f0;display:flex;align-items:center;gap:10px}
+        .section h3{font-size:15px;margin:20px 0 12px;color:#1e293b}
+        .actor-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+        .actor-card{background:linear-gradient(135deg,#f8fafc,#f1f5f9);border:1px solid #e2e8f0;border-radius:12px;padding:18px;border-left:4px solid var(--c,#3b82f6)}
+        .actor-card h4{font-size:14px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+        .actor-card ul{list-style:none}
+        .actor-card li{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;margin-bottom:8px;font-size:13px;display:flex;justify-content:space-between}
+        .actor-card li:last-child{margin:0}
+        .role{font-size:11px;background:#e2e8f0;padding:3px 8px;border-radius:12px;color:#475569}
+        table{width:100%;border-collapse:collapse;font-size:12px;margin-top:14px}
+        th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #e2e8f0}
+        th{background:#f8fafc;font-weight:700;font-size:11px;text-transform:uppercase;color:#64748b}
+        .process{background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:16px;overflow:hidden}
+        .process-head{background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;padding:16px 18px;display:flex;align-items:center;gap:14px}
+        .process-num{width:40px;height:40px;background:rgba(255,255,255,.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800}
+        .process-head h4{font-size:14px;margin:0}
+        .process-head p{font-size:11px;opacity:.8;margin-top:2px}
+        .process-body{padding:18px}
+        .meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px}
+        .meta-box{background:#f8fafc;border-radius:8px;padding:12px}
+        .meta-box h5{font-size:10px;text-transform:uppercase;color:#64748b;margin-bottom:6px;font-weight:700}
+        .meta-box ul{list-style:none;font-size:12px}
+        .meta-box li{padding:3px 0}
+        .meta-box li::before{content:"→ ";color:#3b82f6;font-weight:700}
+        .docs{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+        .doc{background:#e2e8f0;padding:6px 12px;border-radius:6px;font-size:11px;display:flex;align-items:center;gap:6px}
+        .doc-n{background:#3b82f6;color:#fff;width:18px;height:18px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700}
+        .workflow{background:#f8fafc;border-radius:10px;padding:16px;margin-top:14px}
+        .workflow h5{font-size:12px;margin-bottom:14px;display:flex;align-items:center;gap:6px}
+        .tree{padding-left:20px;border-left:2px solid #3b82f6}
+        .node{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;position:relative;display:flex;align-items:center;gap:10px}
+        .node::before{content:"";position:absolute;left:-21px;top:50%;width:20px;height:2px;background:#3b82f6}
+        .node::after{content:"";position:absolute;left:-25px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;background:#3b82f6}
+        .node.dec::after{background:#f59e0b}
+        .node.end::after{background:#10b981}
+        .actor-tag{font-size:9px;background:#e2e8f0;padding:2px 6px;border-radius:3px;font-weight:600}
+        .status{font-size:9px;padding:2px 6px;border-radius:3px;margin-left:auto}
+        .status.done{background:#d1fae5;color:#047857}
+        .status.prog{background:#dbeafe;color:#1d4ed8}
+        .status.pend{background:#fef3c7;color:#b45309}
+        .flow-visual{background:#f8fafc;border-radius:10px;padding:20px;text-align:center;margin:16px 0}
+        .flow-row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;margin-bottom:12px}
+        .flow-box{padding:8px 14px;border-radius:6px;font-size:11px;font-weight:600;color:#fff}
+        .flow-arrow{font-size:18px;color:#64748b}
+        .footer{background:#0f172a;color:#fff;padding:24px;text-align:center;font-size:12px}
+        @media print{.nav{display:none}.header{padding-top:30px}}
+        @media(max-width:768px){.actor-grid,.meta-grid{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+
+<nav class="nav">
+    <div class="nav-content">
+        <span class="nav-logo">🏛️ Commission Fiscale – Spécification des Besoins</span>
+        <div><a href="cahier-des-charges-finale.html">📋 CDC</a><a href="javascript:window.print()">🖨️ Imprimer</a></div>
+    </div>
+</nav>
+
+<header class="header">
+    <div class="wrap">
+        <h1>📑 Rapport de Spécification des Besoins</h1>
+        <p>Système de Gestion des Crédits d'Impôt – Commission Fiscale<br>Ministère des Finances – République Islamique de Mauritanie</p>
+        <div class="badges">
+            <span class="badge hl">📊 Version 1.0</span>
+            <span class="badge">👥 8 Acteurs</span>
+            <span class="badge">🔄 11 Processus</span>
+            <span class="badge">📅 Janvier 2026</span>
+        </div>
+    </div>
+</header>
+
+<main class="main">
+
+<!-- SECTION 1: ACTEURS -->
+<section class="section" id="acteurs">
+    <h2>👥 Section 1 : Regroupement des Acteurs</h2>
+    
+    <div class="actor-grid">
+        <div class="actor-card" style="--c:#1d4ed8">
+            <h4>🏛️ Commission Fiscale (Décision)</h4>
+            <ul><li><b>Président</b> – Représentant Ministre <span class="role">Signature finale</span></li></ul>
+        </div>
+        <div class="actor-card" style="--c:#7c3aed">
+            <h4>📊 Directions Fiscales (Évaluation)</h4>
+            <ul>
+                <li><b>DGD</b> – Douanes <span class="role">Évaluation douanière</span></li>
+                <li><b>DGI</b> – Impôts <span class="role">Validation TVA</span></li>
+                <li><b>DGB</b> – Budget <span class="role">Visa budgétaire</span></li>
+            </ul>
+        </div>
+        <div class="actor-card" style="--c:#059669">
+            <h4>🏦 Trésor Public (Comptabilité)</h4>
+            <ul><li><b>DGTCP</b> – Trésor <span class="role">Ouverture crédit</span></li></ul>
+        </div>
+       
+        <div class="actor-card" style="--c:#ea580c">
+            <h4>🏢 Acteurs Externes (Demandeurs)</h4>
+            <ul>
+                <li><b>Autorité Contractante</b> – Maître d'ouvrage <span class="role">Saisine</span></li>
+                <li><b>Entreprise</b> – Bénéficiaire <span class="role">Utilisation crédit</span></li>
+            </ul>
+        </div>
+    </div>
+    
+    <h3>Matrice Acteurs / Processus</h3>
+    <table>
+        <thead><tr><th>Processus</th><th>Prés.</th><th>DGD</th><th>DGTCP</th><th>DGI</th><th>DGB</th><th>Courr.</th><th>AC</th><th>Entr.</th></tr></thead>
+        <tbody>
+            <tr><td>1. Demande Correction</td><td></td><td></td><td></td><td></td><td></td><td></td><td>●</td><td></td></tr>
+            <tr><td>2. Traitement Correction</td><td>●</td><td>●</td><td>●</td><td>●</td><td>●</td><td>●</td><td></td><td></td></tr>
+            <tr><td>3. Retour Correction</td><td>●</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+            <tr><td>4. Demande Crédit</td><td>●</td><td>●</td><td>●</td><td>●</td><td></td><td></td><td></td><td></td></tr>
+            <tr><td>5. Émission Certificat</td><td>●</td><td></td><td>●</td><td>●</td><td></td><td></td><td></td><td></td></tr>
+            <tr><td>6. Utilisation Douane</td><td></td><td>●</td><td>●</td><td></td><td></td><td></td><td></td><td>●</td></tr>
+            <tr><td>7. Utilisation TVA</td><td></td><td></td><td>●</td><td></td><td></td><td></td><td></td><td>●</td></tr>
+            <tr><td>8. Modification/Avenant</td><td>●</td><td></td><td>●</td><td></td><td></td><td></td><td></td><td></td></tr>
+            <tr><td>9. Transfert</td><td></td><td></td><td>●</td><td></td><td></td><td></td><td></td><td>●</td></tr>
+            <tr><td>10. Sous-traitance</td><td></td><td></td><td>●</td><td></td><td></td><td></td><td></td><td>●</td></tr>
+            <tr><td>11. Clôture</td><td></td><td></td><td>●</td><td></td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- SECTION 2: PROCESSUS -->
+<section class="section" id="processus">
+    <h2>🔄 Section 2 : Les 11 Processus Métier</h2>
+
+    <!-- P1 -->
+    <div class="process" id="p1">
+        <div class="process-head"><div class="process-num">1</div><div><h4>Demande de Correction d'Offre Fiscale</h4><p>Point d'entrée – Après ouverture des plis</p></div></div>
+        <div class="process-body">
+            <div class="meta-grid">
+                <div class="meta-box"><h5>👤 Acteur</h5><ul><li>Autorité Contractante</li></ul></div>
+                <div class="meta-box"><h5>⚡ Déclencheur</h5><ul><li>Ouverture plis AO</li></ul></div>
+                <div class="meta-box"><h5>🎯 Résultat</h5><ul><li>Dossier enregistré</li><li>Statut: Reçue</li></ul></div>
+            </div>
+            <h5 style="font-size:12px;margin-top:14px">📎 Documents requis (7 pièces)</h5>
+            <div class="docs">
+                <div class="doc"><span class="doc-n">1</span>Lettre saisine</div>
+                <div class="doc"><span class="doc-n">2</span>PV ouverture</div>
+                <div class="doc"><span class="doc-n">3</span>Attestation fiscale</div>
+                <div class="doc"><span class="doc-n">4</span>Offre financière ⚠️</div>
+                <div class="doc"><span class="doc-n">5</span>Tableau modèle</div>
+                <div class="doc"><span class="doc-n">6</span>DAO + DQE</div>
+                <div class="doc"><span class="doc-n">7</span>Liste items Excel</div>
+            </div>
+            <div class="workflow"><h5>🔄 Workflow</h5>
+                <div class="tree">
+                    <div class="node"><span class="actor-tag">AC</span> Prépare dossier complet (7 pièces)</div>
+                    <!-- <div class="node"><span class="actor-tag">AC</span> Dépose au Service Courrier</div> -->
+                    <div class="node end"><span class="actor-tag">SYS</span> Enregistrement demande <span class="status done">Reçue</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- P2 -->
+    <div class="process" id="p2">
+        <div class="process-head"><div class="process-num">2</div><div><h4>Traitement de la Correction</h4><p>Recevabilité → Évaluation → Validation → Adoption</p></div></div>
+        <div class="process-body">
+            <div class="meta-grid">
+                <div class="meta-box"><h5>👥 Acteurs</h5><ul><li>Service Courrier</li><li>DGD + DGTCP</li><li>DGI + DGB</li><li>Président</li></ul></div>
+                <div class="meta-box"><h5>⚡ Déclencheur</h5><ul><li>Demande reçue (P1)</li></ul></div>
+                <div class="meta-box"><h5>🎯 Résultat</h5><ul><li>Feuille signée</li><li>Montants arrêtés</li></ul></div>
+            </div>
+            <div class="workflow"><h5>🔄 Workflow (4 étapes)</h5>
+                <div class="tree">
+                    <div class="node"><span class="actor-tag">COURR</span> Vérifie complétude (7 pièces) <span class="status pend">Recevabilité</span></div>
+                    <div class="node dec"><span class="actor-tag">COURR</span> Si incomplet → 48h pour compléter sinon REJET</div>
+                    <div class="node"><span class="actor-tag">DGD</span> Évalue nomenclature/valeur douane <span class="status prog">Évaluation</span></div>
+                    <div class="node"><span class="actor-tag">DGD</span> Calcule crédit cordon + TVA</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Vérifie calculs, arrête montant <span class="status prog">Validation</span></div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Appose visa Trésor</div>
+                    <div class="node"><span class="actor-tag">DGI</span> Appose visa Impôts</div>
+                    <div class="node"><span class="actor-tag">DGB</span> Appose visa Budget</div>
+                    <div class="node"><span class="actor-tag">PRÉS</span> Contresigne (ou arbitre si blocage) <span class="status prog">Adoption</span></div>
+                    <div class="node end"><span class="actor-tag">SYS</span> Correction adoptée <span class="status done">Adoptée</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- P3 -->
+    <div class="process" id="p3">
+        <div class="process-head"><div class="process-num">3</div><div><h4>Retour de Correction</h4><p>Notification – Lettre signée – Délai 3 jours</p></div></div>
+        <div class="process-body">
+            <div class="meta-grid">
+                <div class="meta-box"><h5>👤 Acteur</h5><ul><li>Président</li></ul></div>
+                <div class="meta-box"><h5>📄 Document</h5><ul><li>Lettre correction signée</li><li>Crédit cordon + TVA</li></ul></div>
+                <div class="meta-box"><h5>⏰ Délai</h5><ul><li><b>3 jours</b> pour répondre</li><li>Sinon validation auto</li></ul></div>
+            </div>
+            <div class="workflow"><h5>🔄 Workflow</h5>
+                <div class="tree">
+                    <div class="node"><span class="actor-tag">PRÉS</span> Génère lettre de correction</div>
+                    <div class="node"><span class="actor-tag">PRÉS</span> Signe la lettre</div>
+                    <div class="node"><span class="actor-tag">SYS</span> Notifie l'Autorité Contractante <span class="status prog">Notifiée</span></div>
+                    <div class="node dec"><span class="actor-tag">AC</span> Délai 3 jours pour réponse</div>
+                    <div class="node"><span class="actor-tag">AC</span> Informe le soumissionnaire</div>
+                    <div class="node end"><span class="actor-tag">SYS</span> Attribution marché TTC <span class="status done">Validée</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- P4 -->
+    <div class="process" id="p4">
+        <div class="process-head"><div class="process-num">4</div><div><h4>Demande de Mise en Place du Crédit d'Impôt</h4><p>Après attribution – Contrat signé et notifié</p></div></div>
+        <div class="process-body">
+            <div class="meta-grid">
+                <div class="meta-box"><h5>👥 Acteurs</h5><ul><li>Président</li><li>DGTCP</li><li>DGD (export)</li><li>DGI (TVA int.)</li></ul></div>
+                <div class="meta-box"><h5>⚡ Déclencheur</h5><ul><li>Marché attribué</li><li>Contrat signé</li></ul></div>
+            </div>
+            <h5 style="font-size:12px;margin-top:14px">📎 Documents requis (5 pièces)</h5>
+            <div class="docs">
+                <div class="doc"><span class="doc-n">1</span>Lettre saisine</div>
+                <div class="doc"><span class="doc-n">2</span>Contrat enregistré</div>
+                <div class="doc"><span class="doc-n">3</span>Lettre notification</div>
+                <div class="doc"><span class="doc-n">4</span>Certificat NIF</div>
+                <div class="doc"><span class="doc-n">5</span>Lettre correction</div>
+            </div>
+            <div class="workflow"><h5>🔄 Workflow</h5>
+                <div class="tree">
+                    <div class="node"><span class="actor-tag">AC</span> Prépare dossier (5 pièces)</div>
+                    <div class="node"><span class="actor-tag">AC</span> Soumet demande mise en place</div>
+                    <div class="node"><span class="actor-tag">PRÉS</span> Vérifie conformité</div>
+                    <div class="node dec"><span class="actor-tag">SYS</span> Type: Export ou TVA intérieure?</div>
+                    <div class="node"><span class="actor-tag">DGD</span> Traite si exportation</div>
+                    <div class="node"><span class="actor-tag">DGI</span> Traite si TVA intérieure</div>
+                    <div class="node end"><span class="actor-tag">SYS</span> Demande enregistrée <span class="status done">Demandé</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- P5 -->
+    <div class="process" id="p5">
+        <div class="process-head"><div class="process-num">5</div><div><h4>Émission du Certificat de Crédit d'Impôt</h4><p>Ouverture du crédit au Trésor</p></div></div>
+        <div class="process-body">
+            <div class="meta-grid">
+                <div class="meta-box"><h5>👥 Acteurs</h5><ul><li>DGTCP – Ouvre crédit</li><li>DGI – Vérifie situation</li><li>Président – Valide</li></ul></div>
+                <div class="meta-box"><h5>📄 Certificat</h5><ul><li>Crédit cordon</li><li>Crédit TVA int.</li><li>Détail items</li></ul></div>
+            </div>
+            <div class="workflow"><h5>🔄 Workflow</h5>
+                <div class="tree">
+                    <div class="node"><span class="actor-tag">DGI</span> Vérifie situation fiscale entreprise</div>
+                    <div class="node dec"><span class="actor-tag">DGI</span> Entreprise en règle? Oui/Non</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Ouvre le crédit comptable</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Génère certificat</div>
+                    <div class="node"><span class="actor-tag">PRÉS</span> Valide et signe certificat</div>
+                    <div class="node end"><span class="actor-tag">SYS</span> Certificat émis <span class="status done">Émis</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- P6 -->
+    <div class="process" id="p6">
+        <div class="process-head"><div class="process-num">6</div><div><h4>Utilisation du Crédit Douanier</h4><p>Importation – Intégration SYDONIA</p></div></div>
+        <div class="process-body">
+            <div class="meta-grid">
+                <div class="meta-box"><h5>👥 Acteurs</h5><ul><li>Entreprise</li><li>DGD – Matière</li><li>DGTCP – Financier</li></ul></div>
+                <div class="meta-box"><h5>⚠️ Prérequis</h5><ul><li>Enregistrer SYDONIA</li><li>AVANT arrivée march.</li></ul></div>
+            </div>
+            <h5 style="font-size:12px;margin-top:14px">📎 Documents requis (7 pièces)</h5>
+            <div class="docs">
+                <div class="doc"><span class="doc-n">1</span>Demande utilisation</div>
+                <div class="doc"><span class="doc-n">2</span>Ordre transit</div>
+                <div class="doc"><span class="doc-n">3</span>Déclaration douane</div>
+                <div class="doc"><span class="doc-n">4</span>Bulletin liquidation</div>
+                <div class="doc"><span class="doc-n">5</span>Facture commerciale</div>
+                <div class="doc"><span class="doc-n">6</span>Connaissement/LTA</div>
+                <div class="doc"><span class="doc-n">7</span>Copie certificat</div>
+            </div>
+            <div class="workflow"><h5>🔄 Workflow</h5>
+                <div class="tree">
+                    <!-- <div class="node"><span class="actor-tag">ENT</span> Enregistre offre dans SYDONIA</div> -->
+                    <div class="node"><span class="actor-tag">ENT</span> Soumet demande (7 docs)</div>
+                    <div class="node"><span class="actor-tag">DGD</span> Contrôle comptabilité matière <span class="status pend">Vérification</span></div>
+                    <div class="node"><span class="actor-tag">DGD</span> Vise bulletin liquidation</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Contrôle comptabilité financière</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Impute droits + TVA douane</div>
+                    <div class="node end"><span class="actor-tag">SYS</span> Opération liquidée <span class="status done">Liquidée</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- P7 -->
+    <div class="process" id="p7">
+        <div class="process-head"><div class="process-num">7</div><div><h4>Utilisation du Crédit TVA Intérieure</h4><p>Achats locaux – 2 cas possibles</p></div></div>
+        <div class="process-body">
+            <div class="meta-grid">
+                <div class="meta-box"><h5>👤 Acteur</h5><ul><li>Entreprise</li></ul></div>
+                <div class="meta-box"><h5>🔍 Contrôle</h5><ul><li>DGTCP vérifie</li><li>Mise à jour solde</li></ul></div>
+            </div>
+            <h5 style="font-size:12px;margin-top:14px">📎 Documents selon cas</h5>
+            <div class="docs">
+                <div class="doc" style="background:#dbeafe"><b>Cas 1 – Achat Local:</b> Facture + Déclaration TVA</div>
+                <div class="doc" style="background:#fef3c7"><b>Cas 2 – Décompte:</b> Décompte uniquement</div>
+            </div>
+            <div class="workflow"><h5>🔄 Workflow</h5>
+                <div class="tree">
+                    <div class="node"><span class="actor-tag">ENT</span> Soumet demande utilisation TVA</div>
+                    <div class="node dec"><span class="actor-tag">SYS</span> Type: Achat local ou Décompte?</div>
+                    <div class="node"><span class="actor-tag">ENT</span> Fournit documents selon cas</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Vérifie documents <span class="status pend">Vérification</span></div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Valide utilisation <span class="status prog">Validée</span></div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Met à jour solde crédit</div>
+                    <div class="node end"><span class="actor-tag">SYS</span> Opération apurée <span class="status done">Apurée</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- P8 -->
+    <div class="process" id="p8">
+        <div class="process-head"><div class="process-num">8</div><div><h4>Modification (Avenant / Note de Service)</h4><p>Changement sur crédit d'impôt</p></div></div>
+        <div class="process-body">
+            <div class="meta-grid">
+                <div class="meta-box"><h5>👥 Décision</h5><ul><li>DGTCP (Trésor)</li><li>Président</li></ul></div>
+                <div class="meta-box"><h5>⚡ Déclencheurs</h5><ul><li>Changement législation</li><li>Avenant contrat</li><li>Changement bailleur</li><li>Fluctuation taux</li><li>Prolongation validité</li></ul></div>
+            </div>
+            <h5 style="font-size:12px;margin-top:14px">📎 Documents selon cas</h5>
+            <div class="docs">
+                <div class="doc" style="background:#dbeafe"><b>Cas 1 – Juridique:</b> Note service, justifications légales, lettres motivées</div>
+                <div class="doc" style="background:#fef3c7"><b>Cas 2 – Avenant:</b> Avenant contrat, lettres AC, détail corrections</div>
+                <div class="doc" style="background:#d1fae5"><b>Financier/Admin:</b> Documents officiels, décision commission</div>
+            </div>
+            <div class="workflow"><h5>🔄 Workflow</h5>
+                <div class="tree">
+                    <div class="node"><span class="actor-tag">AC/ENT</span> Soumet demande modification</div>
+                    <div class="node dec"><span class="actor-tag">SYS</span> Type: Juridique, Avenant ou Financier?</div>
+                    <div class="node"><span class="actor-tag">AC/ENT</span> Fournit documents requis</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Analyse la demande</div>
+                    <div class="node"><span class="actor-tag">PRÉS</span> Valide la modification</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Met à jour le crédit</div>
+                    <div class="node end"><span class="actor-tag">SYS</span> Crédit modifié <span class="status done">Modifié</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- P9 -->
+    <div class="process" id="p9">
+        <div class="process-head"><div class="process-num">9</div><div><h4>Transfert de Crédit</h4><p>Condition: Clôture opérations douanières</p></div></div>
+        <div class="process-body">
+            <div class="meta-grid">
+                <div class="meta-box"><h5>👤 Acteur</h5><ul><li>Entreprise titulaire</li></ul></div>
+                <div class="meta-box"><h5>📄 Documents</h5><ul><li>Demande motivée</li><li>Justificatifs clôture</li></ul></div>
+                <div class="meta-box"><h5>⚠️ Prérequis</h5><ul><li>Clôture opérations douane obligatoire</li></ul></div>
+            </div>
+            <div class="workflow"><h5>🔄 Workflow</h5>
+                <div class="tree">
+                    <div class="node"><span class="actor-tag">ENT</span> Vérifie clôture opérations douane</div>
+                    <div class="node dec"><span class="actor-tag">SYS</span> Opérations douane clôturées?</div>
+                    <div class="node"><span class="actor-tag">ENT</span> Soumet demande transfert motivée</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Valide le transfert</div>
+                    <div class="node end"><span class="actor-tag">SYS</span> Crédit transféré <span class="status done">Transféré</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- P10 -->
+    <div class="process" id="p10">
+        <div class="process-head"><div class="process-num">10</div><div><h4>Sous-traitance</h4><p>Contrat enregistré requis</p></div></div>
+        <div class="process-body">
+            <div class="meta-grid">
+                <div class="meta-box"><h5>👤 Acteur</h5><ul><li>Entreprise attributaire</li></ul></div>
+                <div class="meta-box"><h5>📄 Documents</h5><ul><li>Contrat sous-traitance enregistré</li><li>Lettre (volumes, pouvoir)</li></ul></div>
+            </div>
+            <div class="workflow"><h5>🔄 Workflow</h5>
+                <div class="tree">
+                    <div class="node"><span class="actor-tag">ENT</span> Établit contrat sous-traitance</div>
+                    <div class="node"><span class="actor-tag">ENT</span> Enregistre le contrat</div>
+                    <div class="node"><span class="actor-tag">ENT</span> Soumet demande avec lettre</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Vérifie contrat et lettre</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Autorise sous-traitance</div>
+                    <div class="node end"><span class="actor-tag">SYS</span> Sous-traitance autorisée <span class="status done">Autorisée</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- P11 -->
+    <div class="process" id="p11">
+        <div class="process-head"><div class="process-num">11</div><div><h4>Clôture / Annulation</h4><p>Fin du cycle de vie du crédit</p></div></div>
+        <div class="process-body">
+            <div class="meta-grid">
+                <div class="meta-box"><h5>👥 Acteurs</h5><ul><li>DGTCP – Propose liste</li><li>Commission – Approuve</li></ul></div>
+                <div class="meta-box"><h5>⚡ Déclencheurs</h5><ul><li>Réception définitive</li><li>Solde = 0</li><li>Expiration validité</li><li>Renonciation</li></ul></div>
+                <div class="meta-box"><h5>📋 Règles</h5><ul><li>Renonciation import → TVA transférée</li><li>Période complémentaire possible</li></ul></div>
+            </div>
+            <div class="workflow"><h5>🔄 Workflow</h5>
+                <div class="tree">
+                    <div class="node"><span class="actor-tag">SYS</span> Détecte condition de clôture</div>
+                    <div class="node dec"><span class="actor-tag">SYS</span> Type: Réception, Solde=0, Expiration?</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Prépare liste crédits à annuler</div>
+                    <div class="node"><span class="actor-tag">COMM</span> Examine et approuve la liste</div>
+                    <div class="node"><span class="actor-tag">DGTCP</span> Procède à la clôture comptable</div>
+                    <div class="node"><span class="actor-tag">SYS</span> Archive le dossier</div>
+                    <div class="node end"><span class="actor-tag">SYS</span> Crédit clôturé <span class="status done">Clôturé</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</section>
+
+<!-- SECTION 3: WORKFLOW GLOBAL -->
+<section class="section" id="workflow-global">
+    <h2>🌐 Section 3 : Workflow Global du Système</h2>
+    
+    <div class="flow-visual">
+        <h4 style="font-size:14px;margin-bottom:18px">📊 Enchaînement des Processus</h4>
+        <div class="flow-row">
+            <div class="flow-box" style="background:#1d4ed8">1. Demande Correction</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-box" style="background:#7c3aed">2. Traitement</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-box" style="background:#059669">3. Retour</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-box" style="background:#dc2626">4. Demande Crédit</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-box" style="background:#ea580c">5. Certificat</div>
+        </div>
+        <div style="font-size:24px;margin:12px 0">↓</div>
+        <div class="flow-row">
+            <div class="flow-box" style="background:#0891b2">6. Util. Douane</div>
+            <div class="flow-box" style="background:#0891b2">7. Util. TVA</div>
+            <div class="flow-box" style="background:#64748b">8. Modif.</div>
+            <div class="flow-box" style="background:#64748b">9. Transfert</div>
+            <div class="flow-box" style="background:#64748b">10. Sous-trait.</div>
+        </div>
+        <div style="font-size:24px;margin:12px 0">↓</div>
+        <div class="flow-row">
+            <div class="flow-box" style="background:#0f172a;padding:12px 28px;font-size:13px">11. Clôture / Annulation</div>
+        </div>
+    </div>
+    
+    <h3>Tableau Récapitulatif des Statuts</h3>
+    <table>
+        <thead><tr><th>#</th><th>Processus</th><th>Statut Initial</th><th>Statut Intermédiaire</th><th>Statut Final</th></tr></thead>
+        <tbody>
+            <tr><td>1</td><td>Demande Correction</td><td>—</td><td>—</td><td>Reçue</td></tr>
+            <tr><td>2</td><td>Traitement Correction</td><td>Incomplète</td><td>Évaluation / Validation</td><td>Adoptée</td></tr>
+            <tr><td>3</td><td>Retour Correction</td><td>—</td><td>Notifiée</td><td>Validée</td></tr>
+            <tr><td>4</td><td>Demande Crédit</td><td>—</td><td>—</td><td>Demandé</td></tr>
+            <tr><td>5</td><td>Émission Certificat</td><td>—</td><td>—</td><td>Émis / Ouvert</td></tr>
+            <tr><td>6</td><td>Utilisation Douane</td><td>Vérification</td><td>Visée</td><td>Liquidée</td></tr>
+            <tr><td>7</td><td>Utilisation TVA</td><td>Vérification</td><td>Validée</td><td>Apurée</td></tr>
+            <tr><td>8</td><td>Modification</td><td>—</td><td>—</td><td>Modifié</td></tr>
+            <tr><td>9</td><td>Transfert</td><td>—</td><td>—</td><td>Transféré</td></tr>
+            <tr><td>10</td><td>Sous-traitance</td><td>—</td><td>—</td><td>Autorisée</td></tr>
+            <tr><td>11</td><td>Clôture</td><td>—</td><td>—</td><td>Clôturé</td></tr>
+        </tbody>
+    </table>
+</section>
+
+</main>
+
+<footer class="footer">
+    <p>📑 Rapport de Spécification des Besoins – Commission Fiscale – Ministère des Finances – Mauritanie</p>
+    <p style="margin-top:8px;opacity:.6">Document généré le 21 janvier 2026 – Version 1.0</p>
+</footer>
+
+</body>
+</html>

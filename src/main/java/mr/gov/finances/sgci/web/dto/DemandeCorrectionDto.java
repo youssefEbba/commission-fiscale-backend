@@ -20,10 +20,33 @@ public class DemandeCorrectionDto {
     private String numero;
     private Instant dateDepot;
     private StatutDemande statut;
+    private boolean validationDgd;
+    private boolean validationDgtcp;
+    private boolean validationDgi;
+    private boolean validationDgb;
+    private Long validationDgdUserId;
+    private Instant validationDgdDate;
+    private Long validationDgtcpUserId;
+    private Instant validationDgtcpDate;
+    private Long validationDgiUserId;
+    private Instant validationDgiDate;
+    private Long validationDgbUserId;
+    private Instant validationDgbDate;
+    private String motifRejet;
     private Instant dateCreation;
     private Instant dateModification;
     private Long autoriteContractanteId;
     private String autoriteContractanteNom;
+    private Long entrepriseId;
+    private String entrepriseRaisonSociale;
+    private Long conventionId;
+    private ModeleFiscalDto modeleFiscal;
+    private DqeDto dqe;
+    private MarcheDto marche;
     @Builder.Default
     private List<DocumentDto> documents = new ArrayList<>();
+    @Builder.Default
+    private List<DemandeCorrectionRejetDto> rejets = new ArrayList<>();
+    @Builder.Default
+    private List<DecisionCorrectionDto> decisions = new ArrayList<>();
 }

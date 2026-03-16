@@ -2,7 +2,9 @@ package mr.gov.finances.sgci.service;
 
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
+import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
+import mr.gov.finances.sgci.web.dto.SousTraitantUtilisateurDto;
 import mr.gov.finances.sgci.web.dto.UtilisateurDto;
 
 import org.springframework.stereotype.Service;
@@ -22,6 +24,23 @@ public class UtilisateurService {
         return utilisateurRepository.findAll()
                 .stream()
                 .map(this::toDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<SousTraitantUtilisateurDto> findSousTraitants() {
+        return utilisateurRepository.findByRole(Role.SOUS_TRAITANT)
+                .stream()
+                .map(u -> SousTraitantUtilisateurDto.builder()
+                        .id(u.getId())
+                        .username(u.getUsername())
+                        .nomComplet(u.getNomComplet())
+                        .email(u.getEmail())
+                        .actif(u.getActif())
+                        .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null)
+                        .entrepriseRaisonSociale(u.getEntreprise() != null ? u.getEntreprise().getRaisonSociale() : null)
+                        .entrepriseNif(u.getEntreprise() != null ? u.getEntreprise().getNif() : null)
+                        .build())
                 .collect(Collectors.toList());
     }
 

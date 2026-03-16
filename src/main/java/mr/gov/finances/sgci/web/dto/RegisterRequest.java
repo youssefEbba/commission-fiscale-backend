@@ -23,4 +23,10 @@ public class RegisterRequest {
 
     private String nomComplet;
     private String email;
+    private Long autoriteContractanteId;
+    private Long entrepriseId;
+    private String entrepriseRaisonSociale;
+    private String entrepriseNif;
+    private String entrepriseAdresse;
+    private String entrepriseSituationFiscale;
 }

@@ -22,10 +22,6 @@ public class TransfertCredit {
 
     private Instant dateDemande;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "entreprise_destinataire_id", nullable = false)
-    private Entreprise entrepriseDestinataire;
-
     @Column(precision = 19, scale = 4)
     private BigDecimal montant;
 

@@ -32,6 +32,14 @@ public class Document {
 
     private Long taille;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Integer version = 1;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean actif = true;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "demande_correction_id")
     private DemandeCorrection demandeCorrection;

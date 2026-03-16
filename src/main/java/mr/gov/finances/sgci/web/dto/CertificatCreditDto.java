@@ -26,4 +26,7 @@ public class CertificatCreditDto {
     private StatutCertificat statut;
     private Long entrepriseId;
     private String entrepriseRaisonSociale;
+
+    private Long demandeCorrectionId;
+    private Long marcheId;
 }

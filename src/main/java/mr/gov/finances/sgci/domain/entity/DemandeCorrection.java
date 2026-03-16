@@ -31,12 +31,57 @@ public class DemandeCorrection {
     @Builder.Default
     private StatutDemande statut = StatutDemande.RECUE;
 
+    @Builder.Default
+    private boolean validationDgd = false;
+
+    private Long validationDgdUserId;
+
+    private Instant validationDgdDate;
+
+    @Builder.Default
+    private boolean validationDgtcp = false;
+
+    private Long validationDgtcpUserId;
+
+    private Instant validationDgtcpDate;
+
+    @Builder.Default
+    private boolean validationDgi = false;
+
+    private Long validationDgiUserId;
+
+    private Instant validationDgiDate;
+
+    @Builder.Default
+    private boolean validationDgb = false;
+
+    private Long validationDgbUserId;
+
+    private Instant validationDgbDate;
+
     private Instant dateCreation;
     private Instant dateModification;
+
+    @Column(length = 1000)
+    private String motifRejet;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "autorite_contractante_id", nullable = false)
     private AutoriteContractante autoriteContractante;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "entreprise_id", nullable = false)
+    private Entreprise entreprise;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "convention_id", nullable = false)
+    private Convention convention;
+
+    @OneToOne(mappedBy = "demandeCorrection", cascade = CascadeType.ALL, orphanRemoval = true)
+    private ModeleFiscal modeleFiscal;
+
+    @OneToOne(mappedBy = "demandeCorrection", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Dqe dqe;
 
     @OneToMany(mappedBy = "demandeCorrection", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
@@ -44,6 +89,17 @@ public class DemandeCorrection {
 
     @OneToOne(mappedBy = "demandeCorrection", cascade = CascadeType.ALL, orphanRemoval = true)
     private FeuilleEvaluation feuilleEvaluation;
+
+    @OneToOne(mappedBy = "demandeCorrection", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Marche marche;
+
+    @OneToMany(mappedBy = "demandeCorrection", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<DemandeCorrectionRejet> rejets = new ArrayList<>();
+
+    @OneToMany(mappedBy = "demandeCorrection", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<DecisionCorrection> decisions = new ArrayList<>();
 
     @PrePersist
     protected void onCreate() {
@@ -55,4 +111,6 @@ public class DemandeCorrection {
     protected void onUpdate() {
         dateModification = Instant.now();
     }
+
+    
 }

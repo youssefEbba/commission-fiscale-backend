@@ -11,7 +11,10 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -24,13 +27,14 @@ public class JwtService {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    public String generateToken(String username, Role role, Long userId) {
+    public String generateToken(String username, Role role, Long userId, Collection<String> permissions) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + jwtProperties.getExpirationMs());
         return Jwts.builder()
                 .subject(username)
                 .claim("role", role.name())
                 .claim("userId", userId)
+                .claim("permissions", permissions != null ? List.copyOf(permissions) : List.of())
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(getSigningKey())
@@ -49,6 +53,21 @@ public class JwtService {
     public Role extractRole(String token) {
         String role = getClaims(token).get("role", String.class);
         return role != null ? Role.valueOf(role) : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<String> extractPermissions(String token) {
+        Object value = getClaims(token).get("permissions");
+        if (value instanceof List<?> list) {
+            List<String> permissions = new ArrayList<>();
+            for (Object item : list) {
+                if (item != null) {
+                    permissions.add(item.toString());
+                }
+            }
+            return permissions;
+        }
+        return List.of();
     }
 
     public boolean isTokenValid(String token) {

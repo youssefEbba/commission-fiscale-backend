@@ -20,4 +20,6 @@ public class DocumentDto {
     private String chemin;
     private Instant dateUpload;
     private Long taille;
+    private Integer version;
+    private Boolean actif;
 }

@@ -1,11 +1,15 @@
 package mr.gov.finances.sgci.domain.enums;
 
 public enum Role {
+    ADMIN_SI,
     PRESIDENT,
     DGD,
     DGTCP,
     DGI,
     DGB,
     AUTORITE_CONTRACTANTE,
-    ENTREPRISE
+    AUTORITE_UPM,
+    AUTORITE_UEP,
+    ENTREPRISE,
+    SOUS_TRAITANT
 }

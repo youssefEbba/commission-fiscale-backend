@@ -53,6 +53,10 @@ public class CertificatCredit {
     @JoinColumn(name = "lettre_correction_id")
     private LettreCorrection lettreCorrection;
 
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "demande_correction_id", unique = true)
+    private DemandeCorrection demandeCorrection;
+
     @OneToMany(mappedBy = "certificatCredit", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<Item> items = new ArrayList<>();

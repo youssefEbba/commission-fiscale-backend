@@ -44,7 +44,8 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
         } finally {
             long duration = System.currentTimeMillis() - start;
             int status = response.getStatus();
-            log.info("<<< {} {}{} | status={} | {}ms | user={}", method, uri, query, status, duration, user);
+            String userAfter = getCurrentUser();
+            log.info("<<< {} {}{} | status={} | {}ms | user={}", method, uri, query, status, duration, userAfter);
         }
     }
 

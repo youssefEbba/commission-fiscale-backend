@@ -19,8 +19,8 @@ public class UtilisationCreditWorkflow {
 
     private static final Map<StatutUtilisation, Set<StatutUtilisation>> TRANSITIONS = Map.ofEntries(
             Map.entry(DEMANDEE, EnumSet.of(EN_VERIFICATION, REJETEE)),
-            Map.entry(EN_VERIFICATION, EnumSet.of(VISE, REJETEE)),
-            Map.entry(VISE, EnumSet.of(VALIDEE, REJETEE)),
+            Map.entry(EN_VERIFICATION, EnumSet.of(VISE, VALIDEE, REJETEE)),
+            Map.entry(VISE, EnumSet.of(VALIDEE, LIQUIDEE, REJETEE)),
             Map.entry(VALIDEE, EnumSet.of(LIQUIDEE, APUREE)),
             Map.entry(LIQUIDEE, EnumSet.noneOf(StatutUtilisation.class)),
             Map.entry(APUREE, EnumSet.noneOf(StatutUtilisation.class)),

@@ -1,7 +1,9 @@
 package mr.gov.finances.sgci.web.controller;
 
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.service.EntrepriseService;
 import mr.gov.finances.sgci.service.UtilisateurService;
+import mr.gov.finances.sgci.web.dto.EntrepriseDto;
 import mr.gov.finances.sgci.web.dto.UtilisateurDto;
 
 import org.springframework.http.HttpStatus;
@@ -18,20 +20,28 @@ public class UtilisateurController {
 
     private final UtilisateurService utilisateurService;
 
+    private final EntrepriseService entrepriseService;
+
     /**
      * Liste tous les utilisateurs (réservé à l'administrateur / PRESIDENT).
      */
     @GetMapping
-    @PreAuthorize("hasRole('PRESIDENT')")
+    @PreAuthorize("hasAuthority('user.list')")
     public List<UtilisateurDto> getAll() {
         return utilisateurService.findAll();
+    }
+
+    @GetMapping("/sous-traitants")
+    @PreAuthorize("isAuthenticated()")
+    public List<EntrepriseDto> getSousTraitants() {
+        return entrepriseService.findAll();
     }
 
     /**
      * Liste des utilisateurs en attente de validation (actif = false).
      */
     @GetMapping("/pending")
-    @PreAuthorize("hasRole('PRESIDENT')")
+    @PreAuthorize("hasAuthority('user.list')")
     public List<UtilisateurDto> getPending() {
         return utilisateurService.findPending();
     }
@@ -40,7 +50,7 @@ public class UtilisateurController {
      * Active ou désactive un compte utilisateur.
      */
     @PatchMapping("/{id}/actif")
-    @PreAuthorize("hasRole('PRESIDENT')")
+    @PreAuthorize("hasAuthority('user.disable')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void setActif(@PathVariable Long id, @RequestParam boolean actif) {
         utilisateurService.setActif(id, actif);

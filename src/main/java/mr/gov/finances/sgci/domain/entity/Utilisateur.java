@@ -27,6 +27,14 @@ public class Utilisateur {
     @Column(nullable = false)
     private Role role;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "autorite_contractante_id")
+    private AutoriteContractante autoriteContractante;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "entreprise_id")
+    private Entreprise entreprise;
+
     private String nomComplet;
     private String email;
 

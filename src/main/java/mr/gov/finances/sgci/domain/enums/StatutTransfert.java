@@ -4,5 +4,6 @@ public enum StatutTransfert {
     DEMANDE,
     EN_COURS,
     VALIDE,
+    TRANSFERE,
     REJETE
 }

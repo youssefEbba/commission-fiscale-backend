@@ -3,6 +3,7 @@ package mr.gov.finances.sgci.domain.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import mr.gov.finances.sgci.domain.enums.MotifCloture;
+import mr.gov.finances.sgci.domain.enums.TypeOperationCloture;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -20,10 +21,15 @@ public class ClotureCredit {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private Instant dateProposition;
+
     private Instant dateCloture;
 
     @Enumerated(EnumType.STRING)
     private MotifCloture motif;
+
+    @Enumerated(EnumType.STRING)
+    private TypeOperationCloture typeOperation;
 
     @Column(precision = 19, scale = 4)
     private BigDecimal soldeRestant;

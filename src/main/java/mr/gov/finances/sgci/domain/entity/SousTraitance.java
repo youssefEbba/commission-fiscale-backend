@@ -34,6 +34,10 @@ public class SousTraitance {
     @Builder.Default
     private StatutSousTraitance statut = StatutSousTraitance.DEMANDE;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "sous_traitant_entreprise_id")
+    private Entreprise sousTraitantEntreprise;
+
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "certificat_credit_id")
     private CertificatCredit certificatCredit;
