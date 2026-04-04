@@ -1,0 +1,6 @@
+# Copier ce fichier vers application-local.properties (ignoré par Git) pour vos surcharges locales.
+# Exemples (décommenter / adapter) :
+#
+# spring.datasource.password=secret
+# spring.jpa.hibernate.ddl-auto=none
+# app.seed.demande-correction.enabled=false
