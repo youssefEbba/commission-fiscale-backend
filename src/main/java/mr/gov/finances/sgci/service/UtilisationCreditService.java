@@ -3,6 +3,7 @@ package mr.gov.finances.sgci.service;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
+import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationDouaniere;
 import mr.gov.finances.sgci.domain.entity.UtilisationTVAInterieure;
@@ -17,11 +18,14 @@ import mr.gov.finances.sgci.domain.enums.TypeAchat;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.EntrepriseRepository;
+import mr.gov.finances.sgci.repository.TvaDeductibleStockRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.web.dto.ApurerTVAInterieureRequest;
 import mr.gov.finances.sgci.web.dto.CreateUtilisationCreditRequest;
 import mr.gov.finances.sgci.web.dto.LiquiderUtilisationDouaneRequest;
+import mr.gov.finances.sgci.web.dto.TvaDeductibleStockDto;
 import mr.gov.finances.sgci.web.dto.UtilisationCreditDto;
 import mr.gov.finances.sgci.workflow.UtilisationCreditWorkflow;
 
@@ -50,21 +54,149 @@ public class UtilisationCreditService {
     private final NotificationService notificationService;
     private final DocumentUtilisationCreditService documentService;
     private final DocumentRequirementValidator requirementValidator;
+    private final TvaDeductibleStockRepository tvaStockRepository;
 
     @Transactional(readOnly = true)
     public List<UtilisationCreditDto> findAll() {
         return repository.findAll().stream().map(this::toDto).collect(Collectors.toList());
     }
 
+    /**
+     * Liste filtrée selon le rôle : titulaire voit toutes les demandes sur ses certificats (dont sous-traitants) ;
+     * sous-traitant voit uniquement ses propres demandes ; services (DGD, DGTCP, …) voient tout.
+     *
+     * @param demandeurSousTraitantOnly si {@code true} et rôle titulaire, ne garde que les demandes où
+     *                                  {@link UtilisationCreditDto#getDemandeurEstSousTraitant()} est vrai.
+     */
     @Transactional(readOnly = true)
-    public UtilisationCreditDto findById(Long id) {
-        return repository.findById(id).map(this::toDto).orElseThrow(
-                () -> new RuntimeException("Utilisation de crédit non trouvée: " + id));
+    public List<UtilisationCreditDto> findAllVisible(AuthenticatedUser auth, Boolean demandeurSousTraitantOnly) {
+        List<UtilisationCredit> rows = resolveVisibleEntities(auth);
+        List<UtilisationCreditDto> dtos = rows.stream().map(this::toDto).collect(Collectors.toList());
+        if (Boolean.TRUE.equals(demandeurSousTraitantOnly) && auth != null && auth.getRole() == Role.ENTREPRISE) {
+            return dtos.stream()
+                    .filter(d -> Boolean.TRUE.equals(d.getDemandeurEstSousTraitant()))
+                    .collect(Collectors.toList());
+        }
+        return dtos;
+    }
+
+    private List<UtilisationCredit> resolveVisibleEntities(AuthenticatedUser auth) {
+        if (auth == null || auth.getUserId() == null) {
+            return repository.findAll();
+        }
+        Utilisateur u = utilisateurRepository.findById(auth.getUserId())
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+        Role r = u.getRole();
+        if (r == Role.SOUS_TRAITANT) {
+            if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+                return List.of();
+            }
+            return repository.findByEntrepriseId(u.getEntreprise().getId());
+        }
+        if (r == Role.ENTREPRISE) {
+            if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+                return List.of();
+            }
+            return repository.findByCertificatCredit_Entreprise_Id(u.getEntreprise().getId());
+        }
+        return repository.findAll();
     }
 
     @Transactional(readOnly = true)
-    public List<UtilisationCreditDto> findByCertificatCreditId(Long certificatCreditId) {
-        return repository.findByCertificatCreditId(certificatCreditId).stream().map(this::toDto).collect(Collectors.toList());
+    public UtilisationCreditDto findById(Long id, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id).orElseThrow(
+                () -> new RuntimeException("Utilisation de crédit non trouvée: " + id));
+        if (user != null) {
+            assertCanViewUtilisation(user, entity);
+        }
+        return toDto(entity);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UtilisationCreditDto> findByCertificatCreditId(Long certificatCreditId, AuthenticatedUser user) {
+        CertificatCredit cert = certificatRepository.findById(certificatCreditId)
+                .orElseThrow(() -> new RuntimeException("Certificat de crédit non trouvé"));
+        if (user != null) {
+            assertCanAccessCertificatUtilisations(user, cert);
+        }
+        return repository.findByCertificatCreditId(certificatCreditId).stream()
+                .map(this::toDto)
+                .collect(Collectors.toList());
+    }
+
+    private void assertCanViewUtilisation(AuthenticatedUser auth, UtilisationCredit u) {
+        Utilisateur logged = utilisateurRepository.findById(auth.getUserId())
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+        Role r = logged.getRole();
+        if (r != Role.ENTREPRISE && r != Role.SOUS_TRAITANT) {
+            return;
+        }
+        if (logged.getEntreprise() == null || logged.getEntreprise().getId() == null) {
+            throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
+        }
+        Long eid = logged.getEntreprise().getId();
+        CertificatCredit cert = u.getCertificatCredit();
+        Long titId = cert != null && cert.getEntreprise() != null ? cert.getEntreprise().getId() : null;
+        if (r == Role.SOUS_TRAITANT) {
+            if (u.getEntreprise() != null && u.getEntreprise().getId().equals(eid)) {
+                return;
+            }
+            throw new RuntimeException("Accès refusé: utilisation hors périmètre");
+        }
+        if (titId != null && titId.equals(eid)) {
+            return;
+        }
+        if (u.getEntreprise() != null && u.getEntreprise().getId().equals(eid)) {
+            return;
+        }
+        throw new RuntimeException("Accès refusé: utilisation hors périmètre");
+    }
+
+    private void assertCanAccessCertificatUtilisations(AuthenticatedUser auth, CertificatCredit cert) {
+        Utilisateur logged = utilisateurRepository.findById(auth.getUserId())
+                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+        Role r = logged.getRole();
+        if (r != Role.ENTREPRISE && r != Role.SOUS_TRAITANT) {
+            return;
+        }
+        if (logged.getEntreprise() == null || logged.getEntreprise().getId() == null) {
+            throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
+        }
+        Long eid = logged.getEntreprise().getId();
+        Long titId = cert.getEntreprise() != null ? cert.getEntreprise().getId() : null;
+        if (r == Role.ENTREPRISE && titId != null && titId.equals(eid)) {
+            return;
+        }
+        if (r == Role.SOUS_TRAITANT) {
+            sousTraitanceService.assertSousTraitantEntrepriseAuthorizedOnCertificat(cert.getId(), eid);
+            return;
+        }
+        throw new RuntimeException("Accès refusé: certificat hors périmètre");
+    }
+
+    @Transactional(readOnly = true)
+    public List<TvaDeductibleStockDto> findTvaStockByCertificat(Long certificatCreditId) {
+        return tvaStockRepository.findByCertificatCreditIdOrderByDateCreationAsc(certificatCreditId)
+                .stream()
+                .map(this::toStockDto)
+                .collect(Collectors.toList());
+    }
+
+    private TvaDeductibleStockDto toStockDto(mr.gov.finances.sgci.domain.entity.TvaDeductibleStock s) {
+        BigDecimal initial = s.getMontantInitial() != null ? s.getMontantInitial() : BigDecimal.ZERO;
+        BigDecimal restant = s.getMontantRestant() != null ? s.getMontantRestant() : BigDecimal.ZERO;
+        String numeroDeclaration = s.getUtilisationDouane() != null
+                ? s.getUtilisationDouane().getNumeroDeclaration() : null;
+        return TvaDeductibleStockDto.builder()
+                .id(s.getId())
+                .utilisationDouaneId(s.getUtilisationDouane() != null ? s.getUtilisationDouane().getId() : null)
+                .numeroDeclaration(numeroDeclaration)
+                .montantInitial(initial)
+                .montantRestant(restant)
+                .montantConsomme(initial.subtract(restant))
+                .dateCreation(s.getDateCreation())
+                .epuise(restant.compareTo(BigDecimal.ZERO) == 0)
+                .build();
     }
 
     @Transactional
@@ -84,10 +216,10 @@ public class UtilisationCreditService {
 
         // Contrôle d'accès création
         if (user != null && user.getRole() != null) {
-            mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
+            Utilisateur u = utilisateurRepository.findById(user.getUserId())
                     .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
 
-            if (u.getRole() == Role.ENTREPRISE) {
+            if (u.getRole() == Role.ENTREPRISE || u.getRole() == Role.SOUS_TRAITANT) {
                 if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
                     throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
                 }
@@ -141,7 +273,153 @@ public class UtilisationCreditService {
         entity = repository.save(entity);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.CREATE, "UtilisationCredit", String.valueOf(entity.getId()), result);
+        notifyActorsOnCreation(entity);
         return result;
+    }
+
+    private void notifyActorsOnCreation(UtilisationCredit utilisation) {
+        if (utilisation == null || utilisation.getType() == null) {
+            return;
+        }
+        List<Role> targetRoles;
+        if (utilisation.getType() == TypeUtilisation.DOUANIER) {
+            targetRoles = List.of(Role.DGD);
+        } else {
+            targetRoles = List.of(Role.DGTCP);
+        }
+        String typeName = utilisation.getType() == TypeUtilisation.DOUANIER ? "douanière" : "TVA intérieure";
+        String message = "Nouvelle demande d'utilisation " + typeName + " à traiter";
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("type", utilisation.getType().name());
+        payload.put("statut", StatutUtilisation.DEMANDEE.name());
+        payload.put("utilisationId", utilisation.getId());
+
+        for (Role targetRole : targetRoles) {
+            List<Long> userIds = utilisateurRepository.findByRole(targetRole)
+                    .stream()
+                    .map(mr.gov.finances.sgci.domain.entity.Utilisateur::getId)
+                    .collect(Collectors.toList());
+            if (!userIds.isEmpty()) {
+                notificationService.notifyUsers(userIds, NotificationType.UTILISATION_STATUT_CHANGE,
+                        "UtilisationCredit", utilisation.getId(), message, payload);
+            }
+        }
+    }
+
+    @Transactional
+    public UtilisationCreditDto apurerTVAInterieure(Long id, ApurerTVAInterieureRequest request, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id).orElseThrow(
+                () -> new RuntimeException("Utilisation de crédit non trouvée: " + id));
+        if (!(entity instanceof UtilisationTVAInterieure t)) {
+            throw new RuntimeException("Cette utilisation n'est pas de type TVA intérieure");
+        }
+
+        workflow.validateTransition(entity.getStatut(), StatutUtilisation.APUREE);
+        assertActorCanTransition(entity, StatutUtilisation.APUREE, user);
+        assertRequiredDocumentsPresent(entity);
+
+        BigDecimal tvaCollectee = t.getMontantTVA() != null ? t.getMontantTVA() : BigDecimal.ZERO;
+        if (tvaCollectee.compareTo(BigDecimal.ZERO) < 0) {
+            throw new RuntimeException("Montant TVA collectée invalide (doit être >= 0)");
+        }
+
+        CertificatCredit certificat = t.getCertificatCredit();
+        if (certificat == null) {
+            throw new RuntimeException("Certificat manquant");
+        }
+
+        // Calcul FIFO du stock disponible
+        BigDecimal tvaDeductibleDispo = tvaStockRepository
+                .findByCertificatCreditIdOrderByDateCreationAsc(certificat.getId())
+                .stream()
+                .map(s -> s.getMontantRestant() != null ? s.getMontantRestant() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Si non fourni: consommer tout le stock disponible (règle FIFO intégrale)
+        BigDecimal tvaDeductible;
+        if (request == null || request.getTvaDeductibleUtilisee() == null) {
+            tvaDeductible = tvaDeductibleDispo;
+        } else {
+            tvaDeductible = request.getTvaDeductibleUtilisee();
+            if (tvaDeductible.compareTo(BigDecimal.ZERO) < 0) {
+                throw new RuntimeException("tvaDeductibleUtilisee doit être >= 0");
+            }
+            if (tvaDeductible.compareTo(tvaDeductibleDispo) > 0) {
+                throw new RuntimeException("TVA déductible insuffisante (disponible=" + tvaDeductibleDispo
+                        + ", demandée=" + tvaDeductible + ")");
+            }
+        }
+
+        BigDecimal soldeAvant = certificat.getSoldeTVA() != null ? certificat.getSoldeTVA() : BigDecimal.ZERO;
+
+        consumeTvaDeductible(certificat.getId(), tvaDeductible);
+
+        BigDecimal tvaNette = tvaCollectee.subtract(tvaDeductible);
+        t.setTvaDeductibleUtilisee(tvaDeductible);
+        t.setTvaNette(tvaNette);
+        t.setSoldeTVAAvant(soldeAvant);
+
+        BigDecimal creditUtilise = BigDecimal.ZERO;
+        BigDecimal paiementEntreprise = BigDecimal.ZERO;
+        BigDecimal report = BigDecimal.ZERO;
+        BigDecimal soldeApres = soldeAvant;
+
+        int cmp = tvaNette.compareTo(BigDecimal.ZERO);
+        if (cmp == 0) {
+            // cas 1: neutre
+        } else if (cmp > 0) {
+            // cas 2
+            if (soldeAvant.compareTo(tvaNette) >= 0) {
+                creditUtilise = tvaNette;
+                soldeApres = soldeAvant.subtract(tvaNette);
+            } else {
+                creditUtilise = soldeAvant;
+                paiementEntreprise = tvaNette.subtract(soldeAvant);
+                soldeApres = BigDecimal.ZERO;
+            }
+        } else {
+            // cas 3
+            report = tvaNette.abs();
+            soldeApres = soldeAvant.add(report);
+        }
+
+        certificat.setSoldeTVA(soldeApres);
+        certificatRepository.save(certificat);
+
+        t.setCreditInterieurUtilise(creditUtilise);
+        t.setPaiementEntreprise(paiementEntreprise);
+        t.setReportANouveau(report);
+        t.setSoldeTVAApres(soldeApres);
+
+        t.setStatut(StatutUtilisation.APUREE);
+        t.setDateLiquidation(Instant.now());
+
+        entity = repository.save(t);
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
+        notifyUtilisation(entity, StatutUtilisation.APUREE);
+        return result;
+    }
+
+    private void consumeTvaDeductible(Long certificatCreditId, BigDecimal amount) {
+        BigDecimal remaining = amount;
+        List<mr.gov.finances.sgci.domain.entity.TvaDeductibleStock> stocks = tvaStockRepository.findByCertificatCreditIdOrderByDateCreationAsc(certificatCreditId);
+        for (mr.gov.finances.sgci.domain.entity.TvaDeductibleStock s : stocks) {
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+                break;
+            }
+            BigDecimal rest = s.getMontantRestant() != null ? s.getMontantRestant() : BigDecimal.ZERO;
+            if (rest.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            BigDecimal take = rest.min(remaining);
+            s.setMontantRestant(rest.subtract(take));
+            remaining = remaining.subtract(take);
+            tvaStockRepository.save(s);
+        }
+        if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+            throw new RuntimeException("Consommation TVA déductible impossible (reste=" + remaining + ")");
+        }
     }
 
     private void assertRequiredDocumentsPresent(UtilisationCredit utilisation) {
@@ -216,9 +494,28 @@ public class UtilisationCreditService {
         d.setMontantTVA(tva);
         d.setMontant(total);
 
+        CertificatCredit certificat = d.getCertificatCredit();
+        BigDecimal soldeCordonAvant = certificat.getSoldeCordon() != null ? certificat.getSoldeCordon() : BigDecimal.ZERO;
+        d.setSoldeCordonAvant(soldeCordonAvant);
+
         d.setStatut(StatutUtilisation.LIQUIDEE);
         d.setDateLiquidation(Instant.now());
         debitSolde(d);
+
+        BigDecimal soldeCordonApres = d.getCertificatCredit().getSoldeCordon() != null
+                ? d.getCertificatCredit().getSoldeCordon() : BigDecimal.ZERO;
+        d.setSoldeCordonApres(soldeCordonApres);
+
+        BigDecimal tvaImport = d.getMontantTVA() != null ? d.getMontantTVA() : BigDecimal.ZERO;
+        if (tvaImport.compareTo(BigDecimal.ZERO) > 0) {
+            tvaStockRepository.save(mr.gov.finances.sgci.domain.entity.TvaDeductibleStock.builder()
+                    .certificatCredit(d.getCertificatCredit())
+                    .utilisationDouane(d)
+                    .montantInitial(tvaImport)
+                    .montantRestant(tvaImport)
+                    .dateCreation(Instant.now())
+                    .build());
+        }
 
         entity = repository.save(d);
         UtilisationCreditDto result = toDto(entity);
@@ -236,7 +533,10 @@ public class UtilisationCreditService {
         assertActorCanTransition(entity, statut, user);
 
         if (entity.getType() == TypeUtilisation.DOUANIER && statut == StatutUtilisation.LIQUIDEE) {
-            throw new RuntimeException("Liquidation Douane: veuillez utiliser l'endpoint dédié avec saisie des montants d'imputation");
+            throw new RuntimeException("Liquidation Douane: veuillez utiliser POST /{id}/liquidation-douane avec les montants d'imputation");
+        }
+        if (entity.getType() == TypeUtilisation.TVA_INTERIEURE && statut == StatutUtilisation.APUREE) {
+            throw new RuntimeException("Apurement TVA: veuillez utiliser POST /{id}/apurement-tva (calcul FIFO automatique)");
         }
 
         if (statut == StatutUtilisation.EN_VERIFICATION) {
@@ -244,13 +544,6 @@ public class UtilisationCreditService {
         }
 
         entity.setStatut(statut);
-
-        if ((entity.getType() == TypeUtilisation.DOUANIER && statut == StatutUtilisation.LIQUIDEE)
-                || (entity.getType() == TypeUtilisation.TVA_INTERIEURE && statut == StatutUtilisation.APUREE)) {
-            entity.setDateLiquidation(Instant.now());
-            debitSolde(entity);
-        }
-
         entity = repository.save(entity);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
@@ -282,7 +575,9 @@ public class UtilisationCreditService {
 
         // Verrouillage métier par type (TDR)
         if (utilisation.getType() == TypeUtilisation.DOUANIER) {
-            if (to != StatutUtilisation.EN_VERIFICATION
+            if (to != StatutUtilisation.INCOMPLETE
+                    && to != StatutUtilisation.A_RECONTROLER
+                    && to != StatutUtilisation.EN_VERIFICATION
                     && to != StatutUtilisation.VISE
                     && to != StatutUtilisation.LIQUIDEE
                     && to != StatutUtilisation.REJETEE) {
@@ -290,12 +585,18 @@ public class UtilisationCreditService {
             }
         }
         if (utilisation.getType() == TypeUtilisation.TVA_INTERIEURE) {
-            if (to != StatutUtilisation.EN_VERIFICATION
+            if (to != StatutUtilisation.INCOMPLETE
+                    && to != StatutUtilisation.A_RECONTROLER
+                    && to != StatutUtilisation.EN_VERIFICATION
                     && to != StatutUtilisation.VALIDEE
                     && to != StatutUtilisation.APUREE
                     && to != StatutUtilisation.REJETEE) {
                 throw new RuntimeException("Transition non autorisée (TVA intérieure): vers " + to);
             }
+        }
+
+        if (to == StatutUtilisation.INCOMPLETE || to == StatutUtilisation.A_RECONTROLER) {
+            throw new RuntimeException("Transition " + to + " est gérée automatiquement par le système (rejet temporaire / résolution)");
         }
 
         if (utilisation.getType() == TypeUtilisation.DOUANIER) {
@@ -356,6 +657,12 @@ public class UtilisationCreditService {
     }
 
     private UtilisationCreditDto toDto(UtilisationCredit u) {
+        CertificatCredit cert = u.getCertificatCredit();
+        Long titId = cert != null && cert.getEntreprise() != null ? cert.getEntreprise().getId() : null;
+        String titRs = cert != null && cert.getEntreprise() != null ? cert.getEntreprise().getRaisonSociale() : null;
+        Long demandeurId = u.getEntreprise() != null ? u.getEntreprise().getId() : null;
+        boolean demandeurSt = titId != null && demandeurId != null && !titId.equals(demandeurId);
+
         UtilisationCreditDto.UtilisationCreditDtoBuilder b = UtilisationCreditDto.builder()
                 .id(u.getId())
                 .type(u.getType())
@@ -363,8 +670,11 @@ public class UtilisationCreditService {
                 .montant(u.getMontant())
                 .statut(u.getStatut())
                 .dateLiquidation(u.getDateLiquidation())
-                .certificatCreditId(u.getCertificatCredit() != null ? u.getCertificatCredit().getId() : null)
-                .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null);
+                .certificatCreditId(cert != null ? cert.getId() : null)
+                .entrepriseId(demandeurId)
+                .certificatTitulaireEntrepriseId(titId)
+                .certificatTitulaireRaisonSociale(titRs)
+                .demandeurEstSousTraitant(demandeurSt);
 
         if (u instanceof UtilisationDouaniere d) {
             b.numeroDeclaration(d.getNumeroDeclaration())
@@ -372,13 +682,22 @@ public class UtilisationCreditService {
                     .dateDeclaration(d.getDateDeclaration())
                     .montantDroits(d.getMontantDroits())
                     .montantTVADouane(d.getMontantTVA())
-                    .enregistreeSYDONIA(d.getEnregistreeSYDONIA());
+                    .enregistreeSYDONIA(d.getEnregistreeSYDONIA())
+                    .soldeCordonAvant(d.getSoldeCordonAvant())
+                    .soldeCordonApres(d.getSoldeCordonApres());
         } else if (u instanceof UtilisationTVAInterieure t) {
             b.typeAchat(t.getTypeAchat())
                     .numeroFacture(t.getNumeroFacture())
                     .dateFacture(t.getDateFacture())
                     .montantTVAInterieure(t.getMontantTVA())
-                    .numeroDecompte(t.getNumeroDecompte());
+                    .numeroDecompte(t.getNumeroDecompte())
+                    .tvaDeductibleUtilisee(t.getTvaDeductibleUtilisee())
+                    .tvaNette(t.getTvaNette())
+                    .creditInterieurUtilise(t.getCreditInterieurUtilise())
+                    .paiementEntreprise(t.getPaiementEntreprise())
+                    .reportANouveau(t.getReportANouveau())
+                    .soldeTVAAvant(t.getSoldeTVAAvant())
+                    .soldeTVAApres(t.getSoldeTVAApres());
         }
 
         return b.build();

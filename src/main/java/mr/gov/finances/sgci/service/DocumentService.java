@@ -1,13 +1,20 @@
 package mr.gov.finances.sgci.service;
 
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.domain.entity.DecisionCorrection;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.Document;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
+import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
+import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
+import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
+import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.repository.DecisionCorrectionRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.DocumentRepository;
+import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.web.dto.DocumentDto;
 
 import org.springframework.stereotype.Service;
@@ -25,12 +32,14 @@ public class DocumentService {
 
     private final DocumentRepository documentRepository;
     private final DemandeCorrectionRepository demandeRepository;
+    private final DecisionCorrectionRepository decisionCorrectionRepository;
     private final MinioService minioService;
     private final AuditService auditService;
     private final DocumentRequirementValidator requirementValidator;
+    private final RejetTempResponseService rejetTempResponseService;
 
     @Transactional
-    public DocumentDto upload(Long demandeCorrectionId, TypeDocument type, MultipartFile file) throws IOException {
+    public DocumentDto upload(Long demandeCorrectionId, TypeDocument type, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
             throw new RuntimeException("Le fichier est vide");
         }
@@ -43,8 +52,19 @@ public class DocumentService {
         Document previous = documentRepository.findByDemandeCorrectionIdAndTypeAndActifTrue(demandeCorrectionId, type)
                 .orElse(null);
         if (previous != null) {
+            assertReplacementAllowed(demande, type, user);
             previous.setActif(false);
             nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
+        }
+
+        boolean askedByOpenRejetTemp = decisionCorrectionRepository.findByDemandeCorrectionIdAndDecisionAndRejetTempStatus(
+                        demande.getId(),
+                        DecisionCorrectionType.REJET_TEMP,
+                        RejetTempStatus.OUVERT
+                ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(type));
+
+        if (askedByOpenRejetTemp && (message == null || message.isBlank())) {
+            throw new RuntimeException("Le message de réponse est obligatoire");
         }
 
         String originalFilename = file.getOriginalFilename();
@@ -68,7 +88,39 @@ public class DocumentService {
         doc = documentRepository.save(doc);
         DocumentDto result = toDto(doc);
         auditService.log(AuditAction.CREATE, "Document", String.valueOf(doc.getId()), result);
+
+        if (askedByOpenRejetTemp) {
+            rejetTempResponseService.recordCorrectionUploadResponse(demande.getId(), type, message, doc, user);
+        }
+
         return result;
+    }
+
+    private void assertReplacementAllowed(DemandeCorrection demande, TypeDocument type, AuthenticatedUser user) {
+        if (demande == null || demande.getId() == null) {
+            throw new RuntimeException("Demande de correction invalide");
+        }
+
+        if (user == null || user.getRole() == null) {
+            throw new RuntimeException("Utilisateur non authentifié");
+        }
+        if (user.getRole() != Role.AUTORITE_CONTRACTANTE) {
+            throw new RuntimeException("Remplacement interdit: réservé à l'Autorité Contractante");
+        }
+
+        if (demande.getStatut() != StatutDemande.INCOMPLETE) {
+            throw new RuntimeException("Remplacement interdit: la demande n'est pas en statut INCOMPLETE");
+        }
+
+        boolean asked = decisionCorrectionRepository.findByDemandeCorrectionId(demande.getId()).stream()
+                .anyMatch(d -> d.getDecision() == DecisionCorrectionType.REJET_TEMP
+                        && d.getRejetTempStatus() == RejetTempStatus.OUVERT
+                        && d.getDocumentsDemandes() != null
+                        && d.getDocumentsDemandes().contains(type));
+
+        if (!asked) {
+            throw new RuntimeException("Remplacement interdit: aucun rejet temporaire ouvert ne demande ce document");
+        }
     }
 
     @Transactional(readOnly = true)

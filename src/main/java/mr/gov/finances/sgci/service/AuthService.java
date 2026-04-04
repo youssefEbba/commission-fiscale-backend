@@ -19,6 +19,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -85,6 +87,23 @@ public class AuthService {
                     .build();
             entreprise = entrepriseRepository.save(entreprise);
         }
+
+        if (autorite == null && needsAutoriteContractante(request.getRole())) {
+            if (request.getAcNom() != null && !request.getAcNom().isBlank()) {
+                String code = resolveNewAutoriteCode(request);
+                String contact = buildAutoriteContactFromRegistration(request);
+                autorite = autoriteContractanteRepository.save(AutoriteContractante.builder()
+                        .nom(request.getAcNom().trim())
+                        .code(code)
+                        .contact(contact)
+                        .build());
+            } else {
+                throw new RuntimeException(
+                        "Pour un compte Autorité contractante, indiquez soit une autorité existante (autoriteContractanteId), "
+                                + "soit le nom de votre autorité (formulaire d'inscription).");
+            }
+        }
+
         Utilisateur u = Utilisateur.builder()
                 .username(request.getUsername())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
@@ -116,5 +135,41 @@ public class AuthService {
                 .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null)
                 .permissions(permissionService.findPermissionCodesByRole(u.getRole()).stream().toList())
                 .build();
+    }
+
+    private static boolean needsAutoriteContractante(Role role) {
+        return role == Role.AUTORITE_CONTRACTANTE
+                || role == Role.AUTORITE_UPM
+                || role == Role.AUTORITE_UEP;
+    }
+
+    private String resolveNewAutoriteCode(RegisterRequest request) {
+        if (request.getAcSigle() != null && !request.getAcSigle().isBlank()) {
+            String c = request.getAcSigle().trim().toUpperCase().replaceAll("[^A-Z0-9_-]", "");
+            if (!c.isEmpty() && !autoriteContractanteRepository.existsByCode(c)) {
+                return c;
+            }
+        }
+        String base = "AC_" + request.getUsername().replaceAll("[^a-zA-Z0-9]", "_").toUpperCase();
+        String code = base;
+        int i = 0;
+        while (autoriteContractanteRepository.existsByCode(code)) {
+            code = base + "_" + (++i);
+        }
+        return code;
+    }
+
+    private static String buildAutoriteContactFromRegistration(RegisterRequest request) {
+        List<String> parts = new ArrayList<>();
+        if (request.getAcAdresse() != null && !request.getAcAdresse().isBlank()) {
+            parts.add(request.getAcAdresse().trim());
+        }
+        if (request.getAcTelephone() != null && !request.getAcTelephone().isBlank()) {
+            parts.add("Tél: " + request.getAcTelephone().trim());
+        }
+        if (request.getAcEmail() != null && !request.getAcEmail().isBlank()) {
+            parts.add(request.getAcEmail().trim());
+        }
+        return parts.isEmpty() ? null : String.join(" | ", parts);
     }
 }

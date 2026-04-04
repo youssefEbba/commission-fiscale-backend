@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -67,7 +68,7 @@ public class CertificatCreditService {
 
     @Transactional(readOnly = true)
     public List<CertificatCreditDto> findByEntreprise(Long entrepriseId) {
-        return repository.findByEntrepriseId(entrepriseId).stream().map(this::toDto).collect(Collectors.toList());
+        return repository.findByEntrepriseIdOrderByDateEmissionDescIdDesc(entrepriseId).stream().map(this::toDto).collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -79,9 +80,9 @@ public class CertificatCreditService {
     private List<CertificatCredit> resolveCertificatList(AuthenticatedUser user, StatutCertificat statut) {
         if (user == null || user.getUserId() == null) {
             if (statut == null) {
-                return repository.findAll();
+                return repository.findAllByOrderByDateEmissionDescIdDesc();
             }
-            return repository.findByStatut(statut);
+            return repository.findByStatutOrderByDateEmissionDescIdDesc(statut);
         }
 
         mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
@@ -96,11 +97,16 @@ public class CertificatCreditService {
             base = repository.findAllByAutoriteContractanteId(u.getAutoriteContractante().getId());
         } else if (role == Role.AUTORITE_UPM || role == Role.AUTORITE_UEP) {
             base = repository.findAllByDelegueId(u.getId());
+        } else if (role == Role.ENTREPRISE) {
+            if (u.getEntreprise() == null) {
+                throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
+            }
+            base = repository.findByEntrepriseIdOrderByDateEmissionDescIdDesc(u.getEntreprise().getId());
         } else {
             if (statut == null) {
-                return repository.findAll();
+                return repository.findAllByOrderByDateEmissionDescIdDesc();
             }
-            return repository.findByStatut(statut);
+            return repository.findByStatutOrderByDateEmissionDescIdDesc(statut);
         }
 
         if (statut == null) {
@@ -164,6 +170,14 @@ public class CertificatCreditService {
 
         assertMiseEnPlaceTrigger(lettreCorrection, demandeCorrection);
 
+        // Vérifier qu'aucun certificat actif n'existe déjà pour cette demande
+        if (demandeCorrection != null && demandeCorrection.getId() != null) {
+            Optional<CertificatCredit> existingCertificat = repository.findFirstByDemandeCorrectionId(demandeCorrection.getId());
+            if (existingCertificat.isPresent() && existingCertificat.get().getStatut() != StatutCertificat.ANNULE) {
+                throw new RuntimeException("Un certificat de crédit actif existe déjà pour cette demande de correction (statut: " + existingCertificat.get().getStatut() + ")");
+            }
+        }
+
         if (demandeCorrection != null && demandeCorrection.getEntreprise() != null
                 && demandeCorrection.getEntreprise().getId() != null
                 && !demandeCorrection.getEntreprise().getId().equals(entreprise.getId())) {
@@ -181,7 +195,7 @@ public class CertificatCreditService {
                 .montantTVAInterieure(request.getMontantTVAInterieure())
                 .soldeCordon(soldeCordon)
                 .soldeTVA(soldeTVA)
-                .statut(StatutCertificat.DEMANDE)
+                .statut(StatutCertificat.EN_CONTROLE)
                 .entreprise(entreprise)
                 .lettreCorrection(lettreCorrection)
                 .demandeCorrection(demandeCorrection)
@@ -205,13 +219,6 @@ public class CertificatCreditService {
         workflow.validateTransition(entity.getStatut(), statut);
 
         assertActorCanTransition(fromStatut, statut, user);
-
-        if (statut == StatutCertificat.EN_VERIFICATION_DGI || statut == StatutCertificat.OUVERT) {
-            requirementValidator.assertRequiredDocumentsPresent(
-                    ProcessusDocument.MISE_EN_PLACE_CI,
-                    documentService.findActiveDocumentTypes(entity.getId())
-            );
-        }
 
         if (statut == StatutCertificat.OUVERT && fromStatut != StatutCertificat.OUVERT) {
             assertMontantsRenseignes(entity);
@@ -269,27 +276,44 @@ public class CertificatCreditService {
         }
         Role role = user.getRole();
 
-        if (to == StatutCertificat.EN_VERIFICATION_DGI && role != Role.DGI) {
-            throw new RuntimeException("Seul DGI peut passer le certificat en vérification");
+        if (to == StatutCertificat.INCOMPLETE || to == StatutCertificat.A_RECONTROLER) {
+            throw new RuntimeException("Transition manuelle vers " + to
+                    + " interdite : ce statut est géré automatiquement par le système (via rejet temporaire / résolution de documents).");
         }
-        if (to == StatutCertificat.EN_VALIDATION_PRESIDENT && role != Role.PRESIDENT) {
-            throw new RuntimeException("Seul le Président peut valider cette étape");
+
+        if (to == StatutCertificat.EN_VALIDATION_PRESIDENT) {
+            throw new RuntimeException("Transition manuelle vers EN_VALIDATION_PRESIDENT interdite : "
+                    + "ce statut est attribué automatiquement lorsque les 3 visas (DGI, DGD, DGTCP) sont validés.");
         }
+
+        if (to == StatutCertificat.EN_CONTROLE) {
+            if (role != Role.DGI && role != Role.DGD && role != Role.DGTCP) {
+                throw new RuntimeException("Seuls DGI, DGD ou DGTCP peuvent remettre le certificat en contrôle");
+            }
+        }
+
         if (to == StatutCertificat.VALIDE_PRESIDENT && role != Role.PRESIDENT) {
             throw new RuntimeException("Seul le Président peut valider le certificat");
         }
-        if (to == StatutCertificat.EN_OUVERTURE_DGTCP) {
-            boolean allowed = role == Role.DGTCP || (role == Role.DGI && from == StatutCertificat.EN_VERIFICATION_DGI);
-            if (!allowed) {
-                throw new RuntimeException("Seul DGTCP (ou DGI après vérification) peut passer en ouverture DGTCP");
-            }
+
+        if (to == StatutCertificat.EN_OUVERTURE_DGTCP && role != Role.DGTCP) {
+            throw new RuntimeException("Seul DGTCP peut passer en ouverture");
         }
-        if (to == StatutCertificat.OUVERT && role != Role.DGTCP) {
-            throw new RuntimeException("Seul DGTCP peut ouvrir le crédit");
+
+        if (to == StatutCertificat.OUVERT) {
+            boolean byPresident = role == Role.PRESIDENT
+                    && (from == StatutCertificat.VALIDE_PRESIDENT || from == StatutCertificat.EN_VALIDATION_PRESIDENT);
+            boolean byDgtcp = role == Role.DGTCP
+                    && (from == StatutCertificat.EN_OUVERTURE_DGTCP);
+            if (!byPresident && !byDgtcp) {
+                throw new RuntimeException(
+                        "Seul le Président peut ouvrir le crédit après son visa, ou DGTCP après la phase EN_OUVERTURE_DGTCP");
+            }
         }
 
         if (to == StatutCertificat.ANNULE) {
-            if (role != Role.AUTORITE_CONTRACTANTE && role != Role.DGI && role != Role.PRESIDENT && role != Role.DGTCP) {
+            if (role != Role.AUTORITE_CONTRACTANTE && role != Role.AUTORITE_UPM
+                    && role != Role.AUTORITE_UEP && role != Role.PRESIDENT) {
                 throw new RuntimeException("Rôle non autorisé à annuler le certificat");
             }
         }

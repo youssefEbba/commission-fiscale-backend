@@ -36,6 +36,15 @@ public class DossierGedService {
     private final SousTraitanceRepository sousTraitanceRepository;
     private final DocumentSousTraitanceRepository documentSousTraitanceRepository;
 
+    private final ClotureCreditRepository clotureCreditRepository;
+    private final DocumentClotureCreditRepository documentClotureCreditRepository;
+    private final AvenantRepository avenantRepository;
+    private final DocumentAvenantRepository documentAvenantRepository;
+    private final DocumentConventionRepository documentConventionRepository;
+    private final DocumentMarcheRepository documentMarcheRepository;
+    private final DocumentProjetRepository documentProjetRepository;
+    private final ReferentielProjetRepository referentielProjetRepository;
+
     private final UtilisateurRepository utilisateurRepository;
 
     private static String generateReference() {
@@ -167,23 +176,37 @@ public class DossierGedService {
     private List<DossierEtapeGed> buildEtapes(DossierGed dossier) {
         List<DossierEtapeGed> etapes = new ArrayList<>();
 
-        etapes.add(step("DEMANDE_CORRECTION", "Demande de correction", documentsCorrection(dossier)));
+        etapes.add(step("DEMANDE_CORRECTION", "Demande de correction",
+                mergeByDateDesc(documentsCorrection(dossier), documentsMarche(dossier))));
         etapes.add(step("TRAITEMENT_CORRECTION", "Traitement de la correction", List.of()));
         etapes.add(step("RETOUR_CORRECTION", "Retour de la correction", List.of()));
 
-        etapes.add(step("DEMANDE_CREDIT_IMPOT", "Demande de crédit d'impôt", List.of()));
+        etapes.add(step("DEMANDE_CREDIT_IMPOT", "Demande de crédit d'impôt",
+                mergeByDateDesc(documentsConvention(dossier), documentsReferentielProjets(dossier))));
         etapes.add(step("EMISSION_CERTIFICAT", "Émission du certificat de crédit", documentsCertificat(dossier)));
 
         etapes.add(step("UTILISATION_DOUANE", "Utilisation du crédit – Douane", documentsUtilisation(dossier, TypeUtilisation.DOUANIER)));
         etapes.add(step("UTILISATION_TVA", "Utilisation du crédit – TVA", documentsUtilisation(dossier, TypeUtilisation.TVA_INTERIEURE)));
 
-        etapes.add(step("MODIFICATION_AVENANT", "Modification / Avenant / Note", List.of()));
+        etapes.add(step("MODIFICATION_AVENANT", "Modification / Avenant / Note", documentsAvenants(dossier)));
 
-        etapes.add(step("TRANSFERT_CREDIT", "Transfert du crédit", documentsTransfert(dossier)));
+        etapes.add(step("TRANSFERT_CREDIT", "Transfert du crédit", documentsTransferts(dossier)));
         etapes.add(step("SOUS_TRAITANCE", "Sous-traitance", documentsSousTraitance(dossier)));
-        etapes.add(step("CLOTURE_CREDIT", "Clôture du crédit", List.of()));
+        etapes.add(step("CLOTURE_CREDIT", "Clôture du crédit", documentsCloture(dossier)));
 
         return etapes;
+    }
+
+    private List<DocumentDto> mergeByDateDesc(List<DocumentDto> first, List<DocumentDto> second) {
+        List<DocumentDto> out = new ArrayList<>();
+        if (first != null) {
+            out.addAll(first);
+        }
+        if (second != null) {
+            out.addAll(second);
+        }
+        out.sort(Comparator.comparing(DocumentDto::getDateUpload, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        return out;
     }
 
     private DossierEtapeGed step(String code, String label, List<DocumentDto> documents) {
@@ -240,19 +263,22 @@ public class DossierGedService {
         return docs;
     }
 
-    private List<DocumentDto> documentsTransfert(DossierGed dossier) {
+    private List<DocumentDto> documentsTransferts(DossierGed dossier) {
         if (dossier == null || dossier.getCertificatCredit() == null || dossier.getCertificatCredit().getId() == null) {
             return List.of();
         }
         Long certificatId = dossier.getCertificatCredit().getId();
-        TransfertCredit transfert = transfertCreditRepository.findByCertificatCreditId(certificatId).stream().findFirst().orElse(null);
-        if (transfert == null || transfert.getId() == null) {
-            return List.of();
+        List<DocumentDto> docs = new ArrayList<>();
+        for (TransfertCredit transfert : transfertCreditRepository.findByCertificatCreditId(certificatId)) {
+            if (transfert == null || transfert.getId() == null) {
+                continue;
+            }
+            documentTransfertCreditRepository.findByTransfertCreditId(transfert.getId()).stream()
+                    .map(this::toDocumentDto)
+                    .forEach(docs::add);
         }
-        return documentTransfertCreditRepository.findByTransfertCreditId(transfert.getId()).stream()
-                .map(this::toDocumentDto)
-                .sorted(Comparator.comparing(DocumentDto::getDateUpload, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
-                .collect(Collectors.toList());
+        docs.sort(Comparator.comparing(DocumentDto::getDateUpload, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        return docs;
     }
 
     private List<DocumentDto> documentsSousTraitance(DossierGed dossier) {
@@ -323,6 +349,145 @@ public class DossierGedService {
     }
 
     private DocumentDto toDocumentDto(DocumentSousTraitance d) {
+        return DocumentDto.builder()
+                .id(d.getId())
+                .type(d.getType())
+                .nomFichier(d.getNomFichier())
+                .chemin(d.getChemin())
+                .dateUpload(d.getDateUpload())
+                .taille(d.getTaille())
+                .version(d.getVersion())
+                .actif(d.getActif())
+                .build();
+    }
+
+    private List<DocumentDto> documentsMarche(DossierGed dossier) {
+        if (dossier == null || dossier.getDemandeCorrection() == null || dossier.getDemandeCorrection().getMarche() == null
+                || dossier.getDemandeCorrection().getMarche().getId() == null) {
+            return List.of();
+        }
+        Long marcheId = dossier.getDemandeCorrection().getMarche().getId();
+        return documentMarcheRepository.findByMarcheId(marcheId).stream()
+                .map(this::toDocumentDto)
+                .sorted(Comparator.comparing(DocumentDto::getDateUpload, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+                .collect(Collectors.toList());
+    }
+
+    private List<DocumentDto> documentsConvention(DossierGed dossier) {
+        if (dossier == null || dossier.getDemandeCorrection() == null || dossier.getDemandeCorrection().getConvention() == null
+                || dossier.getDemandeCorrection().getConvention().getId() == null) {
+            return List.of();
+        }
+        Long conventionId = dossier.getDemandeCorrection().getConvention().getId();
+        return documentConventionRepository.findByConventionId(conventionId).stream()
+                .map(this::toDocumentDto)
+                .sorted(Comparator.comparing(DocumentDto::getDateUpload, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+                .collect(Collectors.toList());
+    }
+
+    private List<DocumentDto> documentsReferentielProjets(DossierGed dossier) {
+        if (dossier == null || dossier.getDemandeCorrection() == null || dossier.getDemandeCorrection().getConvention() == null
+                || dossier.getDemandeCorrection().getConvention().getId() == null) {
+            return List.of();
+        }
+        Long conventionId = dossier.getDemandeCorrection().getConvention().getId();
+        List<DocumentDto> docs = new ArrayList<>();
+        for (ReferentielProjet rp : referentielProjetRepository.findByConventionId(conventionId)) {
+            if (rp == null || rp.getId() == null) {
+                continue;
+            }
+            documentProjetRepository.findByReferentielProjetId(rp.getId()).stream()
+                    .map(this::toDocumentDto)
+                    .forEach(docs::add);
+        }
+        docs.sort(Comparator.comparing(DocumentDto::getDateUpload, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        return docs;
+    }
+
+    private List<DocumentDto> documentsAvenants(DossierGed dossier) {
+        if (dossier == null || dossier.getCertificatCredit() == null || dossier.getCertificatCredit().getId() == null) {
+            return List.of();
+        }
+        Long certificatId = dossier.getCertificatCredit().getId();
+        List<DocumentDto> docs = new ArrayList<>();
+        for (Avenant avenant : avenantRepository.findByCertificatCreditId(certificatId)) {
+            if (avenant == null || avenant.getId() == null) {
+                continue;
+            }
+            documentAvenantRepository.findByAvenantId(avenant.getId()).stream()
+                    .map(this::toDocumentDto)
+                    .forEach(docs::add);
+        }
+        docs.sort(Comparator.comparing(DocumentDto::getDateUpload, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        return docs;
+    }
+
+    private List<DocumentDto> documentsCloture(DossierGed dossier) {
+        if (dossier == null || dossier.getCertificatCredit() == null || dossier.getCertificatCredit().getId() == null) {
+            return List.of();
+        }
+        Long certificatId = dossier.getCertificatCredit().getId();
+        return clotureCreditRepository.findByCertificatCreditId(certificatId)
+                .map(cc -> {
+                    List<DocumentDto> docs = documentClotureCreditRepository.findByClotureCreditId(cc.getId()).stream()
+                            .map(this::toDocumentDto)
+                            .collect(Collectors.toList());
+                    docs.sort(Comparator.comparing(DocumentDto::getDateUpload, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+                    return docs;
+                })
+                .orElse(List.of());
+    }
+
+    private DocumentDto toDocumentDto(mr.gov.finances.sgci.domain.entity.DocumentConvention d) {
+        return DocumentDto.builder()
+                .id(d.getId())
+                .type(null)
+                .typeDetail("CONVENTION:" + (d.getType() != null ? d.getType().name() : ""))
+                .nomFichier(d.getNomFichier())
+                .chemin(d.getChemin())
+                .dateUpload(d.getDateUpload())
+                .taille(d.getTaille())
+                .build();
+    }
+
+    private DocumentDto toDocumentDto(mr.gov.finances.sgci.domain.entity.DocumentMarche d) {
+        return DocumentDto.builder()
+                .id(d.getId())
+                .type(null)
+                .typeDetail("MARCHE:" + (d.getType() != null ? d.getType().name() : ""))
+                .nomFichier(d.getNomFichier())
+                .chemin(d.getChemin())
+                .dateUpload(d.getDateUpload())
+                .taille(d.getTaille())
+                .build();
+    }
+
+    private DocumentDto toDocumentDto(mr.gov.finances.sgci.domain.entity.DocumentProjet d) {
+        return DocumentDto.builder()
+                .id(d.getId())
+                .type(null)
+                .typeDetail("REFERENTIEL_PROJET:" + (d.getType() != null ? d.getType().name() : ""))
+                .nomFichier(d.getNomFichier())
+                .chemin(d.getChemin())
+                .dateUpload(d.getDateUpload())
+                .taille(d.getTaille())
+                .build();
+    }
+
+    private DocumentDto toDocumentDto(DocumentClotureCredit d) {
+        return DocumentDto.builder()
+                .id(d.getId())
+                .type(d.getType())
+                .nomFichier(d.getNomFichier())
+                .chemin(d.getChemin())
+                .dateUpload(d.getDateUpload())
+                .taille(d.getTaille())
+                .version(d.getVersion())
+                .actif(d.getActif())
+                .build();
+    }
+
+    private DocumentDto toDocumentDto(DocumentAvenant d) {
         return DocumentDto.builder()
                 .id(d.getId())
                 .type(d.getType())

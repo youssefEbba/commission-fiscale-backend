@@ -43,7 +43,7 @@ public class CertificatCredit {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
-    private StatutCertificat statut = StatutCertificat.DEMANDE;
+    private StatutCertificat statut = StatutCertificat.EN_CONTROLE;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "entreprise_id", nullable = false)
@@ -53,8 +53,8 @@ public class CertificatCredit {
     @JoinColumn(name = "lettre_correction_id")
     private LettreCorrection lettreCorrection;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "demande_correction_id", unique = true)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "demande_correction_id")
     private DemandeCorrection demandeCorrection;
 
     @OneToMany(mappedBy = "certificatCredit", cascade = CascadeType.ALL, orphanRemoval = true)

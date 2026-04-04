@@ -93,7 +93,7 @@ public class DemandeCorrectionService {
 
     private List<DemandeCorrection> resolveDemandeList(AuthenticatedUser user) {
         if (user == null || user.getUserId() == null) {
-            return demandeRepository.findAll();
+            return demandeRepository.findAllByOrderByDateDepotDescIdDesc();
         }
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
@@ -103,14 +103,21 @@ public class DemandeCorrectionService {
             if (u.getAutoriteContractante() == null) {
                 throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
             }
-            return demandeRepository.findByAutoriteContractanteId(u.getAutoriteContractante().getId());
+            return demandeRepository.findByAutoriteContractanteIdOrderByDateDepotDescIdDesc(u.getAutoriteContractante().getId());
         }
 
         if (role == Role.AUTORITE_UPM || role == Role.AUTORITE_UEP) {
             return demandeRepository.findByDelegueId(u.getId());
         }
 
-        return demandeRepository.findAll();
+        if (role == Role.ENTREPRISE) {
+            if (u.getEntreprise() == null) {
+                throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
+            }
+            return demandeRepository.findByEntrepriseIdOrderByDateDepotDescIdDesc(u.getEntreprise().getId());
+        }
+
+        return demandeRepository.findAllByOrderByDateDepotDescIdDesc();
     }
 
     private boolean canAccessDemandeCorrection(Long demandeId, AuthenticatedUser user) {
@@ -137,6 +144,16 @@ public class DemandeCorrectionService {
 
         if (u.getRole() == Role.AUTORITE_UPM || u.getRole() == Role.AUTORITE_UEP) {
             return demandeRepository.existsAccessByDelegue(u.getId(), demandeId);
+        }
+
+        if (u.getRole() == Role.ENTREPRISE) {
+            if (u.getEntreprise() == null) {
+                return false;
+            }
+            return demandeRepository.findById(demandeId)
+                    .map(dc -> dc.getEntreprise() != null
+                            && dc.getEntreprise().getId().equals(u.getEntreprise().getId()))
+                    .orElse(false);
         }
 
         return true;
@@ -201,6 +218,17 @@ public class DemandeCorrectionService {
     public DemandeCorrectionDto updateStatut(Long id, StatutDemande statut, AuthenticatedUser user, String motifRejet, Boolean decisionFinale) {
         DemandeCorrection entity = demandeRepository.findById(id).orElseThrow(
                 () -> new RuntimeException("Demande de correction non trouvée: " + id));
+
+        if (!canAccessDemandeCorrection(id, user)) {
+            throw new RuntimeException("Accès refusé: demande hors périmètre");
+        }
+
+        if (user != null && user.getRole() != null
+                && (user.getRole() == Role.AUTORITE_CONTRACTANTE || user.getRole() == Role.ENTREPRISE)
+                && statut != StatutDemande.ANNULEE) {
+            throw new RuntimeException("Accès refusé: action non autorisée");
+        }
+
         workflow.validateTransition(entity.getStatut(), statut);
 
         if (statut == StatutDemande.RECEVABLE || statut == StatutDemande.EN_EVALUATION) {
@@ -281,12 +309,12 @@ public class DemandeCorrectionService {
 
     @Transactional(readOnly = true)
     public List<DemandeCorrectionDto> findByAutoriteContractante(Long autoriteId) {
-        return demandeRepository.findByAutoriteContractanteId(autoriteId).stream().map(this::toDto).collect(Collectors.toList());
+        return demandeRepository.findByAutoriteContractanteIdOrderByDateDepotDescIdDesc(autoriteId).stream().map(this::toDto).collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
     public List<DemandeCorrectionDto> findByEntreprise(Long entrepriseId) {
-        return demandeRepository.findByEntrepriseId(entrepriseId).stream()
+        return demandeRepository.findByEntrepriseIdOrderByDateDepotDescIdDesc(entrepriseId).stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
@@ -308,7 +336,7 @@ public class DemandeCorrectionService {
 
     @Transactional(readOnly = true)
     public List<DemandeCorrectionDto> findByStatut(StatutDemande statut) {
-        return demandeRepository.findByStatut(statut).stream().map(this::toDto).collect(Collectors.toList());
+        return demandeRepository.findByStatutOrderByDateDepotDescIdDesc(statut).stream().map(this::toDto).collect(Collectors.toList());
     }
 
     private DemandeCorrectionDto toDto(DemandeCorrection d) {
@@ -376,9 +404,28 @@ public class DemandeCorrectionService {
                 .role(decision.getRole())
                 .decision(decision.getDecision())
                 .motifRejet(decision.getMotifRejet())
+                .documentsDemandes(decision.getDocumentsDemandes())
                 .dateDecision(decision.getDateDecision())
+                .rejetTempStatus(decision.getRejetTempStatus())
+                .rejetTempResolvedAt(decision.getRejetTempResolvedAt())
                 .utilisateurId(decision.getUtilisateur() != null ? decision.getUtilisateur().getId() : null)
                 .utilisateurNom(decision.getUtilisateur() != null ? decision.getUtilisateur().getNomComplet() : null)
+                .rejetTempResponses(decision.getRejetTempResponses() != null
+                        ? decision.getRejetTempResponses().stream().map(this::toRejetTempResponseDto).collect(Collectors.toList())
+                        : java.util.List.of())
+                .build();
+    }
+
+    private mr.gov.finances.sgci.web.dto.RejetTempResponseDto toRejetTempResponseDto(mr.gov.finances.sgci.domain.entity.RejetTempResponse entity) {
+        return mr.gov.finances.sgci.web.dto.RejetTempResponseDto.builder()
+                .id(entity.getId())
+                .message(entity.getMessage())
+                .documentUrl(entity.getDocumentUrl())
+                .documentType(entity.getDocumentType())
+                .documentVersion(entity.getDocumentVersion())
+                .createdAt(entity.getCreatedAt())
+                .utilisateurId(entity.getUtilisateur() != null ? entity.getUtilisateur().getId() : null)
+                .utilisateurNom(entity.getUtilisateur() != null ? entity.getUtilisateur().getNomComplet() : null)
                 .build();
     }
 

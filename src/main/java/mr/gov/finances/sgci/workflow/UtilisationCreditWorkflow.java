@@ -12,16 +12,19 @@ import java.util.Set;
 
 /**
  * Workflow Utilisation de Crédit (Processus 6-7).
- * DEMANDEE → EN_VERIFICATION → VISE → VALIDEE → LIQUIDEE/APUREE ou REJETEE
+ * Rejet définitif (REJETEE) possible depuis tout statut actif sauf LIQUIDEE et APUREE.
+ * Rejet temporaire (INCOMPLETE) est posé via les décisions REJET_TEMP, pas via ce graphe seul.
  */
 @Component
 public class UtilisationCreditWorkflow {
 
     private static final Map<StatutUtilisation, Set<StatutUtilisation>> TRANSITIONS = Map.ofEntries(
-            Map.entry(DEMANDEE, EnumSet.of(EN_VERIFICATION, REJETEE)),
-            Map.entry(EN_VERIFICATION, EnumSet.of(VISE, VALIDEE, REJETEE)),
-            Map.entry(VISE, EnumSet.of(VALIDEE, LIQUIDEE, REJETEE)),
-            Map.entry(VALIDEE, EnumSet.of(LIQUIDEE, APUREE)),
+            Map.entry(DEMANDEE, EnumSet.of(INCOMPLETE, EN_VERIFICATION, REJETEE)),
+            Map.entry(INCOMPLETE, EnumSet.of(A_RECONTROLER, REJETEE)),
+            Map.entry(A_RECONTROLER, EnumSet.of(EN_VERIFICATION, REJETEE)),
+            Map.entry(EN_VERIFICATION, EnumSet.of(INCOMPLETE, VISE, VALIDEE, REJETEE)),
+            Map.entry(VISE, EnumSet.of(INCOMPLETE, VALIDEE, LIQUIDEE, REJETEE)),
+            Map.entry(VALIDEE, EnumSet.of(LIQUIDEE, APUREE, REJETEE)),
             Map.entry(LIQUIDEE, EnumSet.noneOf(StatutUtilisation.class)),
             Map.entry(APUREE, EnumSet.noneOf(StatutUtilisation.class)),
             Map.entry(REJETEE, EnumSet.noneOf(StatutUtilisation.class))

@@ -8,5 +8,6 @@ public enum StatutDemande {
     EN_VALIDATION,
     ADOPTEE,
     REJETEE,
-    NOTIFIEE
+    NOTIFIEE,
+    ANNULEE
 }

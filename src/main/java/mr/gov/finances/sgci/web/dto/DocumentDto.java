@@ -16,6 +16,8 @@ public class DocumentDto {
 
     private Long id;
     private TypeDocument type;
+    /** Présent pour les pièces hors {@link TypeDocument} (ex. convention, marché, référentiel projet). */
+    private String typeDetail;
     private String nomFichier;
     private String chemin;
     private Instant dateUpload;

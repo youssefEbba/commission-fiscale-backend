@@ -11,5 +11,9 @@ import java.util.List;
 public interface UtilisationCreditRepository extends JpaRepository<UtilisationCredit, Long> {
 
     List<UtilisationCredit> findByCertificatCreditId(Long certificatCreditId);
+
     List<UtilisationCredit> findByEntrepriseId(Long entrepriseId);
+
+    /** Toutes les utilisations sur les certificats dont l’entreprise titulaire est {@code entrepriseId}. */
+    List<UtilisationCredit> findByCertificatCredit_Entreprise_Id(Long entrepriseId);
 }

@@ -26,6 +26,16 @@ public class UtilisationCreditDto {
     private Long certificatCreditId;
     private Long entrepriseId;
 
+    /** Entreprise titulaire du certificat (bénéficiaire du crédit), distincte du demandeur si sous-traitance. */
+    private Long certificatTitulaireEntrepriseId;
+    private String certificatTitulaireRaisonSociale;
+
+    /**
+     * {@code true} lorsque la demande est portée par l’entreprise sous-traitante (entreprise demandeuse
+     * ≠ titulaire du certificat).
+     */
+    private Boolean demandeurEstSousTraitant;
+
     /** Champs spécifiques utilisation douanière */
     private String numeroDeclaration;
     private String numeroBulletin;
@@ -33,6 +43,8 @@ public class UtilisationCreditDto {
     private BigDecimal montantDroits;
     private BigDecimal montantTVADouane;
     private Boolean enregistreeSYDONIA;
+    private BigDecimal soldeCordonAvant;
+    private BigDecimal soldeCordonApres;
 
     /** Champs spécifiques utilisation TVA intérieure */
     private TypeAchat typeAchat;
@@ -40,4 +52,12 @@ public class UtilisationCreditDto {
     private Instant dateFacture;
     private BigDecimal montantTVAInterieure;
     private String numeroDecompte;
+
+    private BigDecimal tvaDeductibleUtilisee;
+    private BigDecimal tvaNette;
+    private BigDecimal creditInterieurUtilise;
+    private BigDecimal paiementEntreprise;
+    private BigDecimal reportANouveau;
+    private BigDecimal soldeTVAAvant;
+    private BigDecimal soldeTVAApres;
 }

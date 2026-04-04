@@ -1,15 +1,21 @@
 package mr.gov.finances.sgci.service;
 
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationTVAInterieure;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
+import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
+import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
+import mr.gov.finances.sgci.repository.DecisionUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.DocumentUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
+import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.web.dto.DocumentUtilisationCreditDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,12 +32,14 @@ public class DocumentUtilisationCreditService {
 
     private final DocumentUtilisationCreditRepository repository;
     private final UtilisationCreditRepository utilisationRepository;
+    private final DecisionUtilisationCreditRepository decisionRepository;
     private final MinioService minioService;
     private final AuditService auditService;
     private final DocumentRequirementValidator requirementValidator;
+    private final RejetTempResponseService rejetTempResponseService;
 
     @Transactional
-    public DocumentUtilisationCreditDto upload(Long utilisationCreditId, TypeDocument type, MultipartFile file) throws IOException {
+    public DocumentUtilisationCreditDto upload(Long utilisationCreditId, TypeDocument type, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
             throw new RuntimeException("Le fichier est vide");
         }
@@ -45,8 +53,19 @@ public class DocumentUtilisationCreditService {
         DocumentUtilisationCredit previous = repository.findByUtilisationCreditIdAndTypeAndActifTrue(utilisationCreditId, type)
                 .orElse(null);
         if (previous != null) {
+            assertReplacementAllowed(utilisation, type, user);
             previous.setActif(false);
             nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
+        }
+
+        boolean askedByOpenRejetTemp = decisionRepository.findByUtilisationCreditIdAndDecisionAndRejetTempStatus(
+                        utilisation.getId(),
+                        DecisionCorrectionType.REJET_TEMP,
+                        RejetTempStatus.OUVERT
+                ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(type));
+
+        if (askedByOpenRejetTemp && (message == null || message.isBlank())) {
+            throw new RuntimeException("Le message de réponse est obligatoire");
         }
 
         String originalFilename = file.getOriginalFilename();
@@ -70,7 +89,35 @@ public class DocumentUtilisationCreditService {
         doc = repository.save(doc);
         DocumentUtilisationCreditDto result = toDto(doc);
         auditService.log(AuditAction.CREATE, "DocumentUtilisationCredit", String.valueOf(doc.getId()), result);
+
+        if (askedByOpenRejetTemp) {
+            rejetTempResponseService.recordUtilisationUploadResponse(utilisation.getId(), type, message, doc, user);
+        }
+
         return result;
+    }
+
+    private void assertReplacementAllowed(UtilisationCredit utilisation, TypeDocument type, AuthenticatedUser user) {
+        if (utilisation == null || utilisation.getId() == null) {
+            throw new RuntimeException("Utilisation invalide");
+        }
+        if (user == null || user.getRole() == null) {
+            throw new RuntimeException("Utilisateur non authentifié");
+        }
+        if (user.getRole() != Role.ENTREPRISE) {
+            throw new RuntimeException("Remplacement interdit: réservé à l'Entreprise");
+        }
+        if (utilisation.getStatut() != StatutUtilisation.INCOMPLETE) {
+            throw new RuntimeException("Remplacement interdit: l'utilisation n'est pas en statut INCOMPLETE");
+        }
+        boolean asked = decisionRepository.findByUtilisationCreditId(utilisation.getId()).stream()
+                .anyMatch(d -> d.getDecision() == DecisionCorrectionType.REJET_TEMP
+                        && d.getRejetTempStatus() == RejetTempStatus.OUVERT
+                        && d.getDocumentsDemandes() != null
+                        && d.getDocumentsDemandes().contains(type));
+        if (!asked) {
+            throw new RuntimeException("Remplacement interdit: aucun acteur n'a demandé ce document");
+        }
     }
 
     private ProcessusDocument resolveProcessus(UtilisationCredit utilisation) {

@@ -2,6 +2,18 @@
 
 Backend du **Système de Gestion des Crédits d'Impôt (SGCI)** – Commission Fiscale, Ministère des Finances.
 
+## Documentation PDF (projet complet)
+
+- **Markdown** : [`docs/SGCI-Documentation-Projet.md`](docs/SGCI-Documentation-Projet.md) (objectifs, installation, architecture, workflows, modules API).
+- **PDF** : [`docs/SGCI-Documentation-Projet.pdf`](docs/SGCI-Documentation-Projet.pdf) — généré localement ; pour le régénérer :
+
+```bash
+pip install fpdf2
+python scripts/generate_documentation_pdf.py
+```
+
+(Sous Windows, le script utilise les polices **Arial** du système ; ailleurs il tente de mettre en cache **DejaVu** via le réseau.)
+
 ## Prérequis
 
 - **Java 17**

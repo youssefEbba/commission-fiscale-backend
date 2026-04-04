@@ -118,11 +118,14 @@ public class ReferentielProjetService {
     public ReferentielProjetDto updateStatut(Long id, StatutReferentielProjet statut, Long userId, String motifRejet) {
         ReferentielProjet entity = referentielRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Référentiel projet non trouvé: " + id));
+        if (statut == StatutReferentielProjet.ANNULE && entity.getStatut() == StatutReferentielProjet.VALIDE) {
+            throw new RuntimeException("Annulation impossible: le référentiel projet est déjà validé");
+        }
         entity.setStatut(statut);
-        if (statut == StatutReferentielProjet.VALIDE || statut == StatutReferentielProjet.REJETE) {
+        if (statut == StatutReferentielProjet.VALIDE || statut == StatutReferentielProjet.REJETE || statut == StatutReferentielProjet.ANNULE) {
             entity.setValideParUserId(userId);
             entity.setDateValidation(Instant.now());
-            entity.setMotifRejet(statut == StatutReferentielProjet.REJETE ? motifRejet : null);
+            entity.setMotifRejet((statut == StatutReferentielProjet.REJETE || statut == StatutReferentielProjet.ANNULE) ? motifRejet : null);
         }
         entity = referentielRepository.save(entity);
         ReferentielProjetDto result = toDto(entity);
@@ -138,6 +141,7 @@ public class ReferentielProjetService {
         }
         ReferentielProjet referentiel = referentielRepository.findById(referentielProjetId)
                 .orElseThrow(() -> new RuntimeException("Référentiel projet non trouvé: " + referentielProjetId));
+        assertReferentielEditable(referentiel);
         String originalFilename = file.getOriginalFilename();
         String fileUrl;
         try {
@@ -158,6 +162,44 @@ public class ReferentielProjetService {
         DocumentProjetDto result = toDto(doc);
         auditService.log(AuditAction.CREATE, "DocumentProjet", String.valueOf(doc.getId()), result);
         return result;
+    }
+
+    @Transactional
+    public DocumentProjetDto replaceDocument(Long referentielProjetId, Long documentId, MultipartFile file) throws IOException {
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("Le fichier est vide");
+        }
+        ReferentielProjet referentiel = referentielRepository.findById(referentielProjetId)
+                .orElseThrow(() -> new RuntimeException("Référentiel projet non trouvé: " + referentielProjetId));
+        assertReferentielEditable(referentiel);
+        DocumentProjet doc = documentProjetRepository.findByIdAndReferentielProjetId(documentId, referentielProjetId)
+                .orElseThrow(() -> new RuntimeException("Document projet non trouvé: " + documentId));
+        String originalFilename = file.getOriginalFilename();
+        String fileUrl;
+        try {
+            fileUrl = minioService.uploadFile(file);
+        } catch (Exception e) {
+            throw new RuntimeException("Erreur upload MinIO", e);
+        }
+        doc.setNomFichier(originalFilename != null ? originalFilename : file.getName());
+        doc.setChemin(fileUrl);
+        doc.setDateUpload(Instant.now());
+        doc.setTaille(file.getSize());
+        doc = documentProjetRepository.save(doc);
+        DocumentProjetDto result = toDto(doc);
+        auditService.log(AuditAction.UPDATE, "DocumentProjet", String.valueOf(doc.getId()), result);
+        return result;
+    }
+
+    @Transactional
+    public void deleteDocument(Long referentielProjetId, Long documentId) {
+        ReferentielProjet referentiel = referentielRepository.findById(referentielProjetId)
+                .orElseThrow(() -> new RuntimeException("Référentiel projet non trouvé: " + referentielProjetId));
+        assertReferentielEditable(referentiel);
+        DocumentProjet doc = documentProjetRepository.findByIdAndReferentielProjetId(documentId, referentielProjetId)
+                .orElseThrow(() -> new RuntimeException("Document projet non trouvé: " + documentId));
+        documentProjetRepository.delete(doc);
+        auditService.log(AuditAction.DELETE, "DocumentProjet", String.valueOf(documentId), null);
     }
 
     @Transactional(readOnly = true)
@@ -237,5 +279,14 @@ public class ReferentielProjetService {
         String message = "Référentiel projet " + entity.getNumero() + " statut: " + statut;
         notificationService.notifyUsers(userIds, NotificationType.REFERENTIEL_STATUT_CHANGE,
                 "ReferentielProjet", entity.getId(), message, payload);
+    }
+
+    private void assertReferentielEditable(ReferentielProjet referentiel) {
+        if (referentiel.getStatut() == StatutReferentielProjet.VALIDE) {
+            throw new RuntimeException("Modification des documents interdite: référentiel projet déjà validé");
+        }
+        if (referentiel.getStatut() == StatutReferentielProjet.ANNULE) {
+            throw new RuntimeException("Modification des documents interdite: référentiel projet annulé");
+        }
     }
 }

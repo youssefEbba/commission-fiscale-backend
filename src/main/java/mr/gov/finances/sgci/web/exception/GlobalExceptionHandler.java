@@ -9,6 +9,7 @@ import org.springframework.security.authentication.InsufficientAuthenticationExc
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import mr.gov.finances.sgci.workflow.WorkflowTransitionException;
 
@@ -19,6 +20,15 @@ import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", Instant.now().toString());
+        body.put("status", HttpStatus.PAYLOAD_TOO_LARGE.value());
+        body.put("error", "Fichier trop volumineux");
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
+    }
 
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<Map<String, Object>> handleBadCredentials(BadCredentialsException ex) {

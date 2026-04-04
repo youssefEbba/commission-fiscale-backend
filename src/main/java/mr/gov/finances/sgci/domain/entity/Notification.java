@@ -52,6 +52,7 @@ public class Notification {
     @Column(columnDefinition = "TEXT")
     private String payload;
 
+    @Column(name = "is_read")
     private boolean read;
 
     private Instant dateCreation;

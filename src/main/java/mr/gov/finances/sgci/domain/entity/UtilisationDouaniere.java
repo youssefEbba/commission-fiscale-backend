@@ -25,4 +25,10 @@ public class UtilisationDouaniere extends UtilisationCredit {
     private BigDecimal montantTVA;
 
     private Boolean enregistreeSYDONIA;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal soldeCordonAvant;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal soldeCordonApres;
 }

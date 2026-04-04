@@ -8,6 +8,7 @@ import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.DocumentUtilisationCreditService;
 import mr.gov.finances.sgci.service.UtilisationCreditService;
 import mr.gov.finances.sgci.web.dto.DocumentUtilisationCreditDto;
+import mr.gov.finances.sgci.web.dto.ApurerTVAInterieureRequest;
 import mr.gov.finances.sgci.web.dto.CreateUtilisationCreditRequest;
 import mr.gov.finances.sgci.web.dto.LiquiderUtilisationDouaneRequest;
 import mr.gov.finances.sgci.web.dto.UtilisationCreditDto;
@@ -31,21 +32,27 @@ public class UtilisationCreditController {
     private final DocumentUtilisationCreditService documentService;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'archivage.view')")
-    public List<UtilisationCreditDto> getAll() {
-        return service.findAll();
+    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'utilisation.douane.history.view', 'utilisation.interieur.history.view', 'archivage.view')")
+    public List<UtilisationCreditDto> getAll(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(required = false) Boolean demandeurSousTraitantOnly
+    ) {
+        return service.findAllVisible(user, demandeurSousTraitantOnly);
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'archivage.view')")
-    public UtilisationCreditDto getById(@PathVariable Long id) {
-        return service.findById(id);
+    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'utilisation.douane.history.view', 'utilisation.interieur.history.view', 'archivage.view')")
+    public UtilisationCreditDto getById(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.findById(id, user);
     }
 
     @GetMapping("/by-certificat/{certificatCreditId}")
-    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'archivage.view')")
-    public List<UtilisationCreditDto> getByCertificat(@PathVariable Long certificatCreditId) {
-        return service.findByCertificatCreditId(certificatCreditId);
+    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'utilisation.douane.history.view', 'utilisation.interieur.history.view', 'archivage.view')")
+    public List<UtilisationCreditDto> getByCertificat(
+            @PathVariable Long certificatCreditId,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.findByCertificatCreditId(certificatCreditId, user);
     }
 
     @PostMapping
@@ -70,9 +77,10 @@ public class UtilisationCreditController {
     @PreAuthorize("hasAnyAuthority('utilisation.interieur.dgtcp.solde.update')")
     public UtilisationCreditDto apurerTVAInterieure(
             @PathVariable Long id,
+            @Valid @RequestBody ApurerTVAInterieureRequest request,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
-        return service.updateStatut(id, StatutUtilisation.APUREE, user);
+        return service.apurerTVAInterieure(id, request, user);
     }
 
     @PostMapping("/{id}/liquidation-douane")
@@ -97,8 +105,10 @@ public class UtilisationCreditController {
     public DocumentUtilisationCreditDto uploadDocument(
             @PathVariable Long id,
             @RequestParam TypeDocument type,
-            @RequestParam("file") MultipartFile file
+            @RequestParam(required = false) String message,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return documentService.upload(id, type, file);
+        return documentService.upload(id, type, message, file, user);
     }
 }

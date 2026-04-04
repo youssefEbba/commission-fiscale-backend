@@ -24,4 +24,25 @@ public class UtilisationTVAInterieure extends UtilisationCredit {
     private BigDecimal montantTVA;
 
     private String numeroDecompte;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal tvaDeductibleUtilisee;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal tvaNette;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal creditInterieurUtilise;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal paiementEntreprise;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal reportANouveau;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal soldeTVAAvant;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal soldeTVAApres;
 }

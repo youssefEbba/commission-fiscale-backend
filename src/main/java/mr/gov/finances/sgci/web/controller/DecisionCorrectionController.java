@@ -4,8 +4,11 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.DecisionCorrectionService;
+import mr.gov.finances.sgci.service.RejetTempResponseService;
 import mr.gov.finances.sgci.web.dto.DecisionCorrectionDto;
 import mr.gov.finances.sgci.web.dto.DecisionCorrectionRequest;
+import mr.gov.finances.sgci.web.dto.RejetTempResponseDto;
+import mr.gov.finances.sgci.web.dto.RejetTempResponseRequest;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,9 +24,10 @@ import java.util.List;
 public class DecisionCorrectionController {
 
     private final DecisionCorrectionService decisionService;
+    private final RejetTempResponseService rejetTempResponseService;
 
     @GetMapping("/{id}/decisions")
-    @PreAuthorize("hasAnyAuthority('correction.visa.history.view', 'correction.view.audit')")
+    @PreAuthorize("hasAnyAuthority('correction.dgd.queue.view', 'correction.visa.history.view', 'correction.view.audit')")
     public List<DecisionCorrectionDto> getDecisions(@PathVariable Long id) {
         return decisionService.findByDemande(id);
     }
@@ -36,6 +40,30 @@ public class DecisionCorrectionController {
             @Valid @RequestBody DecisionCorrectionRequest request,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
-        return decisionService.saveDecision(id, request.getDecision(), request.getMotifRejet(), user);
+        return decisionService.saveDecision(id,
+                request.getDecision(),
+                request.getMotifRejet(),
+                request.getDocumentsDemandes() != null ? new java.util.HashSet<>(request.getDocumentsDemandes()) : null,
+                user);
+    }
+
+    @PostMapping("/decisions/{decisionId}/rejet-temp/reponses")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyAuthority('correction.offer.upload', 'correction.complement.add')")
+    public List<RejetTempResponseDto> addRejetTempResponse(
+            @PathVariable Long decisionId,
+            @Valid @RequestBody RejetTempResponseRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return rejetTempResponseService.addResponseToCorrectionDecision(decisionId, request.getMessage(), user);
+    }
+
+    @PutMapping("/decisions/{decisionId}/resolve")
+    @PreAuthorize("hasAnyAuthority('correction.offer.upload', 'correction.complement.add')")
+    public DecisionCorrectionDto resolveRejetTemp(
+            @PathVariable Long decisionId,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return decisionService.resolveRejetTemp(decisionId, user);
     }
 }

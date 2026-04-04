@@ -2,12 +2,18 @@ package mr.gov.finances.sgci.service;
 
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
+import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.entity.DocumentCertificatCredit;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
+import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
+import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
+import mr.gov.finances.sgci.repository.DecisionCertificatCreditRepository;
 import mr.gov.finances.sgci.repository.DocumentCertificatCreditRepository;
+import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.web.dto.DocumentCertificatCreditDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,12 +30,14 @@ public class DocumentCertificatCreditService {
 
     private final DocumentCertificatCreditRepository repository;
     private final CertificatCreditRepository certificatRepository;
+    private final DecisionCertificatCreditRepository decisionRepository;
     private final MinioService minioService;
     private final AuditService auditService;
     private final DocumentRequirementValidator requirementValidator;
+    private final RejetTempResponseService rejetTempResponseService;
 
     @Transactional
-    public DocumentCertificatCreditDto upload(Long certificatCreditId, TypeDocument type, MultipartFile file) throws IOException {
+    public DocumentCertificatCreditDto upload(Long certificatCreditId, TypeDocument type, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
             throw new RuntimeException("Le fichier est vide");
         }
@@ -42,8 +50,19 @@ public class DocumentCertificatCreditService {
         DocumentCertificatCredit previous = repository.findByCertificatCreditIdAndTypeAndActifTrue(certificatCreditId, type)
                 .orElse(null);
         if (previous != null) {
+            assertReplacementAllowed(certificat, type, user);
             previous.setActif(false);
             nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
+        }
+
+        boolean askedByOpenRejetTemp = decisionRepository.findByCertificatCreditIdAndDecisionAndRejetTempStatus(
+                        certificat.getId(),
+                        DecisionCorrectionType.REJET_TEMP,
+                        RejetTempStatus.OUVERT
+                ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(type));
+
+        if (askedByOpenRejetTemp && (message == null || message.isBlank())) {
+            throw new RuntimeException("Le message de réponse est obligatoire");
         }
 
         String originalFilename = file.getOriginalFilename();
@@ -68,7 +87,35 @@ public class DocumentCertificatCreditService {
         doc = repository.save(doc);
         DocumentCertificatCreditDto result = toDto(doc);
         auditService.log(AuditAction.CREATE, "DocumentCertificatCredit", String.valueOf(doc.getId()), result);
+
+        if (askedByOpenRejetTemp) {
+            rejetTempResponseService.recordCertificatUploadResponse(certificat.getId(), type, message, doc, user);
+        }
+
         return result;
+    }
+
+    private void assertReplacementAllowed(CertificatCredit certificat, TypeDocument type, AuthenticatedUser user) {
+        if (certificat == null || certificat.getId() == null) {
+            throw new RuntimeException("Certificat invalide");
+        }
+        if (user == null || user.getRole() == null) {
+            throw new RuntimeException("Utilisateur non authentifié");
+        }
+        if (user.getRole() != Role.AUTORITE_CONTRACTANTE) {
+            throw new RuntimeException("Remplacement interdit: réservé à l'Autorité Contractante");
+        }
+        if (certificat.getStatut() != StatutCertificat.INCOMPLETE) {
+            throw new RuntimeException("Remplacement interdit: le certificat n'est pas en statut INCOMPLETE");
+        }
+        boolean asked = decisionRepository.findByCertificatCreditId(certificat.getId()).stream()
+                .anyMatch(d -> d.getDecision() == DecisionCorrectionType.REJET_TEMP
+                        && d.getRejetTempStatus() == RejetTempStatus.OUVERT
+                        && d.getDocumentsDemandes() != null
+                        && d.getDocumentsDemandes().contains(type));
+        if (!asked) {
+            throw new RuntimeException("Remplacement interdit: aucun acteur n'a demandé ce document");
+        }
     }
 
     @Transactional(readOnly = true)

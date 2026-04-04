@@ -8,6 +8,7 @@ import mr.gov.finances.sgci.domain.entity.Marche;
 import mr.gov.finances.sgci.domain.entity.MarcheDelegue;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.StatutMarche;
 import mr.gov.finances.sgci.domain.enums.TypeDocumentMarche;
 import mr.gov.finances.sgci.repository.ConventionRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
@@ -147,6 +148,7 @@ public class MarcheService {
         }
         Marche marche = marcheRepository.findById(marcheId)
                 .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + marcheId));
+        assertMarcheEditableForDocuments(marche);
 
         String originalFilename = file.getOriginalFilename();
         String fileUrl;
@@ -166,6 +168,42 @@ public class MarcheService {
                 .build();
         doc = documentMarcheRepository.save(doc);
         return toDto(doc);
+    }
+
+    @Transactional
+    public DocumentMarcheDto replaceDocument(Long marcheId, Long documentId, MultipartFile file) throws java.io.IOException {
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("Le fichier est vide");
+        }
+        Marche marche = marcheRepository.findById(marcheId)
+                .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + marcheId));
+        assertMarcheEditableForDocuments(marche);
+        DocumentMarche doc = documentMarcheRepository.findByIdAndMarcheId(documentId, marcheId)
+                .orElseThrow(() -> new RuntimeException("Document marché non trouvé: " + documentId));
+
+        String originalFilename = file.getOriginalFilename();
+        String fileUrl;
+        try {
+            fileUrl = minioService.uploadFile(file);
+        } catch (Exception e) {
+            throw new RuntimeException("Erreur upload MinIO: " + e.getMessage(), e);
+        }
+        doc.setNomFichier(originalFilename != null ? originalFilename : file.getName());
+        doc.setChemin(fileUrl);
+        doc.setDateUpload(Instant.now());
+        doc.setTaille(file.getSize());
+        doc = documentMarcheRepository.save(doc);
+        return toDto(doc);
+    }
+
+    @Transactional
+    public void deleteDocument(Long marcheId, Long documentId) {
+        Marche marche = marcheRepository.findById(marcheId)
+                .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + marcheId));
+        assertMarcheEditableForDocuments(marche);
+        DocumentMarche doc = documentMarcheRepository.findByIdAndMarcheId(documentId, marcheId)
+                .orElseThrow(() -> new RuntimeException("Document marché non trouvé: " + documentId));
+        documentMarcheRepository.delete(doc);
     }
 
     @Transactional(readOnly = true)
@@ -334,6 +372,12 @@ public class MarcheService {
     public MarcheDto update(Long id, UpdateMarcheRequest request) {
         Marche marche = marcheRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + id));
+        if (marche.getStatut() == StatutMarche.CLOTURE && request.getStatut() != StatutMarche.CLOTURE) {
+            throw new RuntimeException("Marché clôturé: changement de statut interdit");
+        }
+        if (marche.getStatut() == StatutMarche.ANNULE && request.getStatut() != StatutMarche.ANNULE) {
+            throw new RuntimeException("Marché annulé: changement de statut interdit");
+        }
         marche.setNumeroMarche(request.getNumeroMarche());
         marche.setDateSignature(request.getDateSignature());
         marche.setMontantContratTtc(request.getMontantContratTtc());
@@ -398,5 +442,14 @@ public class MarcheService {
                 .dateUpload(d.getDateUpload())
                 .taille(d.getTaille())
                 .build();
+    }
+
+    private void assertMarcheEditableForDocuments(Marche marche) {
+        if (marche.getStatut() == StatutMarche.CLOTURE) {
+            throw new RuntimeException("Modification des documents interdite: marché clôturé");
+        }
+        if (marche.getStatut() == StatutMarche.ANNULE) {
+            throw new RuntimeException("Modification des documents interdite: marché annulé");
+        }
     }
 }

@@ -40,7 +40,7 @@ public class ClotureCreditService {
         }
 
         Instant now = Instant.now();
-        return certificatCreditRepository.findAll().stream()
+        return certificatCreditRepository.findAllByOrderByDateEmissionDescIdDesc().stream()
                 .filter(c -> c.getStatut() == StatutCertificat.OUVERT || c.getStatut() == StatutCertificat.MODIFIE)
                 .filter(c -> {
                     BigDecimal soldeCordon = c.getSoldeCordon() != null ? c.getSoldeCordon() : BigDecimal.ZERO;

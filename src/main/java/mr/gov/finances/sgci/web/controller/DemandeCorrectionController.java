@@ -30,31 +30,31 @@ public class DemandeCorrectionController {
     private final DocumentService documentService;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('correction.dgd.queue.view', 'correction.dgtcp.queue.view', 'correction.dgi.queue.view', 'correction.dgb.queue.view', 'correction.president.queue.view', 'correction.view.audit', 'correction.visa.history.view')")
+    @PreAuthorize("hasAnyAuthority('demande_correction.list', 'correction.dgd.queue.view', 'correction.dgtcp.queue.view', 'correction.dgi.queue.view', 'correction.dgb.queue.view', 'correction.president.queue.view', 'correction.view.audit', 'correction.visa.history.view', 'correction.entreprise.queue.view')")
     public List<DemandeCorrectionDto> getAll(@AuthenticationPrincipal AuthenticatedUser user) {
         return service.findAll(user);
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('correction.dgd.queue.view', 'correction.dgtcp.queue.view', 'correction.dgi.queue.view', 'correction.dgb.queue.view', 'correction.president.queue.view', 'correction.view.audit', 'correction.visa.history.view')")
+    @PreAuthorize("hasAnyAuthority('demande_correction.list', 'correction.dgd.queue.view', 'correction.dgtcp.queue.view', 'correction.dgi.queue.view', 'correction.dgb.queue.view', 'correction.president.queue.view', 'correction.view.audit', 'correction.visa.history.view', 'correction.entreprise.queue.view')")
     public DemandeCorrectionDto getById(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
         return service.findById(id, user);
     }
 
     @GetMapping("/by-autorite/{autoriteId}")
-    @PreAuthorize("hasAnyAuthority('correction.visa.history.view', 'correction.view.audit')")
+    @PreAuthorize("hasAnyAuthority('demande_correction.list', 'correction.dgd.queue.view', 'correction.dgb.queue.view', 'correction.visa.history.view', 'correction.view.audit')")
     public List<DemandeCorrectionDto> getByAutorite(@PathVariable Long autoriteId) {
         return service.findByAutoriteContractante(autoriteId);
     }
 
     @GetMapping("/by-entreprise/{entrepriseId}")
-    @PreAuthorize("hasAnyAuthority('correction.visa.history.view', 'correction.view.audit', 'correction.entreprise.queue.view')")
+    @PreAuthorize("hasAnyAuthority('demande_correction.list', 'correction.dgd.queue.view', 'correction.dgb.queue.view', 'correction.visa.history.view', 'correction.view.audit', 'correction.entreprise.queue.view')")
     public List<DemandeCorrectionDto> getByEntreprise(@PathVariable Long entrepriseId) {
         return service.findByEntreprise(entrepriseId);
     }
 
     @GetMapping("/by-delegue/{userId}")
-    @PreAuthorize("hasAnyAuthority('correction.offer.view', 'correction.visa.history.view', 'correction.view.audit')")
+    @PreAuthorize("hasAnyAuthority('demande_correction.list', 'correction.dgd.queue.view', 'correction.dgb.queue.view', 'correction.offer.view', 'correction.visa.history.view', 'correction.view.audit')")
     public List<DemandeCorrectionDto> getByDelegue(
             @PathVariable Long userId,
             @AuthenticationPrincipal AuthenticatedUser user
@@ -63,7 +63,7 @@ public class DemandeCorrectionController {
     }
 
     @GetMapping("/by-statut")
-    @PreAuthorize("hasAnyAuthority('correction.dgd.queue.view', 'correction.dgtcp.queue.view', 'correction.dgi.queue.view', 'correction.dgb.queue.view', 'correction.president.queue.view', 'correction.view.audit')")
+    @PreAuthorize("hasAnyAuthority('demande_correction.list', 'correction.dgd.queue.view', 'correction.dgtcp.queue.view', 'correction.dgi.queue.view', 'correction.dgb.queue.view', 'correction.president.queue.view', 'correction.view.audit', 'correction.entreprise.queue.view')")
     public List<DemandeCorrectionDto> getByStatut(@RequestParam StatutDemande statut) {
         return service.findByStatut(statut);
     }
@@ -76,7 +76,7 @@ public class DemandeCorrectionController {
     }
 
     @PatchMapping("/{id}/statut")
-    @PreAuthorize("hasAnyAuthority('correction.dgd.save', 'correction.dgd.transmit', 'correction.dgtcp.visa', 'correction.dgtcp.reject', 'correction.dgtcp.request_complements', 'correction.dgi.visa', 'correction.dgi.reject', 'correction.dgb.visa', 'correction.dgb.reject', 'correction.president.validate', 'correction.president.reject', 'correction.president.letter.generate', 'correction.president.signature.upload')")
+    @PreAuthorize("hasAnyAuthority('correction.submit', 'correction.dgd.save', 'correction.dgd.transmit', 'correction.dgtcp.visa', 'correction.dgtcp.reject', 'correction.dgtcp.request_complements', 'correction.dgi.visa', 'correction.dgi.reject', 'correction.dgb.visa', 'correction.dgb.reject', 'correction.president.validate', 'correction.president.reject', 'correction.president.letter.generate', 'correction.president.signature.upload')")
     public DemandeCorrectionDto updateStatut(
             @PathVariable Long id,
             @RequestParam StatutDemande statut,
@@ -89,7 +89,7 @@ public class DemandeCorrectionController {
 
     /** Liste des documents attachés à une demande de correction (7 pièces P1, etc.) */
     @GetMapping("/{id}/documents")
-    @PreAuthorize("hasAnyAuthority('correction.offer.view', 'correction.visa.history.view', 'correction.view.audit')")
+    @PreAuthorize("hasAnyAuthority('correction.dgd.queue.view', 'correction.offer.view', 'correction.visa.history.view', 'correction.view.audit')")
     public List<DocumentDto> getDocuments(@PathVariable Long id) {
         return documentService.findByDemandeCorrectionId(id);
     }
@@ -101,8 +101,10 @@ public class DemandeCorrectionController {
     public DocumentDto uploadDocument(
             @PathVariable Long id,
             @RequestParam TypeDocument type,
-            @RequestParam("file") MultipartFile file
+            @RequestParam(required = false) String message,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return documentService.upload(id, type, file);
+        return documentService.upload(id, type, message, file, user);
     }
 }

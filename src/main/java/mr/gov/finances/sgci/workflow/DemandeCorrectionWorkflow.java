@@ -18,14 +18,15 @@ import java.util.Set;
 public class DemandeCorrectionWorkflow {
 
     private static final Map<StatutDemande, Set<StatutDemande>> TRANSITIONS = Map.ofEntries(
-            Map.entry(RECUE, EnumSet.of(RECEVABLE, INCOMPLETE, REJETEE, EN_EVALUATION)),
-            Map.entry(INCOMPLETE, EnumSet.of(RECEVABLE, REJETEE)),
+            Map.entry(RECUE, EnumSet.of(RECEVABLE, INCOMPLETE, REJETEE, EN_EVALUATION, ANNULEE)),
+            Map.entry(INCOMPLETE, EnumSet.of(RECEVABLE, REJETEE, ANNULEE)),
             Map.entry(RECEVABLE, EnumSet.of(EN_EVALUATION)),
             Map.entry(EN_EVALUATION, EnumSet.of(EN_VALIDATION, ADOPTEE)),
             Map.entry(EN_VALIDATION, EnumSet.of(ADOPTEE, REJETEE)),
             Map.entry(ADOPTEE, EnumSet.of(NOTIFIEE)),
             Map.entry(REJETEE, EnumSet.noneOf(StatutDemande.class)),
-            Map.entry(NOTIFIEE, EnumSet.noneOf(StatutDemande.class))
+            Map.entry(NOTIFIEE, EnumSet.noneOf(StatutDemande.class)),
+            Map.entry(ANNULEE, EnumSet.noneOf(StatutDemande.class))
     );
 
     public void validateTransition(StatutDemande from, StatutDemande to) {

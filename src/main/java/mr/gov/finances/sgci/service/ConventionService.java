@@ -75,21 +75,17 @@ public class ConventionService {
                 .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
         Role role = u.getRole();
 
-        if (role == Role.AUTORITE_CONTRACTANTE) {
+        // Référentiel partagé : conventions (et entreprises côté API dédiée) visibles par toutes les AC / délégués.
+        if (role == Role.AUTORITE_CONTRACTANTE
+                || role == Role.AUTORITE_UPM
+                || role == Role.AUTORITE_UEP) {
             if (u.getAutoriteContractante() == null) {
                 throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
             }
             if (statut == null) {
-                return conventionRepository.findAllByAutoriteContractanteId(u.getAutoriteContractante().getId());
+                return conventionRepository.findAll();
             }
-            return conventionRepository.findAllByAutoriteContractanteIdAndStatut(u.getAutoriteContractante().getId(), statut);
-        }
-
-        if (role == Role.AUTORITE_UPM || role == Role.AUTORITE_UEP) {
-            if (statut == null) {
-                return conventionRepository.findAllByDelegueId(u.getId());
-            }
-            return conventionRepository.findAllByDelegueIdAndStatut(u.getId(), statut);
+            return conventionRepository.findByStatut(statut);
         }
 
         if (statut == null) {
@@ -109,17 +105,10 @@ public class ConventionService {
         if (u == null || u.getRole() == null) {
             return false;
         }
-        if (u.getRole() == Role.AUTORITE_CONTRACTANTE) {
-            if (u.getAutoriteContractante() == null) {
-                return false;
-            }
-            return conventionRepository.findById(conventionId)
-                    .map(c -> c.getAutoriteContractante() != null
-                            && c.getAutoriteContractante().getId().equals(u.getAutoriteContractante().getId()))
-                    .orElse(false);
-        }
-        if (u.getRole() == Role.AUTORITE_UPM || u.getRole() == Role.AUTORITE_UEP) {
-            return conventionRepository.existsAccessByDelegue(u.getId(), conventionId);
+        if (u.getRole() == Role.AUTORITE_CONTRACTANTE
+                || u.getRole() == Role.AUTORITE_UPM
+                || u.getRole() == Role.AUTORITE_UEP) {
+            return u.getAutoriteContractante() != null && conventionRepository.findById(conventionId).isPresent();
         }
         return true;
     }
@@ -157,6 +146,7 @@ public class ConventionService {
         }
         Convention convention = conventionRepository.findById(conventionId)
                 .orElseThrow(() -> new RuntimeException("Convention non trouvée: " + conventionId));
+        assertConventionEditable(convention);
         String originalFilename = file.getOriginalFilename();
         String fileUrl;
         try {
@@ -179,6 +169,45 @@ public class ConventionService {
         return result;
     }
 
+    @Transactional
+    public DocumentConventionDto replaceDocument(Long conventionId, Long documentId, MultipartFile file) throws IOException {
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("Le fichier est vide");
+        }
+        Convention convention = conventionRepository.findById(conventionId)
+                .orElseThrow(() -> new RuntimeException("Convention non trouvée: " + conventionId));
+        assertConventionEditable(convention);
+        DocumentConvention doc = documentConventionRepository.findByIdAndConventionId(documentId, conventionId)
+                .orElseThrow(() -> new RuntimeException("Document convention non trouvé: " + documentId));
+
+        String originalFilename = file.getOriginalFilename();
+        String fileUrl;
+        try {
+            fileUrl = minioService.uploadFile(file);
+        } catch (Exception e) {
+            throw new RuntimeException("Erreur upload MinIO: " + e.getMessage(), e);
+        }
+        doc.setNomFichier(originalFilename != null ? originalFilename : file.getName());
+        doc.setChemin(fileUrl);
+        doc.setDateUpload(Instant.now());
+        doc.setTaille(file.getSize());
+        doc = documentConventionRepository.save(doc);
+        DocumentConventionDto result = toDto(doc);
+        auditService.log(AuditAction.UPDATE, "DocumentConvention", String.valueOf(doc.getId()), result);
+        return result;
+    }
+
+    @Transactional
+    public void deleteDocument(Long conventionId, Long documentId) {
+        Convention convention = conventionRepository.findById(conventionId)
+                .orElseThrow(() -> new RuntimeException("Convention non trouvée: " + conventionId));
+        assertConventionEditable(convention);
+        DocumentConvention doc = documentConventionRepository.findByIdAndConventionId(documentId, conventionId)
+                .orElseThrow(() -> new RuntimeException("Document convention non trouvé: " + documentId));
+        documentConventionRepository.delete(doc);
+        auditService.log(AuditAction.DELETE, "DocumentConvention", String.valueOf(documentId), null);
+    }
+
     @Transactional(readOnly = true)
     public List<DocumentConventionDto> findDocuments(Long conventionId) {
         return documentConventionRepository.findByConventionId(conventionId)
@@ -191,11 +220,14 @@ public class ConventionService {
     public ConventionDto updateStatut(Long id, StatutConvention statut, Long userId, String motifRejet) {
         Convention convention = conventionRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Convention non trouvée: " + id));
+        if (statut == StatutConvention.ANNULEE && convention.getStatut() == StatutConvention.VALIDE) {
+            throw new RuntimeException("Annulation impossible: la convention est déjà validée");
+        }
         convention.setStatut(statut);
-        if (statut == StatutConvention.VALIDE || statut == StatutConvention.REJETE) {
+        if (statut == StatutConvention.VALIDE || statut == StatutConvention.REJETE || statut == StatutConvention.ANNULEE) {
             convention.setValideParUserId(userId);
             convention.setDateValidation(java.time.Instant.now());
-            convention.setMotifRejet(statut == StatutConvention.REJETE ? motifRejet : null);
+            convention.setMotifRejet((statut == StatutConvention.REJETE || statut == StatutConvention.ANNULEE) ? motifRejet : null);
         }
         convention = conventionRepository.save(convention);
         ConventionDto result = toDto(convention);
@@ -279,5 +311,17 @@ public class ConventionService {
         String message = "Convention " + convention.getReference() + " statut: " + statut;
         notificationService.notifyUsers(userIds, NotificationType.CONVENTION_STATUT_CHANGE,
                 "Convention", convention.getId(), message, payload);
+    }
+
+    private void assertConventionEditable(Convention convention) {
+        if (convention == null) {
+            throw new RuntimeException("Convention non trouvée");
+        }
+        if (convention.getStatut() == StatutConvention.VALIDE) {
+            throw new RuntimeException("Modification des documents interdite: convention déjà validée");
+        }
+        if (convention.getStatut() == StatutConvention.ANNULEE) {
+            throw new RuntimeException("Modification des documents interdite: convention annulée");
+        }
     }
 }

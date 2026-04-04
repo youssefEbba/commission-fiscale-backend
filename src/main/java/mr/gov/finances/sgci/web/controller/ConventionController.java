@@ -83,4 +83,21 @@ public class ConventionController {
     ) throws IOException {
         return service.uploadDocument(id, type, file);
     }
+
+    @PutMapping(value = "/{id}/documents/{documentId}", consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('convention.document.upload')")
+    public DocumentConventionDto replaceDocument(
+            @PathVariable Long id,
+            @PathVariable Long documentId,
+            @RequestParam("file") MultipartFile file
+    ) throws IOException {
+        return service.replaceDocument(id, documentId, file);
+    }
+
+    @DeleteMapping("/{id}/documents/{documentId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAuthority('convention.document.upload')")
+    public void deleteDocument(@PathVariable Long id, @PathVariable Long documentId) {
+        service.deleteDocument(id, documentId);
+    }
 }

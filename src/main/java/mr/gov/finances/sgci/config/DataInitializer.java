@@ -1,3 +1,4 @@
+
 package mr.gov.finances.sgci.config;
 
 import lombok.RequiredArgsConstructor;
@@ -87,6 +88,7 @@ public class DataInitializer implements CommandLineRunner {
         seedDocumentRequirements();
         seedDefaultUsers();
         seedDefaultReferentielAndDemande();
+        seedCertificatOuvert();
     }
 
     private void seedDocumentRequirements() {
@@ -217,9 +219,9 @@ public class DataInitializer implements CommandLineRunner {
         String uniqueSuffix = String.valueOf(Instant.now().getEpochSecond());
         ReferentielProjet referentielProjet = ReferentielProjet.builder()
                 .numero("REF-DEFAULT-" + uniqueSuffix)
-                .nomProjet("Projet par défaut")
-                .administrateurProjet("Admin par défaut")
-                .referenceBciSecteur("BCI-DEFAULT")
+                .nomProjet("Réhabilitation de voirie et réseaux – Nouakchott (données de démonstration)")
+                .administrateurProjet("Chef de projet infrastructure – AC pilote")
+                .referenceBciSecteur("BCI-2024-INFRA-NKC-001")
                 .statut(StatutReferentielProjet.EN_ATTENTE)
                 .autoriteContractante(autoriteContractante)
                 .convention(convention)
@@ -227,7 +229,7 @@ public class DataInitializer implements CommandLineRunner {
         referentielProjet = referentielProjetRepository.save(referentielProjet);
 
         Marche marche = Marche.builder()
-                .numeroMarche("MARCHE-DEFAULT-" + uniqueSuffix)
+                .numeroMarche("MP-NKC-2024-TRVX-VOIRIE-REHAB-" + uniqueSuffix)
                 .dateSignature(LocalDate.now())
                 .montantContratTtc(BigDecimal.valueOf(1000000))
                 .statut(StatutMarche.EN_COURS)
@@ -277,79 +279,88 @@ public class DataInitializer implements CommandLineRunner {
         marche = marcheRepository.save(marche);
         demande.setMarche(marche);
         demandeCorrectionRepository.save(demande);
-
-        Long demandeId = demande.getId();
-        CertificatCredit certificat;
-        if (!certificatCreditRepository.existsByDemandeCorrectionId(demandeId)) {
-            certificat = CertificatCredit.builder()
-                    .numero("CERT-DEFAULT-" + uniqueSuffix)
-                    .dateEmission(Instant.now())
-                    .dateValidite(Instant.now().plusSeconds(60L * 60 * 24 * 365))
-                    .montantCordon(BigDecimal.valueOf(500000))
-                    .montantTVAInterieure(BigDecimal.valueOf(500000))
-                    .soldeCordon(BigDecimal.valueOf(500000))
-                    .soldeTVA(BigDecimal.valueOf(500000))
-                    .statut(StatutCertificat.OUVERT)
-                    .entreprise(entreprise)
-                    .demandeCorrection(demande)
-                    .build();
-            certificat = certificatCreditRepository.save(certificat);
-        } else {
-            certificat = certificatCreditRepository.findFirstByDemandeCorrectionId(demandeId)
-                    .orElseThrow(() -> new IllegalStateException("Certificat existant introuvable pour la demandeCorrection: " + demandeId));
-        }
-
-        dossierGedService.attachCertificatToDossier(demandeId, certificat.getId());
-
-        seedDefaultUtilisations(certificat);
     }
 
-    private void seedDefaultUtilisations(CertificatCredit certificat) {
-        if (certificat == null || certificat.getId() == null) {
-            return;
-        }
-        if (!utilisationCreditRepository.findByCertificatCreditId(certificat.getId()).isEmpty()) {
+    private void seedCertificatOuvert() {
+        String numero = "CI-TEST-OUVERT";
+        if (certificatCreditRepository.existsByNumero(numero)) {
             return;
         }
 
-        UtilisationDouaniere douane = new UtilisationDouaniere();
-        douane.setCertificatCredit(certificat);
-        douane.setEntreprise(certificat.getEntreprise());
-        douane.setDateDemande(Instant.now());
-        douane.setStatut(StatutUtilisation.DEMANDEE);
-        douane.setNumeroDeclaration("DEC-DEFAULT-001");
-        douane.setNumeroBulletin("BL-DEFAULT-001");
-        douane.setDateDeclaration(Instant.now());
-        douane.setMontantDroits(BigDecimal.valueOf(10000));
-        douane.setMontantTVA(BigDecimal.valueOf(5000));
-        douane.setMontant(BigDecimal.valueOf(15000));
-        douane.setEnregistreeSYDONIA(true);
-        utilisationCreditRepository.save(douane);
+        Entreprise entreprise = entrepriseRepository.findByNif("NIF_DEFAULT").orElse(null);
+        if (entreprise == null) {
+            return;
+        }
 
-        UtilisationTVAInterieure interieur = new UtilisationTVAInterieure();
-        interieur.setCertificatCredit(certificat);
-        interieur.setEntreprise(certificat.getEntreprise());
-        interieur.setDateDemande(Instant.now());
-        interieur.setStatut(StatutUtilisation.DEMANDEE);
-        interieur.setTypeAchat(TypeAchat.ACHAT_LOCAL);
-        interieur.setNumeroFacture("FAC-DEFAULT-001");
-        interieur.setDateFacture(Instant.now());
-        interieur.setMontantTVA(BigDecimal.valueOf(7000));
-        interieur.setMontant(BigDecimal.valueOf(7000));
-        utilisationCreditRepository.save(interieur);
+        DemandeCorrection demande = demandeCorrectionRepository.findAll().stream()
+                .filter(d -> d.getEntreprise() != null && d.getEntreprise().getId().equals(entreprise.getId()))
+                .findFirst().orElse(null);
+
+        CertificatCredit certificat = CertificatCredit.builder()
+                .numero(numero)
+                .dateEmission(Instant.now())
+                .dateValidite(Instant.now().plusSeconds(365L * 24 * 3600))
+                .montantCordon(BigDecimal.valueOf(5_000_000))
+                .montantTVAInterieure(BigDecimal.valueOf(3_000_000))
+                .soldeCordon(BigDecimal.valueOf(5_000_000))
+                .soldeTVA(BigDecimal.valueOf(3_000_000))
+                .statut(StatutCertificat.OUVERT)
+                .entreprise(entreprise)
+                .demandeCorrection(demande)
+                .build();
+
+        certificat = certificatCreditRepository.save(certificat);
+
+        UtilisationDouaniere utilDouane = new UtilisationDouaniere();
+        utilDouane.setDateDemande(Instant.now());
+        utilDouane.setStatut(StatutUtilisation.DEMANDEE);
+        utilDouane.setCertificatCredit(certificat);
+        utilDouane.setEntreprise(entreprise);
+        utilDouane.setNumeroDeclaration("DEC-SEED-001");
+        utilDouane.setNumeroBulletin("BUL-SEED-001");
+        utilDouane.setDateDeclaration(Instant.now());
+        utilDouane.setMontantDroits(BigDecimal.valueOf(70_000));
+        utilDouane.setMontantTVA(BigDecimal.valueOf(30_000));
+        utilDouane.setMontant(BigDecimal.valueOf(100_000));
+        utilDouane.setEnregistreeSYDONIA(true);
+        utilisationCreditRepository.save(utilDouane);
+
+        UtilisationTVAInterieure utilTva = new UtilisationTVAInterieure();
+        utilTva.setDateDemande(Instant.now());
+        utilTva.setStatut(StatutUtilisation.DEMANDEE);
+        utilTva.setCertificatCredit(certificat);
+        utilTva.setEntreprise(entreprise);
+        utilTva.setTypeAchat(TypeAchat.ACHAT_LOCAL);
+        utilTva.setNumeroFacture("FAC-SEED-001");
+        utilTva.setDateFacture(Instant.now());
+        utilTva.setMontantTVA(BigDecimal.valueOf(55_000));
+        utilTva.setMontant(BigDecimal.valueOf(55_000));
+        utilisationCreditRepository.save(utilTva);
     }
 
     private void seedDefaultUsers() {
         AutoriteContractante autoriteContractante = createAutoriteContractanteIfMissing(
-                "Autorité Contractante", "AC_DEFAULT", "contact@ac.test"
+                "Ministère des Finances – Direction du Crédit d'impôt (autorité contractante pilote)",
+                "AC_DEFAULT",
+                "dcpi@finances.gov.mr | Nouakchott, Mauritanie"
         );
         Entreprise entreprise = createEntrepriseIfMissing(
-                "Entreprise par défaut", "NIF_DEFAULT", "Nouakchott", "REGULIERE"
+                "Société Mauritanienne de Travaux Publics et Bâtiment (SMTPB)",
+                "NIF_DEFAULT",
+                "Zone industrielle, Tevragh-Zeina – Nouakchott",
+                "REGULIERE"
         );
         Entreprise entreprise2 = createEntrepriseIfMissing(
-                "Entreprise test", "NIF_TEST", "Adresse fake", "REGULIERE"
+                "Compagnie industrielle du Nord – Mauritanie (CIN-MR)",
+                "NIF_TEST",
+                "Nouadhibou, parc industriel – Mauritanie",
+                "REGULIERE"
         );
-        createConventionIfMissing("CONV-DEFAULT", "Convention par défaut", "Bailleur test", autoriteContractante);
+        createConventionIfMissing(
+                "CONV-DEFAULT",
+                "Convention-cadre de financement – programme d'investissement public (échantillon SGCI)",
+                "Banque Islamique de Développement (BID)",
+                autoriteContractante);
         createUserIfMissing("admin", Role.ADMIN_SI, "Administrateur SGCI");
         createUserIfMissing("president", Role.PRESIDENT, "Président");
         createUserIfMissing("dgd", Role.DGD, "Agent DGD");
@@ -501,20 +512,36 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("mise_en_place.submit", "Soumettre une demande de mise en place");
         createPermission("mise_en_place.document.upload", "Déposer les pièces justificatives");
         createPermission("mise_en_place.view", "Consulter l'état d'avancement");
+        createPermission("mise_en_place.annuler", "Annuler une demande de mise en place");
         createPermission("mise_en_place.entreprise.queue.view", "Consulter ses demandes de mise en place");
+        createPermission("mise_en_place.dgd.queue.view", "Consulter les dossiers contrôle fiscal");
+        createPermission("mise_en_place.dgd.validate", "Valider l'éligibilité");
+        createPermission("mise_en_place.dgd.reject", "Rejeter la demande de mise en place");
+        createPermission("mise_en_place.dgd.resolve", "Résoudre un rejet temporaire DGD");
+
         createPermission("mise_en_place.dgi.queue.view", "Consulter les dossiers contrôle fiscal");
         createPermission("mise_en_place.dgi.validate", "Valider l'éligibilité");
         createPermission("mise_en_place.dgi.reject", "Rejeter la demande de mise en place");
+        createPermission("mise_en_place.dgi.resolve", "Résoudre un rejet temporaire DGI");
+
         createPermission("mise_en_place.dgtcp.queue.view", "Consulter les demandes de mise en place");
+        createPermission("mise_en_place.dgtcp.validate", "Apposer le visa DGTCP");
+        createPermission("mise_en_place.dgtcp.reject", "Rejeter temporairement (DGTCP)");
         createPermission("mise_en_place.dgtcp.open_credit", "Ouvrir le crédit d'impôt");
         createPermission("mise_en_place.dgtcp.allocate", "Ventiler le crédit");
         createPermission("mise_en_place.dgtcp.certificate.generate", "Générer le certificat");
         createPermission("mise_en_place.dgtcp.certificate.send", "Transmettre le certificat pour signature");
+        createPermission("mise_en_place.dgtcp.resolve", "Résoudre un rejet temporaire DGTCP");
+
+        createPermission("mise_en_place.dgb.queue.view", "Consulter les dossiers Budget");
+        createPermission("mise_en_place.dgb.resolve", "Résoudre un rejet temporaire DGB");
+
         createPermission("mise_en_place.president.queue.view", "Consulter les certificats en attente");
         createPermission("mise_en_place.president.validate", "Valider le certificat");
         createPermission("mise_en_place.president.document.generate", "Déclencher l'édition du document officiel");
         createPermission("mise_en_place.president.signature.upload", "Déposer le scan signé");
         createPermission("mise_en_place.president.reject", "Rejeter le certificat");
+        createPermission("mise_en_place.president.resolve", "Résoudre un rejet temporaire Président");
 
         createPermission("utilisation.douane.submit", "Soumettre une demande d'utilisation Douane");
         createPermission("utilisation.douane.document.upload", "Déposer les pièces import");
@@ -539,6 +566,15 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("utilisation.interieur.dgtcp.solde.update", "Mettre à jour le solde Intérieur");
         createPermission("utilisation.interieur.dgtcp.reject", "Rejeter la demande Intérieur");
         createPermission("utilisation.interieur.dgi.view", "Consulter les utilisations Intérieur");
+        createPermission("utilisation.interieur.dgi.decision", "Enregistrer visa ou rejet temporaire (DGI, TVA intérieure)");
+
+        createPermission("utilisation.douane.dgd.resolve", "Résoudre un rejet temporaire (DGD, utilisation douane)");
+        createPermission("utilisation.douane.dgtcp.resolve", "Résoudre un rejet temporaire (DGTCP, utilisation douane)");
+        createPermission("utilisation.interieur.dgtcp.resolve", "Résoudre un rejet temporaire (DGTCP, TVA intérieure)");
+        createPermission("utilisation.interieur.dgi.resolve", "Résoudre un rejet temporaire (DGI, TVA intérieure)");
+
+        createPermission("utilisation.entreprise.rejet.repondre",
+                "Répondre à un rejet temporaire sur une utilisation (message ou complément lié au dépôt de pièces)");
 
         createPermission("modification.submit", "Soumettre une demande de modification");
         createPermission("modification.document.upload", "Déposer les documents justificatifs");
@@ -604,6 +640,8 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("delegue.list", "Consulter la liste des délégués");
         createPermission("delegue.create", "Créer un délégué");
         createPermission("delegue.disable", "Activer/désactiver un délégué");
+
+        createPermission("reporting.view", "Consulter les tableaux de bord et statistiques agrégées");
     }
 
     private void seedRolePermissions() {
@@ -669,6 +707,7 @@ public class DataInitializer implements CommandLineRunner {
         );
 
         assign(Role.AUTORITE_UEP,
+                "mise_en_place.annuler",
                 "projet.create",
                 "projet.document.upload",
                 "projet.view",
@@ -698,6 +737,7 @@ public class DataInitializer implements CommandLineRunner {
         );
 
         assign(Role.ENTREPRISE,
+                "mise_en_place.annuler",
                 "correction.entreprise.queue.view",
                 "mise_en_place.entreprise.queue.view",
                 "document.requirements.view",
@@ -709,6 +749,7 @@ public class DataInitializer implements CommandLineRunner {
                 "utilisation.interieur.document.upload",
                 "utilisation.interieur.solde.view",
                 "utilisation.interieur.history.view",
+                "utilisation.entreprise.rejet.repondre",
                 "modification.submit",
                 "modification.document.upload",
                 "modification.view",
@@ -720,7 +761,24 @@ public class DataInitializer implements CommandLineRunner {
                 "sous_traitant.list"
         );
 
+        assign(Role.SOUS_TRAITANT,
+                "document.requirements.view",
+                "utilisation.douane.submit",
+                "utilisation.douane.document.upload",
+                "utilisation.douane.solde.view",
+                "utilisation.douane.history.view",
+                "utilisation.interieur.submit",
+                "utilisation.interieur.document.upload",
+                "utilisation.interieur.solde.view",
+                "utilisation.interieur.history.view",
+                "utilisation.entreprise.rejet.repondre",
+                "sous_traitance.submit",
+                "sous_traitance.solde.view",
+                "sous_traitant.list"
+        );
+
         assign(Role.DGD,
+                "document.requirements.view",
                 "correction.dgd.queue.view",
                 "correction.offer.view",
                 "correction.offer.upload",
@@ -734,10 +792,16 @@ public class DataInitializer implements CommandLineRunner {
                 "utilisation.douane.dgd.queue.view",
                 "utilisation.douane.dgd.verify",
                 "utilisation.douane.dgd.quittance.visa",
-                "utilisation.douane.dgd.reject"
+                "utilisation.douane.dgd.reject",
+                "utilisation.douane.dgd.resolve",
+                "mise_en_place.dgd.queue.view",
+                "mise_en_place.dgd.validate",
+                "mise_en_place.dgd.reject",
+                "mise_en_place.dgd.resolve"
         );
 
         assign(Role.DGI,
+                "document.requirements.view",
                 "correction.dgi.queue.view",
                 "correction.dgi.visa",
                 "correction.dgi.reject",
@@ -745,47 +809,80 @@ public class DataInitializer implements CommandLineRunner {
                 "mise_en_place.dgi.queue.view",
                 "mise_en_place.dgi.validate",
                 "mise_en_place.dgi.reject",
+                "mise_en_place.dgi.resolve",
                 "utilisation.interieur.dgi.view",
-                "correction.offer.view"
-        );
-
-        assign(Role.DGB,
-                "projet.validate",
-                "projet.reject",
-                "projet.view",
+                "utilisation.interieur.dgi.decision",
+                "utilisation.interieur.dgi.resolve",
+                "correction.offer.view",
                 "convention.view.all",
                 "convention.validate",
                 "convention.reject",
+                "correction.view.audit",
+                "archivage.view",
+                "user.create",
+                "user.update",
+                "user.disable",
+                "user.reset",
+                "user.list",
+                "user.role.assign",
+                "role.create",
+                "role.permissions.update",
+                "role.list",
+                "role.disable",
+                "security.audit.view",
+                "security.logins.view",
+                "permissions.manage",
+                "permissions.view",
+                "entreprise.list",
+                "reporting.view"
+        );
+
+        assign(Role.DGB,
+                "document.requirements.view",
+                "convention.view.all",
+                "convention.validate",
+                "convention.reject",
+                "projet.validate",
+                "projet.reject",
+                "projet.view",
                 "correction.dgb.queue.view",
                 "correction.dgb.visa",
                 "correction.dgb.reject",
-                "correction.status.update",
-                "correction.offer.view"
-        );
+                "reporting.view");
+
+        // Président : accès complet (toutes les permissions enregistrées)
+        assignAllPermissions(Role.PRESIDENT);
 
         assign(Role.DGTCP,
                 "correction.dgtcp.queue.view",
-                "correction.offer.upload",
                 "correction.dgtcp.review",
                 "correction.dgtcp.finalize",
                 "correction.dgtcp.visa",
                 "correction.dgtcp.request_complements",
                 "correction.dgtcp.reject",
+                "correction.offer.view",
                 "correction.status.update",
                 "mise_en_place.dgtcp.queue.view",
+                "mise_en_place.dgtcp.validate",
+                "mise_en_place.dgtcp.reject",
                 "mise_en_place.dgtcp.open_credit",
                 "mise_en_place.dgtcp.allocate",
                 "mise_en_place.dgtcp.certificate.generate",
                 "mise_en_place.dgtcp.certificate.send",
+                "mise_en_place.dgtcp.resolve",
+                "mise_en_place.view",
+                "document.requirements.view",
                 "utilisation.douane.dgtcp.queue.view",
                 "utilisation.douane.dgtcp.impute",
                 "utilisation.douane.dgtcp.solde.update",
                 "utilisation.douane.dgtcp.history.view",
+                "utilisation.douane.dgtcp.resolve",
                 "utilisation.interieur.dgtcp.queue.view",
                 "utilisation.interieur.dgtcp.verify",
                 "utilisation.interieur.dgtcp.validate",
                 "utilisation.interieur.dgtcp.solde.update",
                 "utilisation.interieur.dgtcp.reject",
+                "utilisation.interieur.dgtcp.resolve",
                 "modification.dgtcp.queue.view",
                 "modification.dgtcp.analyze",
                 "modification.dgtcp.propose",
@@ -793,136 +890,70 @@ public class DataInitializer implements CommandLineRunner {
                 "transfert.dgtcp.verify",
                 "transfert.dgtcp.prepare",
                 "transfert.dgtcp.update",
-                "cloture.queue.view",
-                "cloture.prepare",
-                "cloture.report.view",
-                "cloture.report.generate"
-                ,"sous_traitance.dgtcp.queue.view"
-                ,"sous_traitance.dgtcp.update"
+                "sous_traitance.dgtcp.queue.view",
+                "sous_traitance.dgtcp.update",
+                "entreprise.list",
+                "reporting.view"
         );
 
-        assign(Role.SOUS_TRAITANT,
-                "document.requirements.view",
-                "sous_traitance.solde.view",
-                "utilisation.douane.submit",
-                "utilisation.douane.document.upload",
-                "utilisation.douane.solde.view",
-                "utilisation.douane.history.view",
-                "utilisation.interieur.submit",
-                "utilisation.interieur.document.upload",
-                "utilisation.interieur.solde.view",
-                "utilisation.interieur.history.view"
-        );
+    assign(Role.ADMIN_SI,
+        "document.requirements.view",
+        "mise_en_place.annuler",
+            "projet.view.all",
+            "projet.validate",
+            "projet.reject",
+            "convention.view.all",
+            "convention.validate",
+            "convention.reject",
+            "correction.view.audit",
+            "archivage.view",
+            "user.create",
+            "user.update",
+            "user.disable",
+            "user.reset",
+            "user.list",
+            "user.role.assign",
+            "role.create",
+            "role.permissions.update",
+            "role.list",
+            "role.disable",
+            "security.audit.view",
+            "security.logins.view",
+            "permissions.manage",
+            "permissions.view",
+            "entreprise.list",
+            "reporting.view"
+    );
+}
 
-        assign(Role.PRESIDENT,
-                "correction.president.queue.view",
-                "correction.president.history.view",
-                "correction.president.arbitrate",
-                "correction.president.validate",
-                "correction.president.letter.generate",
-                "correction.president.signature.upload",
-                "correction.president.reject",
-                "document.requirements.view",
-                "correction.status.update",
-                "correction.dgd.queue.view",
-                "correction.dgd.save",
-                "correction.dgd.transmit",
-                "correction.dgtcp.queue.view",
-                "correction.dgtcp.visa",
-                "correction.dgtcp.reject",
-                "correction.dgtcp.request_complements",
-                "correction.dgi.queue.view",
-                "correction.dgi.visa",
-                "correction.dgi.reject",
-                "correction.dgb.queue.view",
-                "correction.dgb.visa",
-                "correction.dgb.reject",
-                "correction.offer.view",
-                "correction.offer.upload",
-                "correction.complement.add",
-                "correction.visa.history.view",
-                "mise_en_place.president.queue.view",
-                "mise_en_place.president.validate",
-                "mise_en_place.president.document.generate",
-                "mise_en_place.president.signature.upload",
-                "mise_en_place.president.reject",
-                "modification.president.queue.view",
-                "modification.president.validate",
-                "modification.president.reject",
-                "modification.president.document.generate",
-                "transfert.president.validate",
-                "transfert.president.reject",
-                "cloture.president.queue.view",
-                "cloture.president.validate",
-                "cloture.president.reject",
-                "projet.view.all",
-                "projet.validate",
-                "projet.reject",
-                "convention.view.all",
-                "correction.view.audit",
-                "archivage.view",
-                "user.create",
-                "user.update",
-                "user.disable",
-                "user.reset",
-                "user.list",
-                "user.role.assign",
-                "role.create",
-                "role.permissions.update",
-                "role.list",
-                "role.disable",
-                "security.audit.view",
-                "security.logins.view",
-                "permissions.manage",
-                "permissions.view"
-                ,"entreprise.list"
-        );
-
-        assign(Role.ADMIN_SI,
-                "projet.view.all",
-                "projet.validate",
-                "projet.reject",
-                "convention.view.all",
-                "convention.validate",
-                "convention.reject",
-                "correction.view.audit",
-                "archivage.view",
-                "user.create",
-                "user.update",
-                "user.disable",
-                "user.reset",
-                "user.list",
-                "user.role.assign",
-                "role.create",
-                "role.permissions.update",
-                "role.list",
-                "role.disable",
-                "security.audit.view",
-                "security.logins.view",
-                "permissions.manage",
-                "permissions.view"
-                ,"entreprise.list"
-        );
+private void createPermission(String code, String description) {
+    if (!permissionRepository.existsByCode(code)) {
+        permissionRepository.save(Permission.builder()
+                .code(code)
+                .description(description)
+                .build());
     }
+}
 
-    private void createPermission(String code, String description) {
-        if (!permissionRepository.existsByCode(code)) {
-            permissionRepository.save(Permission.builder()
-                    .code(code)
-                    .description(description)
-                    .build());
-        }
+private void assign(Role role, String... permissionCodes) {
+    for (String code : permissionCodes) {
+        Permission permission = permissionRepository.findByCode(code)
+                .orElseThrow(() -> new IllegalStateException("Permission manquante: " + code));
+        rolePermissionRepository.findByRoleAndPermission(role, permission)
+                .orElseGet(() -> rolePermissionRepository.save(RolePermission.builder()
+                        .role(role)
+                        .permission(permission)
+                        .build()));
     }
+}
 
-    private void assign(Role role, String... permissionCodes) {
-        for (String code : permissionCodes) {
-            Permission permission = permissionRepository.findByCode(code)
-                    .orElseThrow(() -> new IllegalStateException("Permission manquante: " + code));
-            rolePermissionRepository.findByRoleAndPermission(role, permission)
-                    .orElseGet(() -> rolePermissionRepository.save(RolePermission.builder()
-                            .role(role)
-                            .permission(permission)
-                            .build()));
-        }
+private void assignAllPermissions(Role role) {
+    for (Permission permission : permissionRepository.findAll()) {
+        rolePermissionRepository.findByRoleAndPermission(role, permission)
+                .orElseGet(() -> rolePermissionRepository.save(RolePermission.builder()
+                        .role(role)
+                        .permission(permission)
+                        .build()));
     }
+}
 }

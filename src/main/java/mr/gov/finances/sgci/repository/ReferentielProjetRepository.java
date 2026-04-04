@@ -11,4 +11,6 @@ import org.springframework.stereotype.Repository;
 public interface ReferentielProjetRepository extends JpaRepository<ReferentielProjet, Long> {
     List<ReferentielProjet> findByStatut(StatutReferentielProjet statut);
     List<ReferentielProjet> findByAutoriteContractanteId(Long autoriteContractanteId);
+
+    List<ReferentielProjet> findByConventionId(Long conventionId);
 }

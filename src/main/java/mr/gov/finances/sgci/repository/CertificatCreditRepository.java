@@ -18,15 +18,18 @@ public interface CertificatCreditRepository extends JpaRepository<CertificatCred
     boolean existsByNumero(String numero);
     boolean existsByDemandeCorrectionId(Long demandeCorrectionId);
     Optional<CertificatCredit> findFirstByDemandeCorrectionId(Long demandeCorrectionId);
-    List<CertificatCredit> findByStatut(StatutCertificat statut);
-    List<CertificatCredit> findByEntrepriseId(Long entrepriseId);
+    List<CertificatCredit> findByStatutOrderByDateEmissionDescIdDesc(StatutCertificat statut);
+
+    List<CertificatCredit> findByEntrepriseIdOrderByDateEmissionDescIdDesc(Long entrepriseId);
+
+    List<CertificatCredit> findAllByOrderByDateEmissionDescIdDesc();
 
     Optional<CertificatCredit> findFirstByEntrepriseIdAndStatutOrderByIdDesc(Long entrepriseId, StatutCertificat statut);
 
-    @Query("select distinct c from CertificatCredit c join c.demandeCorrection dc where dc.autoriteContractante.id = :autoriteContractanteId")
+    @Query("select distinct c from CertificatCredit c join c.demandeCorrection dc where dc.autoriteContractante.id = :autoriteContractanteId order by c.dateEmission desc, c.id desc")
     List<CertificatCredit> findAllByAutoriteContractanteId(@Param("autoriteContractanteId") Long autoriteContractanteId);
 
-    @Query("select distinct c from CertificatCredit c join c.demandeCorrection dc join dc.marche m join m.delegues md where md.delegue.id = :delegueId")
+    @Query("select distinct c from CertificatCredit c join c.demandeCorrection dc join dc.marche m join m.delegues md where md.delegue.id = :delegueId order by c.dateEmission desc, c.id desc")
     List<CertificatCredit> findAllByDelegueId(@Param("delegueId") Long delegueId);
 
     @Query("select count(c) > 0 from CertificatCredit c join c.demandeCorrection dc join dc.marche m join m.delegues md where md.delegue.id = :delegueId and c.id = :certificatId")
