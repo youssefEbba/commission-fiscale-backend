@@ -19,4 +19,8 @@ public final class CorsAllowedOrigins {
             "http://10.106.0.2:8081",
             "http://172.18.0.1:8081"
     );
+
+    public static boolean matchesFrontendOrigin(String originTrimmed) {
+        return originTrimmed != null && FRONTEND.contains(originTrimmed);
+    }
 }

@@ -46,6 +46,7 @@ C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\controller\UtilisateurController.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\DocumentSousTraitanceService.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\controller\AuthController.java
+C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\config\WsPathCorsFilter.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\enums\TypeDocument.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\workflow\DemandeCorrectionWorkflow.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\entity\Convention.java
@@ -259,6 +260,7 @@ C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\repository\DocumentSousTraitanceRepository.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\enums\StatutMarche.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\RejetTempResponseDto.java
+C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\config\WsPathCorsFilterConfig.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\enums\StatutCertificat.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\UpdateMarcheRequest.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\SousTraitantUtilisateurDto.java

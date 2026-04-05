@@ -146,6 +146,7 @@ mr\gov\finances\sgci\web\dto\DocumentMarcheDto.class
 mr\gov\finances\sgci\domain\entity\UtilisationDouaniere.class
 mr\gov\finances\sgci\web\dto\DossierGedDto$DossierGedDtoBuilder.class
 mr\gov\finances\sgci\web\dto\DocumentCertificatCreditDto.class
+mr\gov\finances\sgci\config\WsPathCorsFilterConfig.class
 mr\gov\finances\sgci\domain\entity\ClotureCredit$ClotureCreditBuilder.class
 mr\gov\finances\sgci\repository\DocumentMarcheRepository.class
 mr\gov\finances\sgci\web\dto\reporting\TimeSeriesPointDto$TimeSeriesPointDtoBuilder.class
@@ -234,6 +235,7 @@ mr\gov\finances\sgci\web\controller\ForexController.class
 mr\gov\finances\sgci\security\CustomUserDetailsService.class
 mr\gov\finances\sgci\domain\entity\Marche$MarcheBuilder.class
 mr\gov\finances\sgci\domain\entity\Utilisateur$UtilisateurBuilder.class
+mr\gov\finances\sgci\config\WsPathCorsFilter.class
 mr\gov\finances\sgci\web\dto\CreateDemandeCorrectionRequest.class
 mr\gov\finances\sgci\repository\MarcheRepository.class
 mr\gov\finances\sgci\web\dto\EntrepriseDto$EntrepriseDtoBuilder.class
