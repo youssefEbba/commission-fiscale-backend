@@ -172,7 +172,6 @@ mr\gov\finances\sgci\domain\entity\DqeLigne$DqeLigneBuilder.class
 mr\gov\finances\sgci\web\dto\ReferentielProjetDto$ReferentielProjetDtoBuilder.class
 mr\gov\finances\sgci\domain\enums\TypeProjet.class
 mr\gov\finances\sgci\domain\enums\Role.class
-mr\gov\finances\sgci\config\WebMvcConfig.class
 mr\gov\finances\sgci\domain\entity\DocumentCertificatCredit$DocumentCertificatCreditBuilder.class
 mr\gov\finances\sgci\web\dto\RejetTempResponseDto.class
 mr\gov\finances\sgci\repository\AvenantRepository.class

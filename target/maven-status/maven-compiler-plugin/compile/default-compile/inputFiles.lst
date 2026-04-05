@@ -89,7 +89,6 @@ C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\DqeLigneDto.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\entity\DocumentRequirement.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\controller\DecisionCorrectionController.java
-C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\config\WebMvcConfig.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\ReportingService.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\DecisionCreditDto.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\entity\DecisionCorrection.java
