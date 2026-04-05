@@ -12,9 +12,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws")
-                .setAllowedOrigins(CorsAllowedOrigins.FRONTEND.toArray(String[]::new))
-                .withSockJS();
+        String[] origins = CorsAllowedOrigins.FRONTEND.toArray(String[]::new);
+        // STOMP.js / @stomp/stompjs en WebSocket native : wss://hôte/ws?token=…
+        registry.addEndpoint("/ws").setAllowedOrigins(origins);
+        // Navigateur / fallback transport : SockJS (/ws/info puis …/websocket)
+        registry.addEndpoint("/ws").setAllowedOrigins(origins).withSockJS();
     }
 
     @Override
