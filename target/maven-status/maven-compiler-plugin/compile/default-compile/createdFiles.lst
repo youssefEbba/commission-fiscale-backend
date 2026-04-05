@@ -311,6 +311,7 @@ mr\gov\finances\sgci\web\dto\DocumentDto.class
 mr\gov\finances\sgci\web\dto\reporting\TimeSeriesPointDto.class
 mr\gov\finances\sgci\service\EntrepriseService.class
 mr\gov\finances\sgci\web\dto\DocumentProjetDto.class
+mr\gov\finances\sgci\config\CorsAllowedOrigins.class
 mr\gov\finances\sgci\repository\DeviseRepository.class
 mr\gov\finances\sgci\web\dto\UpsertDocumentRequirementRequest$UpsertDocumentRequirementRequestBuilder.class
 mr\gov\finances\sgci\domain\entity\Notification.class
