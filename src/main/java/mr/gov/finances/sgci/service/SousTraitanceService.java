@@ -1,9 +1,11 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
-import mr.gov.finances.sgci.domain.entity.DocumentSousTraitance;
 import mr.gov.finances.sgci.domain.entity.SousTraitance;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
@@ -19,16 +21,17 @@ import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.web.dto.CreateSousTraitanceOnboardingRequest;
 import mr.gov.finances.sgci.web.dto.CreateSousTraitanceRequest;
+import mr.gov.finances.sgci.web.dto.EntrepriseDto;
 import mr.gov.finances.sgci.web.dto.SousTraitanceDto;
 import mr.gov.finances.sgci.web.dto.SousTraitanceOnboardingResultDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -45,75 +48,146 @@ public class SousTraitanceService {
     private final NotificationService notificationService;
 
     @Transactional(readOnly = true)
-    public List<SousTraitanceDto> findAll(AuthenticatedUser user) {
+    public List<SousTraitanceDto> findAll(AuthenticatedUser user, Long sousTraitantEntrepriseIdFilter) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
 
         if (user.getRole() == Role.ENTREPRISE) {
             Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                    .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
             if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
                 return List.of();
             }
             Long entrepriseId = u.getEntreprise().getId();
-            return repository.findByCertificatCreditEntrepriseIdOrSousTraitantEntrepriseId(entrepriseId, entrepriseId)
+            List<SousTraitanceDto> list = repository.findByCertificatCreditEntrepriseIdOrSousTraitantEntrepriseId(entrepriseId, entrepriseId)
                     .stream()
                     .distinct()
+                    .map(this::toDto)
+                    .collect(Collectors.toList());
+            if (sousTraitantEntrepriseIdFilter != null) {
+                return list.stream()
+                        .filter(d -> Objects.equals(d.getSousTraitantEntrepriseId(), sousTraitantEntrepriseIdFilter))
+                        .collect(Collectors.toList());
+            }
+            return list;
+        }
+        if (sousTraitantEntrepriseIdFilter != null) {
+            return repository.findAll().stream()
+                    .filter(st -> st.getSousTraitantEntreprise() != null
+                            && Objects.equals(st.getSousTraitantEntreprise().getId(), sousTraitantEntrepriseIdFilter))
                     .map(this::toDto)
                     .collect(Collectors.toList());
         }
         return repository.findAll().stream().map(this::toDto).collect(Collectors.toList());
     }
 
+    /**
+     * Entreprises déjà présentes comme sous-traitantes sur au moins un certificat du titulaire connecté.
+     */
+    @Transactional(readOnly = true)
+    public List<EntrepriseDto> findSousTraitantEntreprisesForTitulaire(AuthenticatedUser user) {
+        if (user == null || user.getRole() != Role.ENTREPRISE) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Réservé à l'entreprise titulaire");
+        }
+        Utilisateur u = utilisateurRepository.findById(user.getUserId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+            return List.of();
+        }
+        return repository.findDistinctSousTraitantEntreprisesForTitulaire(u.getEntreprise().getId()).stream()
+                .map(this::entrepriseToDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Toutes les entreprises ayant été désignées comme sous-traitantes sur au moins une ligne de sous-traitance.
+     */
+    @Transactional(readOnly = true)
+    public List<EntrepriseDto> findDistinctSousTraitantEntreprisesGlobally() {
+        return repository.findDistinctSousTraitantEntreprises().stream()
+                .map(this::entrepriseToDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public SousTraitanceDto findByCertificatCreditId(Long certificatCreditId, AuthenticatedUser user) {
+        CertificatCredit c = certificatRepository.findById(certificatCreditId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat non trouvé"));
+        SousTraitance st = repository.findByCertificatCreditId(certificatCreditId).orElse(null);
+        if (st == null) {
+            return null;
+        }
+        assertCanViewSousTraitance(st, user, c);
+        return toDto(st);
+    }
+
+    private void assertCanViewSousTraitance(SousTraitance st, AuthenticatedUser user, CertificatCredit cert) {
+        if (user == null || user.getRole() == null) {
+            return;
+        }
+        if (user.getRole() != Role.ENTREPRISE && user.getRole() != Role.SOUS_TRAITANT) {
+            return;
+        }
+        Utilisateur u = utilisateurRepository.findById(user.getUserId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
+        }
+        Long myEnt = u.getEntreprise().getId();
+        Long titId = cert.getEntreprise() != null ? cert.getEntreprise().getId() : null;
+        if (user.getRole() == Role.ENTREPRISE && titId != null && titId.equals(myEnt)) {
+            return;
+        }
+        if (user.getRole() == Role.SOUS_TRAITANT) {
+            Long stEnt = st.getSousTraitantEntreprise() != null ? st.getSousTraitantEntreprise().getId() : null;
+            if (stEnt != null && stEnt.equals(myEnt)) {
+                return;
+            }
+        }
+        throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: sous-traitance hors périmètre");
+    }
+
     @Transactional(readOnly = true)
     public SousTraitanceDto findById(Long id, AuthenticatedUser user) {
         SousTraitance st = repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Sous-traitance non trouvée: " + id));
-
-        if (user != null && user.getRole() == Role.ENTREPRISE) {
-            Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                    .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
-            Long entId = u.getEntreprise() != null ? u.getEntreprise().getId() : null;
-            Long sourceEntId = st.getCertificatCredit() != null && st.getCertificatCredit().getEntreprise() != null
-                    ? st.getCertificatCredit().getEntreprise().getId()
-                    : null;
-            if (entId == null || sourceEntId == null || !entId.equals(sourceEntId)) {
-                throw new RuntimeException("Accès refusé: sous-traitance hors périmètre");
-            }
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Sous-traitance non trouvée: " + id));
+        CertificatCredit c = st.getCertificatCredit();
+        if (c == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Sous-traitance incohérente: certificat manquant");
         }
-
+        assertCanViewSousTraitance(st, user, c);
         return toDto(st);
     }
 
     @Transactional
     public SousTraitanceDto create(CreateSousTraitanceRequest request, AuthenticatedUser user) {
         if (request == null) {
-            throw new RuntimeException("Requête invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Requête invalide");
         }
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.ENTREPRISE) {
-            throw new RuntimeException("Seule l'entreprise attributaire peut soumettre une sous-traitance");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise attributaire peut soumettre une sous-traitance");
         }
 
         CertificatCredit c = certificatRepository.findById(request.getCertificatCreditId())
-                .orElseThrow(() -> new RuntimeException("Certificat non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat non trouvé"));
         if (c.getStatut() != StatutCertificat.OUVERT) {
-            throw new RuntimeException("Le certificat doit être OUVERT");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat doit être OUVERT");
         }
 
         Utilisateur demandeur = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         if (demandeur.getEntreprise() == null || demandeur.getEntreprise().getId() == null
                 || c.getEntreprise() == null || c.getEntreprise().getId() == null
                 || !demandeur.getEntreprise().getId().equals(c.getEntreprise().getId())) {
-            throw new RuntimeException("Accès refusé: certificat ne correspond pas à l'entreprise");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: certificat ne correspond pas à l'entreprise");
         }
 
         Entreprise sousTraitantEntreprise = entrepriseRepository.findById(request.getSousTraitantEntrepriseId())
-                .orElseThrow(() -> new RuntimeException("Entreprise sous-traitante non trouvée"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise sous-traitante non trouvée"));
 
         SousTraitance st = repository.findByCertificatCreditId(c.getId()).orElse(null);
         if (st == null) {
@@ -146,27 +220,27 @@ public class SousTraitanceService {
     @Transactional
     public SousTraitanceOnboardingResultDto onboard(CreateSousTraitanceOnboardingRequest request, AuthenticatedUser user) {
         if (request == null) {
-            throw new RuntimeException("Requête invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Requête invalide");
         }
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.ENTREPRISE) {
-            throw new RuntimeException("Seule l'entreprise attributaire peut créer un sous-traitant");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise attributaire peut créer un sous-traitant");
         }
 
         CertificatCredit c = certificatRepository.findById(request.getCertificatCreditId())
-                .orElseThrow(() -> new RuntimeException("Certificat non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat non trouvé"));
         if (c.getStatut() != StatutCertificat.OUVERT) {
-            throw new RuntimeException("Le certificat doit être OUVERT");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat doit être OUVERT");
         }
 
         Utilisateur demandeur = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         if (demandeur.getEntreprise() == null || demandeur.getEntreprise().getId() == null
                 || c.getEntreprise() == null || c.getEntreprise().getId() == null
                 || !demandeur.getEntreprise().getId().equals(c.getEntreprise().getId())) {
-            throw new RuntimeException("Accès refusé: certificat ne correspond pas à l'entreprise");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: certificat ne correspond pas à l'entreprise");
         }
 
         String nif = request.getSousTraitantEntrepriseNif() != null ? request.getSousTraitantEntrepriseNif().trim() : null;
@@ -211,20 +285,23 @@ public class SousTraitanceService {
     @Transactional
     public SousTraitanceDto autoriserByDgtcp(Long id, AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.DGTCP) {
-            throw new RuntimeException("Seul DGTCP peut autoriser une sous-traitance");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut autoriser une sous-traitance");
         }
 
         SousTraitance st = repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Sous-traitance non trouvée: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Sous-traitance non trouvée: " + id));
 
         if (st.getStatut() == StatutSousTraitance.AUTORISEE) {
             return toDto(st);
         }
         if (st.getStatut() == StatutSousTraitance.REFUSEE) {
-            throw new RuntimeException("Sous-traitance déjà refusée");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Sous-traitance déjà refusée");
+        }
+        if (st.getStatut() != StatutSousTraitance.DEMANDE && st.getStatut() != StatutSousTraitance.EN_COURS) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule une demande en attente peut être autorisée par DGTCP");
         }
 
         requirementValidator.assertRequiredDocumentsPresent(
@@ -244,16 +321,22 @@ public class SousTraitanceService {
     @Transactional
     public SousTraitanceDto refuserByDgtcp(Long id, AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.DGTCP) {
-            throw new RuntimeException("Seul DGTCP peut refuser une sous-traitance");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut refuser une sous-traitance");
         }
 
         SousTraitance st = repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Sous-traitance non trouvée: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Sous-traitance non trouvée: " + id));
         if (st.getStatut() == StatutSousTraitance.AUTORISEE) {
-            throw new RuntimeException("Sous-traitance déjà autorisée");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Sous-traitance déjà autorisée");
+        }
+        if (st.getStatut() == StatutSousTraitance.REFUSEE) {
+            return toDto(st);
+        }
+        if (st.getStatut() != StatutSousTraitance.DEMANDE && st.getStatut() != StatutSousTraitance.EN_COURS) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule une demande en attente peut être refusée par DGTCP");
         }
 
         st.setStatut(StatutSousTraitance.REFUSEE);
@@ -265,12 +348,91 @@ public class SousTraitanceService {
         return result;
     }
 
+    @Transactional
+    public SousTraitanceDto suspendreParTitulaire(Long id, AuthenticatedUser user) {
+        SousTraitance st = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Sous-traitance non trouvée: " + id));
+        requireTitulaireOnSousTraitance(st, user);
+        if (st.getStatut() != StatutSousTraitance.AUTORISEE) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule une sous-traitance autorisée peut être suspendue");
+        }
+        st.setStatut(StatutSousTraitance.SUSPENDUE);
+        st = repository.save(st);
+        SousTraitanceDto result = toDto(st);
+        auditService.log(AuditAction.UPDATE, "SousTraitance", String.valueOf(st.getId()),
+                Map.of("action", "suspend_titulaire", "statut", st.getStatut().name()));
+        return result;
+    }
+
+    @Transactional
+    public SousTraitanceDto reactiverParTitulaire(Long id, AuthenticatedUser user) {
+        SousTraitance st = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Sous-traitance non trouvée: " + id));
+        requireTitulaireOnSousTraitance(st, user);
+        if (st.getStatut() != StatutSousTraitance.SUSPENDUE) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule une sous-traitance suspendue peut être réactivée par le titulaire");
+        }
+        st.setStatut(StatutSousTraitance.AUTORISEE);
+        if (st.getDateAutorisation() == null) {
+            st.setDateAutorisation(Instant.now());
+        }
+        st = repository.save(st);
+        SousTraitanceDto result = toDto(st);
+        auditService.log(AuditAction.UPDATE, "SousTraitance", String.valueOf(st.getId()),
+                Map.of("action", "reactivate_titulaire", "statut", st.getStatut().name()));
+        return result;
+    }
+
+    @Transactional
+    public SousTraitanceDto revoquerParTitulaire(Long id, AuthenticatedUser user) {
+        SousTraitance st = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Sous-traitance non trouvée: " + id));
+        requireTitulaireOnSousTraitance(st, user);
+        if (st.getStatut() == StatutSousTraitance.REFUSEE) {
+            return toDto(st);
+        }
+        st.setStatut(StatutSousTraitance.REVOQUEE);
+        st.setDateAutorisation(null);
+        st = repository.save(st);
+        SousTraitanceDto result = toDto(st);
+        auditService.log(AuditAction.UPDATE, "SousTraitance", String.valueOf(st.getId()),
+                Map.of("action", "revoke_titulaire", "statut", st.getStatut().name()));
+        return result;
+    }
+
+    private void requireTitulaireOnSousTraitance(SousTraitance st, AuthenticatedUser user) {
+        if (user == null || user.getRole() != Role.ENTREPRISE) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Réservé à l'entreprise titulaire du certificat");
+        }
+        Utilisateur u = utilisateurRepository.findById(user.getUserId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        if (u.getEntreprise() == null || st.getCertificatCredit() == null || st.getCertificatCredit().getEntreprise() == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Données invalides");
+        }
+        if (!u.getEntreprise().getId().equals(st.getCertificatCredit().getEntreprise().getId())) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: vous n'êtes pas le titulaire de ce certificat");
+        }
+    }
+
+    private EntrepriseDto entrepriseToDto(Entreprise e) {
+        if (e == null) {
+            return null;
+        }
+        return EntrepriseDto.builder()
+                .id(e.getId())
+                .raisonSociale(e.getRaisonSociale())
+                .nif(e.getNif())
+                .adresse(e.getAdresse())
+                .situationFiscale(e.getSituationFiscale())
+                .build();
+    }
+
     public void assertSousTraitantEntrepriseAuthorizedOnCertificat(Long certificatCreditId, Long sousTraitantEntrepriseId) {
         if (certificatCreditId == null || sousTraitantEntrepriseId == null) {
-            throw new RuntimeException("Accès refusé: paramètres manquants");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: paramètres manquants");
         }
         repository.findByCertificatCreditIdAndSousTraitantEntrepriseIdAndStatut(certificatCreditId, sousTraitantEntrepriseId, StatutSousTraitance.AUTORISEE)
-                .orElseThrow(() -> new RuntimeException("Accès refusé: entreprise sous-traitante non autorisée sur ce certificat"));
+                .orElseThrow(() -> ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: entreprise sous-traitante non autorisée sur ce certificat"));
     }
 
     private SousTraitanceDto toDto(SousTraitance st) {

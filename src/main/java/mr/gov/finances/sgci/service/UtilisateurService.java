@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.Role;
@@ -56,7 +59,7 @@ public class UtilisateurService {
     @Transactional
     public UtilisateurDto setActif(Long id, boolean actif) {
         Utilisateur u = utilisateurRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé: " + id));
         u.setActif(actif);
         u = utilisateurRepository.save(u);
         return toDto(u);

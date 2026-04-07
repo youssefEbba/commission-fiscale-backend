@@ -9,9 +9,11 @@ import mr.gov.finances.sgci.service.SousTraitanceService;
 import mr.gov.finances.sgci.web.dto.CreateSousTraitanceOnboardingRequest;
 import mr.gov.finances.sgci.web.dto.CreateSousTraitanceRequest;
 import mr.gov.finances.sgci.web.dto.DocumentSousTraitanceDto;
+import mr.gov.finances.sgci.web.dto.EntrepriseDto;
 import mr.gov.finances.sgci.web.dto.SousTraitanceDto;
 import mr.gov.finances.sgci.web.dto.SousTraitanceOnboardingResultDto;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -31,8 +33,30 @@ public class SousTraitanceController {
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('sous_traitance.solde.view', 'sous_traitance.dgtcp.queue.view', 'archivage.view')")
-    public List<SousTraitanceDto> getAll(@AuthenticationPrincipal AuthenticatedUser user) {
-        return service.findAll(user);
+    public List<SousTraitanceDto> getAll(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(required = false) Long sousTraitantEntrepriseId
+    ) {
+        return service.findAll(user, sousTraitantEntrepriseId);
+    }
+
+    @GetMapping("/entreprises-sous-traitantes")
+    @PreAuthorize("hasAuthority('sous_traitance.submit')")
+    public List<EntrepriseDto> listEntreprisesSousTraitantes(@AuthenticationPrincipal AuthenticatedUser user) {
+        return service.findSousTraitantEntreprisesForTitulaire(user);
+    }
+
+    @GetMapping("/by-certificat/{certificatCreditId}")
+    @PreAuthorize("hasAnyAuthority('sous_traitance.solde.view', 'sous_traitance.dgtcp.queue.view', 'archivage.view')")
+    public SousTraitanceDto getByCertificat(
+            @PathVariable Long certificatCreditId,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        SousTraitanceDto dto = service.findByCertificatCreditId(certificatCreditId, user);
+        if (dto == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Aucune sous-traitance pour ce certificat");
+        }
+        return dto;
     }
 
     @GetMapping("/{id}")
@@ -67,6 +91,33 @@ public class SousTraitanceController {
     @PreAuthorize("hasAuthority('sous_traitance.dgtcp.update')")
     public SousTraitanceDto refuser(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
         return service.refuserByDgtcp(id, user);
+    }
+
+    @PostMapping("/{id}/suspendre-titulaire")
+    @PreAuthorize("hasAuthority('sous_traitance.submit')")
+    public SousTraitanceDto suspendreTitulaire(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.suspendreParTitulaire(id, user);
+    }
+
+    @PostMapping("/{id}/reactiver-titulaire")
+    @PreAuthorize("hasAuthority('sous_traitance.submit')")
+    public SousTraitanceDto reactiverTitulaire(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.reactiverParTitulaire(id, user);
+    }
+
+    @PostMapping("/{id}/revoquer-titulaire")
+    @PreAuthorize("hasAuthority('sous_traitance.submit')")
+    public SousTraitanceDto revoquerTitulaire(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.revoquerParTitulaire(id, user);
     }
 
     @GetMapping("/{id}/documents")

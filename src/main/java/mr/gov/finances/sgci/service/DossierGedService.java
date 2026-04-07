@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.*;
 import mr.gov.finances.sgci.domain.enums.Role;
@@ -54,12 +57,12 @@ public class DossierGedService {
     @Transactional
     public DossierGed ensureCreatedForDemandeCorrection(Long demandeCorrectionId) {
         if (demandeCorrectionId == null) {
-            throw new RuntimeException("demandeCorrectionId manquant");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "demandeCorrectionId manquant");
         }
         return dossierRepository.findByDemandeCorrectionId(demandeCorrectionId)
                 .orElseGet(() -> {
                     DemandeCorrection dc = demandeCorrectionRepository.findById(demandeCorrectionId)
-                            .orElseThrow(() -> new RuntimeException("Demande de correction non trouvée: " + demandeCorrectionId));
+                            .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + demandeCorrectionId));
                     DossierGed d = DossierGed.builder()
                             .reference(generateReference())
                             .entreprise(dc.getEntreprise())
@@ -80,7 +83,7 @@ public class DossierGedService {
             return;
         }
         CertificatCredit c = certificatCreditRepository.findById(certificatCreditId)
-                .orElseThrow(() -> new RuntimeException("Certificat de crédit non trouvé: " + certificatCreditId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + certificatCreditId));
         dossier.setCertificatCredit(c);
         dossierRepository.save(dossier);
     }
@@ -97,9 +100,9 @@ public class DossierGedService {
     @Transactional(readOnly = true)
     public DossierGedDto findById(Long id, AuthenticatedUser user) {
         DossierGed dossier = dossierRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Dossier GED non trouvé: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Dossier GED non trouvé: " + id));
         if (!canAccessDossier(dossier, user)) {
-            throw new RuntimeException("Accès refusé: dossier hors périmètre");
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: dossier hors périmètre");
         }
         return toDto(dossier);
     }
@@ -109,12 +112,12 @@ public class DossierGedService {
             return dossierRepository.findAll();
         }
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         Role role = u.getRole();
 
         if (role == Role.AUTORITE_CONTRACTANTE) {
             if (u.getAutoriteContractante() == null) {
-                throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
             }
             return dossierRepository.findAllByAutoriteContractanteId(u.getAutoriteContractante().getId());
         }
@@ -125,7 +128,7 @@ public class DossierGedService {
 
         if (role == Role.ENTREPRISE) {
             if (u.getEntreprise() == null) {
-                throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
             }
             return dossierRepository.findByEntrepriseId(u.getEntreprise().getId());
         }

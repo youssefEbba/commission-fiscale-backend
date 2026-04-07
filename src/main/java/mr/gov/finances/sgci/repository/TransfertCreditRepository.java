@@ -6,11 +6,14 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface TransfertCreditRepository extends JpaRepository<TransfertCredit, Long> {
 
     List<TransfertCredit> findByCertificatCreditId(Long certificatCreditId);
+
+    Optional<TransfertCredit> findFirstByCertificatCreditIdOrderByIdDesc(Long certificatCreditId);
 
     List<TransfertCredit> findByCertificatCreditEntrepriseId(Long entrepriseId);
 

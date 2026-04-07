@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import java.io.IOException;
 import java.time.Instant;
 import java.util.HashMap;
@@ -53,7 +56,7 @@ public class ReferentielProjetService {
     @Transactional(readOnly = true)
     public ReferentielProjetDto findById(Long id) {
         return referentielRepository.findById(id).map(this::toDto)
-                .orElseThrow(() -> new RuntimeException("Référentiel projet non trouvé: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Référentiel projet non trouvé: " + id));
     }
 
     @Transactional(readOnly = true)
@@ -92,24 +95,24 @@ public class ReferentielProjetService {
     private AutoriteContractante resolveAutorite(Long autoriteContractanteId, Long userId) {
         if (autoriteContractanteId != null) {
             return autoriteRepository.findById(autoriteContractanteId)
-                    .orElseThrow(() -> new RuntimeException("Autorité contractante non trouvée"));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée"));
         }
         if (userId == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         Utilisateur user = utilisateurRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         if (user.getAutoriteContractante() == null) {
-            throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
         }
         return user.getAutoriteContractante();
     }
 
     private Convention resolveConvention(Long conventionId) {
         Convention convention = conventionRepository.findById(conventionId)
-                .orElseThrow(() -> new RuntimeException("Convention non trouvée"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée"));
         if (convention.getStatut() != StatutConvention.VALIDE) {
-            throw new RuntimeException("La convention doit être validée par DGB");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La convention doit être validée par DGB");
         }
         return convention;
     }
@@ -117,9 +120,9 @@ public class ReferentielProjetService {
     @Transactional
     public ReferentielProjetDto updateStatut(Long id, StatutReferentielProjet statut, Long userId, String motifRejet) {
         ReferentielProjet entity = referentielRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Référentiel projet non trouvé: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Référentiel projet non trouvé: " + id));
         if (statut == StatutReferentielProjet.ANNULE && entity.getStatut() == StatutReferentielProjet.VALIDE) {
-            throw new RuntimeException("Annulation impossible: le référentiel projet est déjà validé");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Annulation impossible: le référentiel projet est déjà validé");
         }
         entity.setStatut(statut);
         if (statut == StatutReferentielProjet.VALIDE || statut == StatutReferentielProjet.REJETE || statut == StatutReferentielProjet.ANNULE) {
@@ -137,18 +140,13 @@ public class ReferentielProjetService {
     @Transactional
     public DocumentProjetDto uploadDocument(Long referentielProjetId, TypeDocumentProjet type, MultipartFile file) throws IOException {
         if (file.isEmpty()) {
-            throw new RuntimeException("Le fichier est vide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         ReferentielProjet referentiel = referentielRepository.findById(referentielProjetId)
-                .orElseThrow(() -> new RuntimeException("Référentiel projet non trouvé: " + referentielProjetId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Référentiel projet non trouvé: " + referentielProjetId));
         assertReferentielEditable(referentiel);
         String originalFilename = file.getOriginalFilename();
-        String fileUrl;
-        try {
-            fileUrl = minioService.uploadFile(file);
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur upload MinIO", e);
-        }
+        String fileUrl = minioService.uploadFile(file);
 
         DocumentProjet doc = DocumentProjet.builder()
                 .type(type)
@@ -167,20 +165,15 @@ public class ReferentielProjetService {
     @Transactional
     public DocumentProjetDto replaceDocument(Long referentielProjetId, Long documentId, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
-            throw new RuntimeException("Le fichier est vide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         ReferentielProjet referentiel = referentielRepository.findById(referentielProjetId)
-                .orElseThrow(() -> new RuntimeException("Référentiel projet non trouvé: " + referentielProjetId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Référentiel projet non trouvé: " + referentielProjetId));
         assertReferentielEditable(referentiel);
         DocumentProjet doc = documentProjetRepository.findByIdAndReferentielProjetId(documentId, referentielProjetId)
-                .orElseThrow(() -> new RuntimeException("Document projet non trouvé: " + documentId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Document projet non trouvé: " + documentId));
         String originalFilename = file.getOriginalFilename();
-        String fileUrl;
-        try {
-            fileUrl = minioService.uploadFile(file);
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur upload MinIO", e);
-        }
+        String fileUrl = minioService.uploadFile(file);
         doc.setNomFichier(originalFilename != null ? originalFilename : file.getName());
         doc.setChemin(fileUrl);
         doc.setDateUpload(Instant.now());
@@ -194,10 +187,10 @@ public class ReferentielProjetService {
     @Transactional
     public void deleteDocument(Long referentielProjetId, Long documentId) {
         ReferentielProjet referentiel = referentielRepository.findById(referentielProjetId)
-                .orElseThrow(() -> new RuntimeException("Référentiel projet non trouvé: " + referentielProjetId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Référentiel projet non trouvé: " + referentielProjetId));
         assertReferentielEditable(referentiel);
         DocumentProjet doc = documentProjetRepository.findByIdAndReferentielProjetId(documentId, referentielProjetId)
-                .orElseThrow(() -> new RuntimeException("Document projet non trouvé: " + documentId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Document projet non trouvé: " + documentId));
         documentProjetRepository.delete(doc);
         auditService.log(AuditAction.DELETE, "DocumentProjet", String.valueOf(documentId), null);
     }
@@ -283,10 +276,10 @@ public class ReferentielProjetService {
 
     private void assertReferentielEditable(ReferentielProjet referentiel) {
         if (referentiel.getStatut() == StatutReferentielProjet.VALIDE) {
-            throw new RuntimeException("Modification des documents interdite: référentiel projet déjà validé");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Modification des documents interdite: référentiel projet déjà validé");
         }
         if (referentiel.getStatut() == StatutReferentielProjet.ANNULE) {
-            throw new RuntimeException("Modification des documents interdite: référentiel projet annulé");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Modification des documents interdite: référentiel projet annulé");
         }
     }
 }

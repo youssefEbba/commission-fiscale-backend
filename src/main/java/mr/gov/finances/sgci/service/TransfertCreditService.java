@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.TransfertCredit;
@@ -23,6 +26,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -44,7 +48,7 @@ public class TransfertCreditService {
         }
         if (user.getRole() == Role.ENTREPRISE) {
             mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                    .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
             if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
                 return List.of();
             }
@@ -57,52 +61,117 @@ public class TransfertCreditService {
     @Transactional(readOnly = true)
     public TransfertCreditDto findById(Long id, AuthenticatedUser user) {
         TransfertCredit t = repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Transfert de crédit non trouvé: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Transfert de crédit non trouvé: " + id));
         if (user != null && user.getRole() == Role.ENTREPRISE) {
             mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                    .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
             Long entId = u.getEntreprise() != null ? u.getEntreprise().getId() : null;
             Long sourceEntId = t.getCertificatCredit() != null && t.getCertificatCredit().getEntreprise() != null
                     ? t.getCertificatCredit().getEntreprise().getId()
                     : null;
             if (entId == null || sourceEntId == null || !entId.equals(sourceEntId)) {
-                throw new RuntimeException("Accès refusé: transfert hors périmètre");
+                throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: transfert hors périmètre");
             }
         }
         return toDto(t);
     }
 
+    /**
+     * Dernière ligne de transfert pour un certificat (s’il en existe une), ou {@code null}.
+     */
+    @Transactional(readOnly = true)
+    public TransfertCreditDto findByCertificatCreditId(Long certificatCreditId, AuthenticatedUser user) {
+        CertificatCredit cert = certificatRepository.findById(certificatCreditId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat non trouvé"));
+        assertTitulaireCanAccessCertificatForTransfert(cert, user);
+        return repository.findFirstByCertificatCreditIdOrderByIdDesc(certificatCreditId)
+                .map(this::toDto)
+                .orElse(null);
+    }
+
+    private void assertTitulaireCanAccessCertificatForTransfert(CertificatCredit cert, AuthenticatedUser user) {
+        if (user == null || user.getRole() == null) {
+            return;
+        }
+        if (user.getRole() != Role.ENTREPRISE) {
+            return;
+        }
+        mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        Long entId = u.getEntreprise() != null ? u.getEntreprise().getId() : null;
+        Long titId = cert.getEntreprise() != null ? cert.getEntreprise().getId() : null;
+        if (entId == null || titId == null || !entId.equals(titId)) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
+        }
+    }
+
     @Transactional
     public TransfertCreditDto create(CreateTransfertCreditRequest request, AuthenticatedUser user) {
         if (request == null) {
-            throw new RuntimeException("Requête invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Requête invalide");
         }
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.ENTREPRISE) {
-            throw new RuntimeException("Seule l'entreprise peut soumettre une demande de transfert");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise peut soumettre une demande de transfert");
         }
 
         CertificatCredit source = certificatRepository.findById(request.getCertificatCreditId())
-                .orElseThrow(() -> new RuntimeException("Certificat source non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat source non trouvé"));
         if (source.getStatut() != StatutCertificat.OUVERT) {
-            throw new RuntimeException("Le certificat source doit être OUVERT");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat source doit être OUVERT");
         }
 
         mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
-            throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
         }
         if (source.getEntreprise() == null || source.getEntreprise().getId() == null
                 || !source.getEntreprise().getId().equals(u.getEntreprise().getId())) {
-            throw new RuntimeException("Accès refusé: certificat source ne correspond pas à l'entreprise");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: certificat source ne correspond pas à l'entreprise");
         }
 
         BigDecimal montant = request.getMontant() != null ? request.getMontant() : BigDecimal.ZERO;
         if (montant.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("Montant de transfert invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Montant de transfert invalide");
+        }
+
+        Optional<TransfertCredit> dejaOpt = repository.findFirstByCertificatCreditIdOrderByIdDesc(source.getId());
+        if (dejaOpt.isPresent()) {
+            TransfertCredit ex = dejaOpt.get();
+            StatutTransfert prev = ex.getStatut();
+            if (prev == StatutTransfert.TRANSFERE) {
+                throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                        "Un transfert a déjà été exécuté pour ce certificat; aucun second transfert n'est prévu sur le même certificat.");
+            }
+            if (prev == StatutTransfert.DEMANDE || prev == StatutTransfert.EN_COURS || prev == StatutTransfert.VALIDE) {
+                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Une demande de transfert est déjà en cours pour ce certificat.");
+            }
+            if (prev == StatutTransfert.REJETE) {
+                documentService.deactivateAllForTransfert(ex.getId());
+                ex.setDateDemande(Instant.now());
+                ex.setMontant(montant);
+                ex.setOperationsDouaneCloturees(Boolean.TRUE.equals(request.getOperationsDouaneCloturees()));
+                ex.setStatut(StatutTransfert.DEMANDE);
+                ex = repository.save(ex);
+                TransfertCreditDto renewed = toDto(ex);
+                auditService.log(AuditAction.UPDATE, "TransfertCredit", String.valueOf(ex.getId()), renewed);
+                notificationService.notifyUsers(
+                        utilisateurRepository.findByRole(Role.DGTCP).stream()
+                                .map(mr.gov.finances.sgci.domain.entity.Utilisateur::getId)
+                                .collect(Collectors.toList()),
+                        NotificationType.TRANSFERT_CREDIT,
+                        "TransfertCredit",
+                        ex.getId(),
+                        "Nouvelle demande de transfert de crédit (après rejet)",
+                        Collections.singletonMap("id", ex.getId())
+                );
+                return renewed;
+            }
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Statut de transfert incompatible pour une nouvelle demande: " + prev);
         }
 
         TransfertCredit entity = TransfertCredit.builder()
@@ -127,20 +196,25 @@ public class TransfertCreditService {
         return result;
     }
 
+    private void assertDgtcpOuPresidentPourDecision(AuthenticatedUser user) {
+        if (user == null || user.getRole() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        if (user.getRole() != Role.DGTCP && user.getRole() != Role.PRESIDENT) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP ou le Président peut valider ou rejeter un transfert");
+        }
+    }
+
     @Transactional
     public TransfertCreditDto validateByDgtcp(Long id, AuthenticatedUser user) {
-        if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
-        }
-        if (user.getRole() != Role.DGTCP) {
-            throw new RuntimeException("Seul DGTCP peut valider un transfert");
-        }
+        assertDgtcpOuPresidentPourDecision(user);
 
         TransfertCredit transfert = repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Transfert de crédit non trouvé: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Transfert de crédit non trouvé: " + id));
 
-        if (transfert.getStatut() != StatutTransfert.DEMANDE && transfert.getStatut() != StatutTransfert.EN_COURS) {
-            throw new RuntimeException("Statut invalide pour validation: " + transfert.getStatut());
+        StatutTransfert st = transfert.getStatut();
+        if (st != StatutTransfert.DEMANDE && st != StatutTransfert.EN_COURS && st != StatutTransfert.VALIDE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Statut invalide pour validation: " + st);
         }
 
         requirementValidator.assertRequiredDocumentsPresent(
@@ -150,26 +224,27 @@ public class TransfertCreditService {
 
         // Règle métier: clôture douane obligatoire (au moins déclarative)
         if (!Boolean.TRUE.equals(transfert.getOperationsDouaneCloturees())) {
-            throw new RuntimeException("Transfert impossible: opérations douane non clôturées");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Transfert impossible: opérations douane non clôturées");
         }
 
         CertificatCredit source = transfert.getCertificatCredit();
         if (source == null || source.getId() == null) {
-            throw new RuntimeException("Certificat source manquant");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat source manquant");
         }
         if (source.getStatut() != StatutCertificat.OUVERT) {
-            throw new RuntimeException("Le certificat source doit être OUVERT");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat source doit être OUVERT");
         }
 
         BigDecimal montant = transfert.getMontant() != null ? transfert.getMontant() : BigDecimal.ZERO;
         if (montant.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("Montant de transfert invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Montant de transfert invalide");
         }
 
         // Transfert interne: solde Douane -> solde Intérieur (TVA)
         BigDecimal soldeDouane = source.getSoldeCordon() != null ? source.getSoldeCordon() : BigDecimal.ZERO;
         if (soldeDouane.compareTo(montant) < 0) {
-            throw new RuntimeException("Solde douane insuffisant pour transfert (solde=" + soldeDouane + ", montant=" + montant + ")");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Solde douane insuffisant pour transfert (solde=" + soldeDouane + ", montant=" + montant + ")");
         }
         BigDecimal soldeInterieur = source.getSoldeTVA() != null ? source.getSoldeTVA() : BigDecimal.ZERO;
 
@@ -188,18 +263,16 @@ public class TransfertCreditService {
 
     @Transactional
     public TransfertCreditDto rejectByDgtcp(Long id, AuthenticatedUser user) {
-        if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
-        }
-        if (user.getRole() != Role.DGTCP) {
-            throw new RuntimeException("Seul DGTCP peut rejeter un transfert");
-        }
+        assertDgtcpOuPresidentPourDecision(user);
 
         TransfertCredit transfert = repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Transfert de crédit non trouvé: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Transfert de crédit non trouvé: " + id));
 
         if (transfert.getStatut() == StatutTransfert.TRANSFERE) {
-            throw new RuntimeException("Transfert déjà exécuté");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Transfert déjà exécuté");
+        }
+        if (transfert.getStatut() == StatutTransfert.REJETE) {
+            return toDto(transfert);
         }
 
         transfert.setStatut(StatutTransfert.REJETE);

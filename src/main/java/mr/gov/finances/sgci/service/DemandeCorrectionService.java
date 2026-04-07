@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
@@ -84,9 +87,9 @@ public class DemandeCorrectionService {
     @Transactional(readOnly = true)
     public DemandeCorrectionDto findById(Long id, AuthenticatedUser user) {
         DemandeCorrection dc = demandeRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Demande de correction non trouvée: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + id));
         if (!canAccessDemandeCorrection(dc.getId(), user)) {
-            throw new RuntimeException("Accès refusé: demande hors périmètre");
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: demande hors périmètre");
         }
         return toDto(dc);
     }
@@ -96,12 +99,12 @@ public class DemandeCorrectionService {
             return demandeRepository.findAllByOrderByDateDepotDescIdDesc();
         }
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         Role role = u.getRole();
 
         if (role == Role.AUTORITE_CONTRACTANTE) {
             if (u.getAutoriteContractante() == null) {
-                throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
             }
             return demandeRepository.findByAutoriteContractanteIdOrderByDateDepotDescIdDesc(u.getAutoriteContractante().getId());
         }
@@ -112,7 +115,7 @@ public class DemandeCorrectionService {
 
         if (role == Role.ENTREPRISE) {
             if (u.getEntreprise() == null) {
-                throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
             }
             return demandeRepository.findByEntrepriseIdOrderByDateDepotDescIdDesc(u.getEntreprise().getId());
         }
@@ -162,31 +165,31 @@ public class DemandeCorrectionService {
     @Transactional
     public DemandeCorrectionDto create(CreateDemandeCorrectionRequest request) {
         AutoriteContractante autorite = autoriteRepository.findById(request.getAutoriteContractanteId())
-                .orElseThrow(() -> new RuntimeException("Autorité contractante non trouvée"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée"));
         Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
-                .orElseThrow(() -> new RuntimeException("Entreprise non trouvée"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée"));
         Convention convention = conventionRepository.findById(request.getConventionId())
-                .orElseThrow(() -> new RuntimeException("Convention non trouvée"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée"));
         Marche marche = null;
         if (request.getMarcheId() != null) {
             marche = marcheRepository.findById(request.getMarcheId())
-                    .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + request.getMarcheId()));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + request.getMarcheId()));
             if (marche.getDemandeCorrection() != null) {
-                throw new RuntimeException("Le marché est déjà associé à une correction");
+                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Le marché est déjà associé à une correction");
             }
 
             if (marche.getConvention() == null || marche.getConvention().getId() == null) {
-                throw new RuntimeException("Le marché n'est rattaché à aucune convention");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le marché n'est rattaché à aucune convention");
             }
             if (!marche.getConvention().getId().equals(request.getConventionId())) {
-                throw new RuntimeException("Le marché n'appartient pas à la convention sélectionnée");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le marché n'appartient pas à la convention sélectionnée");
             }
 
             Long marcheAcId = marche.getConvention().getAutoriteContractante() != null
                     ? marche.getConvention().getAutoriteContractante().getId()
                     : null;
             if (marcheAcId == null || !marcheAcId.equals(request.getAutoriteContractanteId())) {
-                throw new RuntimeException("Le marché est hors périmètre de l'autorité contractante sélectionnée");
+                throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Le marché est hors périmètre de l'autorité contractante sélectionnée");
             }
         }
         DemandeCorrection entity = DemandeCorrection.builder()
@@ -216,17 +219,16 @@ public class DemandeCorrectionService {
 
     @Transactional
     public DemandeCorrectionDto updateStatut(Long id, StatutDemande statut, AuthenticatedUser user, String motifRejet, Boolean decisionFinale) {
-        DemandeCorrection entity = demandeRepository.findById(id).orElseThrow(
-                () -> new RuntimeException("Demande de correction non trouvée: " + id));
+        DemandeCorrection entity = demandeRepository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + id));
 
         if (!canAccessDemandeCorrection(id, user)) {
-            throw new RuntimeException("Accès refusé: demande hors périmètre");
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: demande hors périmètre");
         }
 
         if (user != null && user.getRole() != null
                 && (user.getRole() == Role.AUTORITE_CONTRACTANTE || user.getRole() == Role.ENTREPRISE)
                 && statut != StatutDemande.ANNULEE) {
-            throw new RuntimeException("Accès refusé: action non autorisée");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: action non autorisée");
         }
 
         workflow.validateTransition(entity.getStatut(), statut);
@@ -248,7 +250,7 @@ public class DemandeCorrectionService {
             }
         } else if (statut == StatutDemande.REJETEE) {
             if (motifRejet == null || motifRejet.isBlank()) {
-                throw new RuntimeException("Le motif de rejet est obligatoire");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de rejet est obligatoire");
             }
             DemandeCorrectionRejet rejet = createRejet(entity, user, motifRejet);
             entity.getRejets().add(rejet);
@@ -258,7 +260,8 @@ public class DemandeCorrectionService {
                 entity.setMotifRejet(motifRejet);
             }
         } else if (finale) {
-            throw new RuntimeException("Décision finale non supportée pour le statut: " + statut);
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Décision finale non supportée pour le statut: " + statut);
         } else {
             entity.setStatut(statut);
         }
@@ -271,7 +274,7 @@ public class DemandeCorrectionService {
 
     private void applyParallelValidation(DemandeCorrection entity, AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         Role role = user.getRole();
         if (role == Role.PRESIDENT) {
@@ -294,16 +297,17 @@ public class DemandeCorrectionService {
             entity.setValidationDgbUserId(user.getUserId());
             entity.setValidationDgbDate(Instant.now());
         } else {
-            throw new RuntimeException("Rôle non autorisé pour la validation: " + role);
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Rôle non autorisé pour la validation: " + role);
         }
     }
 
     private void assertFinalDecisionRole(AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.DGTCP && user.getRole() != Role.PRESIDENT) {
-            throw new RuntimeException("Rôle non autorisé pour la décision finale: " + user.getRole());
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Rôle non autorisé pour la décision finale: " + user.getRole());
         }
     }
 
@@ -322,11 +326,11 @@ public class DemandeCorrectionService {
     @Transactional(readOnly = true)
     public List<DemandeCorrectionDto> findByDelegue(Long delegueId, AuthenticatedUser user) {
         if (user == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if ((user.getRole() == Role.AUTORITE_UPM || user.getRole() == Role.AUTORITE_UEP)
                 && (delegueId == null || !delegueId.equals(user.getUserId()))) {
-            throw new RuntimeException("Accès refusé: vous ne pouvez consulter que vos propres demandes");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: vous ne pouvez consulter que vos propres demandes");
         }
         return demandeRepository.findByDelegueId(delegueId)
                 .stream()
@@ -376,10 +380,10 @@ public class DemandeCorrectionService {
 
     private DemandeCorrectionRejet createRejet(DemandeCorrection entity, AuthenticatedUser user, String motifRejet) {
         if (user == null || user.getUserId() == null) {
-            throw new RuntimeException("Utilisateur non authentifié pour le rejet");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié pour le rejet");
         }
         Utilisateur utilisateur = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         return DemandeCorrectionRejet.builder()
                 .demandeCorrection(entity)
                 .utilisateur(utilisateur)

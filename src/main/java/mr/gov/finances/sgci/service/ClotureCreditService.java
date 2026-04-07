@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.ClotureCredit;
@@ -33,10 +36,10 @@ public class ClotureCreditService {
     @Transactional(readOnly = true)
     public List<Long> findEligibleCertificatIds(AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.DGTCP) {
-            throw new RuntimeException("Seul DGTCP peut consulter la file de clôture");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut consulter la file de clôture");
         }
 
         Instant now = Instant.now();
@@ -64,25 +67,25 @@ public class ClotureCreditService {
     @Transactional
     public ClotureCreditDto proposer(CreateClotureCreditRequest request, AuthenticatedUser user) {
         if (request == null) {
-            throw new RuntimeException("Requête invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Requête invalide");
         }
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.DGTCP) {
-            throw new RuntimeException("Seul DGTCP peut proposer une clôture/annulation");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut proposer une clôture/annulation");
         }
 
         CertificatCredit c = certificatCreditRepository.findById(request.getCertificatCreditId())
-                .orElseThrow(() -> new RuntimeException("Certificat non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat non trouvé"));
 
         if (c.getStatut() != StatutCertificat.OUVERT && c.getStatut() != StatutCertificat.MODIFIE) {
-            throw new RuntimeException("Le certificat doit être OUVERT ou MODIFIE");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat doit être OUVERT ou MODIFIE");
         }
 
         ClotureCredit existing = clotureCreditRepository.findByCertificatCreditId(c.getId()).orElse(null);
         if (existing != null && existing.getDateCloture() != null) {
-            throw new RuntimeException("Ce certificat est déjà clôturé/annulé");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Ce certificat est déjà clôturé/annulé");
         }
 
         BigDecimal soldeCordon = c.getSoldeCordon() != null ? c.getSoldeCordon() : BigDecimal.ZERO;
@@ -113,14 +116,14 @@ public class ClotureCreditService {
     @Transactional
     public ClotureCreditDto validerParPresident(Long id, AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.PRESIDENT) {
-            throw new RuntimeException("Seul le Président peut valider");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul le Président peut valider");
         }
 
         ClotureCredit cc = clotureCreditRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Proposition non trouvée"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Proposition non trouvée"));
 
         if (cc.getApprouvee() != null) {
             return toDto(cc);
@@ -137,14 +140,14 @@ public class ClotureCreditService {
     @Transactional
     public ClotureCreditDto rejeterParPresident(Long id, AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.PRESIDENT) {
-            throw new RuntimeException("Seul le Président peut rejeter");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul le Président peut rejeter");
         }
 
         ClotureCredit cc = clotureCreditRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Proposition non trouvée"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Proposition non trouvée"));
 
         if (cc.getApprouvee() != null) {
             return toDto(cc);
@@ -161,17 +164,17 @@ public class ClotureCreditService {
     @Transactional
     public ClotureCreditDto finaliserParDgtcp(Long id, AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.DGTCP) {
-            throw new RuntimeException("Seul DGTCP peut finaliser");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut finaliser");
         }
 
         ClotureCredit cc = clotureCreditRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Proposition non trouvée"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Proposition non trouvée"));
 
         if (!Boolean.TRUE.equals(cc.getApprouvee())) {
-            throw new RuntimeException("La proposition n'est pas approuvée");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La proposition n'est pas approuvée");
         }
         if (cc.getDateCloture() != null) {
             return toDto(cc);
@@ -179,7 +182,7 @@ public class ClotureCreditService {
 
         CertificatCredit c = cc.getCertificatCredit();
         if (c == null || c.getId() == null) {
-            throw new RuntimeException("Certificat manquant");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat manquant");
         }
 
         StatutCertificat to = cc.getTypeOperation() != null && cc.getTypeOperation().name().equals("ANNULATION")

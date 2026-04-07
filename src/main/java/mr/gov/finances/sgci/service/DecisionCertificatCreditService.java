@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.DecisionCertificatCredit;
@@ -48,20 +51,20 @@ public class DecisionCertificatCreditService {
     @Transactional
     public DecisionCreditDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
         if (decisionId == null) {
-            throw new RuntimeException("Décision invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Décision invalide");
         }
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
 
         DecisionCertificatCredit decision = decisionRepository.findById(decisionId)
-                .orElseThrow(() -> new RuntimeException("Décision certificat non trouvée: " + decisionId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Décision certificat non trouvée: " + decisionId));
 
         if (decision.getDecision() != DecisionCorrectionType.REJET_TEMP || decision.getRejetTempStatus() != RejetTempStatus.OUVERT) {
-            throw new RuntimeException("Résolution interdite: la décision n'est pas un REJET_TEMP OUVERT");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Résolution interdite: la décision n'est pas un REJET_TEMP OUVERT");
         }
         if (decision.getRole() == null || decision.getRole() != user.getRole()) {
-            throw new RuntimeException("Résolution interdite: rôle non autorisé");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Résolution interdite: rôle non autorisé");
         }
 
         decision.setRejetTempStatus(RejetTempStatus.RESOLU);
@@ -93,33 +96,35 @@ public class DecisionCertificatCreditService {
                                          Set<TypeDocument> documentsDemandes,
                                          AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         Role role = user.getRole();
         if (!VISA_REQUIRED_ROLES.contains(role)) {
-            throw new RuntimeException("Rôle non autorisé pour la décision mise en place: " + role
-                    + ". Seuls DGI, DGD et DGTCP peuvent apposer un visa ou rejet temporaire.");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Rôle non autorisé pour la décision mise en place: " + role
+                            + ". Seuls DGI, DGD et DGTCP peuvent apposer un visa ou rejet temporaire.");
         }
 
         CertificatCredit certificat = certificatRepository.findById(certificatCreditId)
-                .orElseThrow(() -> new RuntimeException("Certificat de crédit non trouvé: " + certificatCreditId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + certificatCreditId));
 
         if (!DECISION_ALLOWED_STATUTS.contains(certificat.getStatut())) {
-            throw new RuntimeException("Le certificat doit être en statut EN_CONTROLE, INCOMPLETE ou A_RECONTROLER "
-                    + "pour recevoir un visa ou rejet. Statut actuel: " + certificat.getStatut());
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Le certificat doit être en statut EN_CONTROLE, INCOMPLETE ou A_RECONTROLER "
+                            + "pour recevoir un visa ou rejet. Statut actuel: " + certificat.getStatut());
         }
 
         if (decision == DecisionCorrectionType.REJET_TEMP) {
             if (motifRejet == null || motifRejet.isBlank()) {
-                throw new RuntimeException("Le motif de rejet est obligatoire");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de rejet est obligatoire");
             }
             if (documentsDemandes == null || documentsDemandes.isEmpty()) {
-                throw new RuntimeException("La liste des documents demandés est obligatoire");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La liste des documents demandés est obligatoire");
             }
         }
 
         Utilisateur utilisateur = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
         DecisionCertificatCredit existingDecision = decisionRepository
                 .findByCertificatCreditIdAndRole(certificatCreditId, role)
@@ -127,14 +132,16 @@ public class DecisionCertificatCreditService {
 
         if (existingDecision != null) {
             if (existingDecision.getDecision() == DecisionCorrectionType.VISA) {
-                throw new RuntimeException("Décision impossible: un visa a déjà été accordé par " + role
-                        + ". Le visa clôture les interactions sur cette demande.");
+                throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                        "Décision impossible: un visa a déjà été accordé par " + role
+                                + ". Le visa clôture les interactions sur cette demande.");
             }
             if (decision == DecisionCorrectionType.VISA
                     && existingDecision.getDecision() == DecisionCorrectionType.REJET_TEMP
                     && existingDecision.getRejetTempStatus() == RejetTempStatus.OUVERT) {
-                throw new RuntimeException("VISA impossible: un rejet temporaire est en cours pour " + role
-                        + ". Résolvez d'abord le rejet via l'endpoint /resolve.");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "VISA impossible: un rejet temporaire est en cours pour " + role
+                                + ". Résolvez d'abord le rejet via l'endpoint /resolve.");
             }
         }
 
@@ -205,11 +212,11 @@ public class DecisionCertificatCreditService {
 
     private void assertMontantsRenseignes(CertificatCredit entity) {
         if (entity.getMontantCordon() == null || entity.getMontantTVAInterieure() == null) {
-            throw new RuntimeException("DGTCP doit renseigner les montants (cordon et TVA intérieure) avant d'apposer le visa");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "DGTCP doit renseigner les montants (cordon et TVA intérieure) avant d'apposer le visa");
         }
         if (entity.getMontantCordon().compareTo(BigDecimal.ZERO) <= 0
                 || entity.getMontantTVAInterieure().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("Les montants (cordon et TVA intérieure) doivent être strictement supérieurs à zéro");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Les montants (cordon et TVA intérieure) doivent être strictement supérieurs à zéro");
         }
     }
 

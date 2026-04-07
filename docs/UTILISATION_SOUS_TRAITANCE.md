@@ -26,16 +26,24 @@ Le front peut filtrer ou badger les lignes avec `demandeurEstSousTraitant === tr
 - **Titulaire** (`ENTREPRISE`) : reçoit **toutes** les utilisations rattachées à certificats dont son entreprise est titulaire, **y compris** celles saisies par des sous-traitants autorisés.
 - **Sous-traitant** (`SOUS_TRAITANT`) : reçoit uniquement les utilisations dont **`entreprise_id`** = son entreprise.
 
-**Query optionnelle** (titulaire uniquement) :
+**Query optionnelles** (titulaire uniquement pour ces filtres) :
 
 - `demandeurSousTraitantOnly=true` : ne retourne que les lignes où `demandeurEstSousTraitant` est vrai.
+- `sousTraitantEntrepriseId={id}` : ne retourne que les demandes dont l’entreprise demandeuse est cet id **et** qui sont des demandes sous-traitant (`demandeurEstSousTraitant`).
 
-Exemple :
+Exemples :
 
 ```http
 GET /api/utilisations-credit?demandeurSousTraitantOnly=true
 Authorization: Bearer …
 ```
+
+```http
+GET /api/utilisations-credit?sousTraitantEntrepriseId=42
+Authorization: Bearer …
+```
+
+Voir aussi `docs/GESTION_SOUS_TRAITANCE.md` (suspendre / révoquer le lien, statuts, listes).
 
 ## API `GET /api/utilisations-credit/by-certificat/{certificatCreditId}`
 

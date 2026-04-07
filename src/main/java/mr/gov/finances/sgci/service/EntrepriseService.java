@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
@@ -26,14 +29,13 @@ public class EntrepriseService {
 
     @Transactional(readOnly = true)
     public EntrepriseDto findById(Long id) {
-        return repository.findById(id).map(this::toDto).orElseThrow(
-                () -> new RuntimeException("Entreprise non trouvée: " + id));
+        return repository.findById(id).map(this::toDto).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée: " + id));
     }
 
     @Transactional
     public EntrepriseDto create(EntrepriseDto dto) {
         if (dto.getNif() != null && repository.existsByNif(dto.getNif())) {
-            throw new RuntimeException("Une entreprise avec ce NIF existe déjà");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Une entreprise avec ce NIF existe déjà");
         }
         Entreprise entity = Entreprise.builder()
                 .raisonSociale(dto.getRaisonSociale())
@@ -49,8 +51,7 @@ public class EntrepriseService {
 
     @Transactional
     public EntrepriseDto update(Long id, EntrepriseDto dto) {
-        Entreprise entity = repository.findById(id).orElseThrow(
-                () -> new RuntimeException("Entreprise non trouvée: " + id));
+        Entreprise entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée: " + id));
         entity.setRaisonSociale(dto.getRaisonSociale());
         entity.setNif(dto.getNif());
         entity.setAdresse(dto.getAdresse());
@@ -64,7 +65,7 @@ public class EntrepriseService {
     @Transactional
     public void deleteById(Long id) {
         if (!repository.existsById(id)) {
-            throw new RuntimeException("Entreprise non trouvée: " + id);
+            throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée: " + id);
         }
         auditService.log(AuditAction.DELETE, "Entreprise", String.valueOf(id), null);
         repository.deleteById(id);

@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
@@ -67,17 +70,17 @@ public class AuthService {
     @Transactional
     public LoginResponse register(RegisterRequest request) {
         if (utilisateurRepository.existsByUsername(request.getUsername())) {
-            throw new RuntimeException("Ce nom d'utilisateur est déjà utilisé");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Ce nom d'utilisateur est déjà utilisé");
         }
         AutoriteContractante autorite = null;
         if (request.getAutoriteContractanteId() != null) {
             autorite = autoriteContractanteRepository.findById(request.getAutoriteContractanteId())
-                    .orElseThrow(() -> new RuntimeException("Autorité contractante non trouvée"));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée"));
         }
         Entreprise entreprise = null;
         if (request.getEntrepriseId() != null) {
             entreprise = entrepriseRepository.findById(request.getEntrepriseId())
-                    .orElseThrow(() -> new RuntimeException("Entreprise non trouvée"));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée"));
         } else if (request.getEntrepriseRaisonSociale() != null) {
             entreprise = Entreprise.builder()
                     .raisonSociale(request.getEntrepriseRaisonSociale())
@@ -98,7 +101,7 @@ public class AuthService {
                         .contact(contact)
                         .build());
             } else {
-                throw new RuntimeException(
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                         "Pour un compte Autorité contractante, indiquez soit une autorité existante (autoriteContractanteId), "
                                 + "soit le nom de votre autorité (formulaire d'inscription).");
             }

@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
@@ -39,12 +42,12 @@ public class DocumentCertificatCreditService {
     @Transactional
     public DocumentCertificatCreditDto upload(Long certificatCreditId, TypeDocument type, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
-            throw new RuntimeException("Le fichier est vide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         requirementValidator.validateUpload(ProcessusDocument.MISE_EN_PLACE_CI, type, file);
 
         CertificatCredit certificat = certificatRepository.findById(certificatCreditId)
-                .orElseThrow(() -> new RuntimeException("Certificat de crédit non trouvé: " + certificatCreditId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + certificatCreditId));
 
         int nextVersion = 1;
         DocumentCertificatCredit previous = repository.findByCertificatCreditIdAndTypeAndActifTrue(certificatCreditId, type)
@@ -62,16 +65,11 @@ public class DocumentCertificatCreditService {
                 ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(type));
 
         if (askedByOpenRejetTemp && (message == null || message.isBlank())) {
-            throw new RuntimeException("Le message de réponse est obligatoire");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le message de réponse est obligatoire");
         }
 
         String originalFilename = file.getOriginalFilename();
-        String fileUrl;
-        try {
-            fileUrl = minioService.uploadFile(file);
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur upload MinIO: " + e.getMessage(), e);
-        }
+        String fileUrl = minioService.uploadFile(file);
 
         DocumentCertificatCredit doc = DocumentCertificatCredit.builder()
                 .type(type)
@@ -97,16 +95,16 @@ public class DocumentCertificatCreditService {
 
     private void assertReplacementAllowed(CertificatCredit certificat, TypeDocument type, AuthenticatedUser user) {
         if (certificat == null || certificat.getId() == null) {
-            throw new RuntimeException("Certificat invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat invalide");
         }
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.AUTORITE_CONTRACTANTE) {
-            throw new RuntimeException("Remplacement interdit: réservé à l'Autorité Contractante");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Remplacement interdit: réservé à l'Autorité Contractante");
         }
         if (certificat.getStatut() != StatutCertificat.INCOMPLETE) {
-            throw new RuntimeException("Remplacement interdit: le certificat n'est pas en statut INCOMPLETE");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Remplacement interdit: le certificat n'est pas en statut INCOMPLETE");
         }
         boolean asked = decisionRepository.findByCertificatCreditId(certificat.getId()).stream()
                 .anyMatch(d -> d.getDecision() == DecisionCorrectionType.REJET_TEMP
@@ -114,7 +112,7 @@ public class DocumentCertificatCreditService {
                         && d.getDocumentsDemandes() != null
                         && d.getDocumentsDemandes().contains(type));
         if (!asked) {
-            throw new RuntimeException("Remplacement interdit: aucun acteur n'a demandé ce document");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Remplacement interdit: aucun acteur n'a demandé ce document");
         }
     }
 

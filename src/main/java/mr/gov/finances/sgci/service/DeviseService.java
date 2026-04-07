@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.Devise;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
@@ -25,14 +28,14 @@ public class DeviseService {
     @Transactional
     public DeviseDto create(DeviseDto dto) {
         if (dto.getCode() == null || dto.getCode().isBlank()) {
-            throw new RuntimeException("Le code devise est obligatoire");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le code devise est obligatoire");
         }
         if (dto.getLibelle() == null || dto.getLibelle().isBlank()) {
-            throw new RuntimeException("Le libellé devise est obligatoire");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le libellé devise est obligatoire");
         }
         String code = dto.getCode().trim().toUpperCase();
         if (repository.existsByCode(code)) {
-            throw new RuntimeException("Une devise avec ce code existe déjà");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Une devise avec ce code existe déjà");
         }
 
         Devise entity = Devise.builder()

@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.Avenant;
 import mr.gov.finances.sgci.domain.entity.DocumentAvenant;
@@ -31,13 +34,13 @@ public class DocumentAvenantService {
     @Transactional
     public DocumentAvenantDto upload(Long avenantId, TypeDocument type, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
-            throw new RuntimeException("Le fichier est vide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
 
         requirementValidator.validateUpload(ProcessusDocument.MODIFICATION_CI, type, file);
 
         Avenant avenant = avenantRepository.findById(avenantId)
-                .orElseThrow(() -> new RuntimeException("Avenant non trouvé: " + avenantId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Avenant non trouvé: " + avenantId));
 
         int nextVersion = 1;
         DocumentAvenant previous = repository.findByAvenantIdAndTypeAndActifTrue(avenantId, type)
@@ -48,12 +51,7 @@ public class DocumentAvenantService {
         }
 
         String originalFilename = file.getOriginalFilename();
-        String fileUrl;
-        try {
-            fileUrl = minioService.uploadFile(file);
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur upload MinIO: " + e.getMessage(), e);
-        }
+        String fileUrl = minioService.uploadFile(file);
 
         DocumentAvenant doc = DocumentAvenant.builder()
                 .type(type)

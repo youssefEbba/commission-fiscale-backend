@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.Convention;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
@@ -25,8 +28,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.time.Instant;
 import java.util.stream.Collectors;
 
@@ -47,7 +53,7 @@ public class MarcheService {
         return marcheRepository.findById(id)
                 .filter(m -> canAccessMarche(m, user))
                 .map(this::toDto)
-                .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + id));
     }
 
     @Transactional(readOnly = true)
@@ -55,20 +61,20 @@ public class MarcheService {
         return marcheRepository.findByDemandeCorrectionId(demandeCorrectionId)
                 .filter(m -> canAccessMarche(m, user))
                 .map(this::toDto)
-                .orElseThrow(() -> new RuntimeException("Marché non trouvé pour la correction: " + demandeCorrectionId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé pour la correction: " + demandeCorrectionId));
     }
 
     @Transactional(readOnly = true)
     public List<MarcheDto> findAll(AuthenticatedUser user) {
         if (user == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
 
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
         if (u.getAutoriteContractante() == null) {
-            throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
         }
 
         if (u.getRole() == Role.AUTORITE_CONTRACTANTE) {
@@ -91,42 +97,103 @@ public class MarcheService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public List<MarcheDto> findMarchesForDelegue(Long delegueId, AuthenticatedUser user) {
+        Utilisateur acPrincipal = requireAutoriteContractantePrincipal(user);
+        Utilisateur delegue = utilisateurRepository.findById(delegueId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Délégué non trouvé: " + delegueId));
+        assertDelegueForAutoriteContractante(delegue, acPrincipal);
+        Long acId = acPrincipal.getAutoriteContractante().getId();
+        return marcheRepository.findAllByDelegueIdAndAutoriteContractanteId(delegueId, acId).stream()
+                .map(this::toDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Remplace l'ensemble des rattachements du délégué aux marchés de l'AC par la liste fournie.
+     */
+    @Transactional
+    public List<MarcheDto> syncDelegueMarches(Long delegueId, List<Long> marcheIds, AuthenticatedUser user) {
+        Set<Long> desired = marcheIds == null ? Set.of() : marcheIds.stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<Long> initialIds = findMarchesForDelegue(delegueId, user).stream()
+                .map(MarcheDto::getId)
+                .collect(Collectors.toSet());
+        for (Long mid : new ArrayList<>(initialIds)) {
+            if (!desired.contains(mid)) {
+                removeDelegue(mid, delegueId, user);
+            }
+        }
+        for (Long mid : desired) {
+            if (!initialIds.contains(mid)) {
+                addDelegue(mid, delegueId, user);
+            }
+        }
+        return findMarchesForDelegue(delegueId, user);
+    }
+
+    private Utilisateur requireAutoriteContractantePrincipal(AuthenticatedUser user) {
+        if (user == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        Utilisateur ac = utilisateurRepository.findById(user.getUserId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        if (ac.getRole() != Role.AUTORITE_CONTRACTANTE) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Action réservée à l'autorité contractante");
+        }
+        if (ac.getAutoriteContractante() == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
+        }
+        return ac;
+    }
+
+    private void assertDelegueForAutoriteContractante(Utilisateur delegue, Utilisateur acPrincipal) {
+        if (delegue.getAutoriteContractante() == null
+                || !delegue.getAutoriteContractante().getId().equals(acPrincipal.getAutoriteContractante().getId())) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le délégué n'appartient pas à votre autorité contractante");
+        }
+        if (delegue.getRole() != Role.AUTORITE_UPM && delegue.getRole() != Role.AUTORITE_UEP) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "L'utilisateur ciblé n'est pas un délégué");
+        }
+    }
+
     @Transactional
     public MarcheDto assignDelegue(Long marcheId, Long delegueId, AuthenticatedUser user) {
         if (user == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         Utilisateur ac = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
         if (ac.getRole() != Role.AUTORITE_CONTRACTANTE) {
-            throw new RuntimeException("Action réservée à l'autorité contractante");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Action réservée à l'autorité contractante");
         }
         if (ac.getAutoriteContractante() == null) {
-            throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
         }
 
         Marche marche = marcheRepository.findById(marcheId)
-                .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + marcheId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
 
         Long marcheAcId = marche.getConvention() != null && marche.getConvention().getAutoriteContractante() != null
                 ? marche.getConvention().getAutoriteContractante().getId()
                 : null;
 
         if (marcheAcId == null || !marcheAcId.equals(ac.getAutoriteContractante().getId())) {
-            throw new RuntimeException("Accès refusé: marché hors périmètre de votre autorité contractante");
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: marché hors périmètre de votre autorité contractante");
         }
 
         Utilisateur delegue = null;
         if (delegueId != null) {
             delegue = utilisateurRepository.findById(delegueId)
-                    .orElseThrow(() -> new RuntimeException("Délégué non trouvé: " + delegueId));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Délégué non trouvé: " + delegueId));
             if (delegue.getAutoriteContractante() == null
                     || !delegue.getAutoriteContractante().getId().equals(ac.getAutoriteContractante().getId())) {
-                throw new RuntimeException("Le délégué n'appartient pas à votre autorité contractante");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le délégué n'appartient pas à votre autorité contractante");
             }
             if (delegue.getRole() != Role.AUTORITE_UPM && delegue.getRole() != Role.AUTORITE_UEP) {
-                throw new RuntimeException("Le rôle du délégué est invalide");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le rôle du délégué est invalide");
             }
         }
 
@@ -144,19 +211,14 @@ public class MarcheService {
     @Transactional
     public DocumentMarcheDto uploadDocument(Long marcheId, TypeDocumentMarche type, MultipartFile file) throws java.io.IOException {
         if (file == null || file.isEmpty()) {
-            throw new RuntimeException("Le fichier est vide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         Marche marche = marcheRepository.findById(marcheId)
-                .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + marcheId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
         assertMarcheEditableForDocuments(marche);
 
         String originalFilename = file.getOriginalFilename();
-        String fileUrl;
-        try {
-            fileUrl = minioService.uploadFile(file);
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur upload MinIO: " + e.getMessage(), e);
-        }
+        String fileUrl = minioService.uploadFile(file);
 
         DocumentMarche doc = DocumentMarche.builder()
                 .type(type)
@@ -173,21 +235,16 @@ public class MarcheService {
     @Transactional
     public DocumentMarcheDto replaceDocument(Long marcheId, Long documentId, MultipartFile file) throws java.io.IOException {
         if (file == null || file.isEmpty()) {
-            throw new RuntimeException("Le fichier est vide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         Marche marche = marcheRepository.findById(marcheId)
-                .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + marcheId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
         assertMarcheEditableForDocuments(marche);
         DocumentMarche doc = documentMarcheRepository.findByIdAndMarcheId(documentId, marcheId)
-                .orElseThrow(() -> new RuntimeException("Document marché non trouvé: " + documentId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Document marché non trouvé: " + documentId));
 
         String originalFilename = file.getOriginalFilename();
-        String fileUrl;
-        try {
-            fileUrl = minioService.uploadFile(file);
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur upload MinIO: " + e.getMessage(), e);
-        }
+        String fileUrl = minioService.uploadFile(file);
         doc.setNomFichier(originalFilename != null ? originalFilename : file.getName());
         doc.setChemin(fileUrl);
         doc.setDateUpload(Instant.now());
@@ -199,10 +256,10 @@ public class MarcheService {
     @Transactional
     public void deleteDocument(Long marcheId, Long documentId) {
         Marche marche = marcheRepository.findById(marcheId)
-                .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + marcheId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
         assertMarcheEditableForDocuments(marche);
         DocumentMarche doc = documentMarcheRepository.findByIdAndMarcheId(documentId, marcheId)
-                .orElseThrow(() -> new RuntimeException("Document marché non trouvé: " + documentId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Document marché non trouvé: " + documentId));
         documentMarcheRepository.delete(doc);
     }
 
@@ -216,37 +273,37 @@ public class MarcheService {
     @Transactional
     public MarcheDto addDelegue(Long marcheId, Long delegueId, AuthenticatedUser user) {
         if (user == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         Utilisateur ac = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
         if (ac.getRole() != Role.AUTORITE_CONTRACTANTE) {
-            throw new RuntimeException("Action réservée à l'autorité contractante");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Action réservée à l'autorité contractante");
         }
         if (ac.getAutoriteContractante() == null) {
-            throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
         }
 
         Marche marche = marcheRepository.findById(marcheId)
-                .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + marcheId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
 
         Long marcheAcId = marche.getConvention() != null && marche.getConvention().getAutoriteContractante() != null
                 ? marche.getConvention().getAutoriteContractante().getId()
                 : null;
 
         if (marcheAcId == null || !marcheAcId.equals(ac.getAutoriteContractante().getId())) {
-            throw new RuntimeException("Accès refusé: marché hors périmètre de votre autorité contractante");
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: marché hors périmètre de votre autorité contractante");
         }
 
         Utilisateur delegue = utilisateurRepository.findById(delegueId)
-                .orElseThrow(() -> new RuntimeException("Délégué non trouvé: " + delegueId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Délégué non trouvé: " + delegueId));
         if (delegue.getAutoriteContractante() == null
                 || !delegue.getAutoriteContractante().getId().equals(ac.getAutoriteContractante().getId())) {
-            throw new RuntimeException("Le délégué n'appartient pas à votre autorité contractante");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le délégué n'appartient pas à votre autorité contractante");
         }
         if (delegue.getRole() != Role.AUTORITE_UPM && delegue.getRole() != Role.AUTORITE_UEP) {
-            throw new RuntimeException("Le rôle du délégué est invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le rôle du délégué est invalide");
         }
 
         addDelegue(marche, delegue);
@@ -257,31 +314,31 @@ public class MarcheService {
     @Transactional
     public MarcheDto removeDelegue(Long marcheId, Long delegueId, AuthenticatedUser user) {
         if (user == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         Utilisateur ac = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
         if (ac.getRole() != Role.AUTORITE_CONTRACTANTE) {
-            throw new RuntimeException("Action réservée à l'autorité contractante");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Action réservée à l'autorité contractante");
         }
         if (ac.getAutoriteContractante() == null) {
-            throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
         }
 
         Marche marche = marcheRepository.findById(marcheId)
-                .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + marcheId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
 
         Long marcheAcId = marche.getConvention() != null && marche.getConvention().getAutoriteContractante() != null
                 ? marche.getConvention().getAutoriteContractante().getId()
                 : null;
 
         if (marcheAcId == null || !marcheAcId.equals(ac.getAutoriteContractante().getId())) {
-            throw new RuntimeException("Accès refusé: marché hors périmètre de votre autorité contractante");
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: marché hors périmètre de votre autorité contractante");
         }
 
         MarcheDelegue link = marcheDelegueRepository.findByMarcheIdAndDelegueId(marcheId, delegueId)
-                .orElseThrow(() -> new RuntimeException("Délégué non affecté à ce marché"));
+                .orElseThrow(() -> ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Délégué non affecté à ce marché"));
         marche.getDelegues().removeIf(md -> Objects.equals(md.getId(), link.getId()));
         marche = marcheRepository.save(marche);
         return toDto(marche);
@@ -289,7 +346,7 @@ public class MarcheService {
 
     private void addDelegue(Marche marche, Utilisateur delegue) {
         if (marche == null || marche.getId() == null || delegue == null || delegue.getId() == null) {
-            throw new RuntimeException("Données invalides pour l'affectation du délégué");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Données invalides pour l'affectation du délégué");
         }
         boolean exists = marcheDelegueRepository.existsByMarcheIdAndDelegueId(marche.getId(), delegue.getId());
         if (exists) {
@@ -312,39 +369,39 @@ public class MarcheService {
     @Transactional
     public MarcheDto create(CreateMarcheRequest request, AuthenticatedUser user) {
         if (user == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
 
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
         Convention convention = conventionRepository.findById(request.getConventionId())
-                .orElseThrow(() -> new RuntimeException("Convention non trouvée: " + request.getConventionId()));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + request.getConventionId()));
 
         DemandeCorrection demande = null;
         if (request.getDemandeCorrectionId() != null) {
             demande = demandeRepository.findById(request.getDemandeCorrectionId())
-                    .orElseThrow(() -> new RuntimeException("Demande de correction non trouvée: " + request.getDemandeCorrectionId()));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + request.getDemandeCorrectionId()));
 
             if (demande.getConvention() == null || demande.getConvention().getId() == null) {
-                throw new RuntimeException("La correction n'est rattachée à aucune convention");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La correction n'est rattachée à aucune convention");
             }
             if (!demande.getConvention().getId().equals(convention.getId())) {
-                throw new RuntimeException("La correction n'appartient pas à la convention sélectionnée");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La correction n'appartient pas à la convention sélectionnée");
             }
 
             if (marcheRepository.findByDemandeCorrectionId(request.getDemandeCorrectionId()).isPresent()) {
-                throw new RuntimeException("Un marché existe déjà pour cette correction");
+                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Un marché existe déjà pour cette correction");
             }
         }
 
         if (u.getRole() == Role.AUTORITE_CONTRACTANTE || u.getRole() == Role.AUTORITE_UPM || u.getRole() == Role.AUTORITE_UEP) {
             if (u.getAutoriteContractante() == null) {
-                throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
             }
             Long conventionAcId = convention.getAutoriteContractante() != null ? convention.getAutoriteContractante().getId() : null;
             if (conventionAcId == null || !conventionAcId.equals(u.getAutoriteContractante().getId())) {
-                throw new RuntimeException("Accès refusé: convention hors périmètre de votre autorité contractante");
+                throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: convention hors périmètre de votre autorité contractante");
             }
         }
 
@@ -371,12 +428,12 @@ public class MarcheService {
     @Transactional
     public MarcheDto update(Long id, UpdateMarcheRequest request) {
         Marche marche = marcheRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Marché non trouvé: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + id));
         if (marche.getStatut() == StatutMarche.CLOTURE && request.getStatut() != StatutMarche.CLOTURE) {
-            throw new RuntimeException("Marché clôturé: changement de statut interdit");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Marché clôturé: changement de statut interdit");
         }
         if (marche.getStatut() == StatutMarche.ANNULE && request.getStatut() != StatutMarche.ANNULE) {
-            throw new RuntimeException("Marché annulé: changement de statut interdit");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Marché annulé: changement de statut interdit");
         }
         marche.setNumeroMarche(request.getNumeroMarche());
         marche.setDateSignature(request.getDateSignature());
@@ -446,10 +503,10 @@ public class MarcheService {
 
     private void assertMarcheEditableForDocuments(Marche marche) {
         if (marche.getStatut() == StatutMarche.CLOTURE) {
-            throw new RuntimeException("Modification des documents interdite: marché clôturé");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Modification des documents interdite: marché clôturé");
         }
         if (marche.getStatut() == StatutMarche.ANNULE) {
-            throw new RuntimeException("Modification des documents interdite: marché annulé");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Modification des documents interdite: marché annulé");
         }
     }
 }

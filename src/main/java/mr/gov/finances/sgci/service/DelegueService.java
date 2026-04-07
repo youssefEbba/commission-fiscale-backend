@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
@@ -8,6 +11,7 @@ import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.web.dto.CreateDelegueRequest;
+import mr.gov.finances.sgci.web.dto.UpdateDelegueRequest;
 import mr.gov.finances.sgci.web.dto.UtilisateurDto;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -34,15 +38,75 @@ public class DelegueService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public UtilisateurDto findById(Long delegueId, AuthenticatedUser user) {
+        AutoriteContractante ac = requireAutoriteContractante(user);
+        Utilisateur delegue = utilisateurRepository.findById(delegueId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé: " + delegueId));
+        if (delegue.getAutoriteContractante() == null || !delegue.getAutoriteContractante().getId().equals(ac.getId())) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: ce délégué n'appartient pas à votre autorité contractante");
+        }
+        if (delegue.getRole() == null || !DELEGUE_ROLES.contains(delegue.getRole())) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "L'utilisateur ciblé n'est pas un délégué");
+        }
+        return toDto(delegue);
+    }
+
+    @Transactional
+    public UtilisateurDto updateDelegue(Long delegueId, UpdateDelegueRequest request, AuthenticatedUser user) {
+        if (request == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Requête vide");
+        }
+        boolean hasChange = (request.getNomComplet() != null && !request.getNomComplet().isBlank())
+                || (request.getEmail() != null && !request.getEmail().isBlank())
+                || (request.getNewPassword() != null && !request.getNewPassword().isBlank());
+        if (!hasChange) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucun champ à mettre à jour");
+        }
+        if (request.getNewPassword() != null && !request.getNewPassword().isBlank()
+                && request.getNewPassword().length() < 8) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le mot de passe doit contenir au moins 8 caractères");
+        }
+
+        AutoriteContractante ac = requireAutoriteContractante(user);
+        Utilisateur delegue = utilisateurRepository.findById(delegueId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé: " + delegueId));
+        if (delegue.getAutoriteContractante() == null || !delegue.getAutoriteContractante().getId().equals(ac.getId())) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: ce délégué n'appartient pas à votre autorité contractante");
+        }
+        if (delegue.getRole() == null || !DELEGUE_ROLES.contains(delegue.getRole())) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "L'utilisateur ciblé n'est pas un délégué");
+        }
+
+        if (request.getNomComplet() != null && !request.getNomComplet().isBlank()) {
+            delegue.setNomComplet(request.getNomComplet().trim());
+        }
+        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+            String email = request.getEmail().trim();
+            if (utilisateurRepository.existsByEmailAndIdNot(email, delegueId)) {
+                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Cet e-mail est déjà utilisé");
+            }
+            delegue.setEmail(email);
+        }
+        if (request.getNewPassword() != null && !request.getNewPassword().isBlank()) {
+            delegue.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        }
+
+        delegue = utilisateurRepository.save(delegue);
+        UtilisateurDto result = toDto(delegue);
+        auditService.log(AuditAction.UPDATE, "Delegue", String.valueOf(delegueId), result);
+        return result;
+    }
+
     @Transactional
     public UtilisateurDto createDelegue(CreateDelegueRequest request, AuthenticatedUser user) {
         AutoriteContractante ac = requireAutoriteContractante(user);
 
         if (request.getRole() == null || !DELEGUE_ROLES.contains(request.getRole())) {
-            throw new RuntimeException("Rôle délégué invalide (attendu AUTORITE_UPM ou AUTORITE_UEP)");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Rôle délégué invalide (attendu AUTORITE_UPM ou AUTORITE_UEP)");
         }
         if (utilisateurRepository.existsByUsername(request.getUsername())) {
-            throw new RuntimeException("Ce nom d'utilisateur est déjà utilisé");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Ce nom d'utilisateur est déjà utilisé");
         }
 
         Utilisateur u = Utilisateur.builder()
@@ -66,13 +130,13 @@ public class DelegueService {
         AutoriteContractante ac = requireAutoriteContractante(user);
 
         Utilisateur delegue = utilisateurRepository.findById(delegueId)
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé: " + delegueId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé: " + delegueId));
 
         if (delegue.getAutoriteContractante() == null || !delegue.getAutoriteContractante().getId().equals(ac.getId())) {
-            throw new RuntimeException("Accès refusé: ce délégué n'appartient pas à votre autorité contractante");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: ce délégué n'appartient pas à votre autorité contractante");
         }
         if (delegue.getRole() == null || !DELEGUE_ROLES.contains(delegue.getRole())) {
-            throw new RuntimeException("L'utilisateur ciblé n'est pas un délégué");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "L'utilisateur ciblé n'est pas un délégué");
         }
 
         delegue.setActif(actif);
@@ -83,15 +147,15 @@ public class DelegueService {
 
     private AutoriteContractante requireAutoriteContractante(AuthenticatedUser user) {
         if (user == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.AUTORITE_CONTRACTANTE) {
-            throw new RuntimeException("Action réservée à l'autorité contractante");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Action réservée à l'autorité contractante");
         }
         Utilisateur entity = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         if (entity.getAutoriteContractante() == null) {
-            throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
         }
         return entity.getAutoriteContractante();
     }

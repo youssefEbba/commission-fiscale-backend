@@ -1,10 +1,14 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.DocumentTransfertCredit;
 import mr.gov.finances.sgci.domain.entity.TransfertCredit;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
+import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.repository.DocumentTransfertCreditRepository;
 import mr.gov.finances.sgci.repository.TransfertCreditRepository;
@@ -31,12 +35,17 @@ public class DocumentTransfertCreditService {
     @Transactional
     public DocumentTransfertCreditDto upload(Long transfertCreditId, TypeDocument type, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
-            throw new RuntimeException("Le fichier est vide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         requirementValidator.validateUpload(ProcessusDocument.TRANSFERT_CREDIT, type, file);
 
         TransfertCredit transfert = transfertRepository.findById(transfertCreditId)
-                .orElseThrow(() -> new RuntimeException("Transfert de crédit non trouvé: " + transfertCreditId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Transfert de crédit non trouvé: " + transfertCreditId));
+
+        StatutTransfert st = transfert.getStatut();
+        if (st != StatutTransfert.DEMANDE && st != StatutTransfert.EN_COURS && st != StatutTransfert.VALIDE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Dépôt de pièces interdit pour le statut: " + st);
+        }
 
         int nextVersion = 1;
         DocumentTransfertCredit previous = repository.findByTransfertCreditIdAndTypeAndActifTrue(transfertCreditId, type)
@@ -47,12 +56,7 @@ public class DocumentTransfertCreditService {
         }
 
         String originalFilename = file.getOriginalFilename();
-        String fileUrl;
-        try {
-            fileUrl = minioService.uploadFile(file);
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur upload MinIO: " + e.getMessage(), e);
-        }
+        String fileUrl = minioService.uploadFile(file);
 
         DocumentTransfertCredit doc = DocumentTransfertCredit.builder()
                 .type(type)
@@ -66,9 +70,26 @@ public class DocumentTransfertCreditService {
                 .build();
 
         doc = repository.save(doc);
+        if (transfert.getStatut() == StatutTransfert.DEMANDE) {
+            transfert.setStatut(StatutTransfert.EN_COURS);
+            transfertRepository.save(transfert);
+        }
         DocumentTransfertCreditDto result = toDto(doc);
         auditService.log(AuditAction.CREATE, "DocumentTransfertCredit", String.valueOf(doc.getId()), result);
         return result;
+    }
+
+    /**
+     * Lors d'une nouvelle demande après rejet, les anciennes pièces actives ne doivent pas valider DGTCP.
+     */
+    @Transactional
+    public void deactivateAllForTransfert(Long transfertCreditId) {
+        repository.findByTransfertCreditId(transfertCreditId).stream()
+                .filter(d -> Boolean.TRUE.equals(d.getActif()))
+                .forEach(d -> {
+                    d.setActif(false);
+                    repository.save(d);
+                });
     }
 
     @Transactional(readOnly = true)

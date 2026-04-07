@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.DocumentRequirement;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
@@ -59,7 +62,7 @@ public class DocumentRequirementService {
     @Transactional
     public DocumentRequirementDto update(Long id, UpsertDocumentRequirementRequest request) {
         DocumentRequirement entity = repository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Document requirement non trouvé: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Document requirement non trouvé: " + id));
         applyRequest(entity, request);
         entity = repository.save(entity);
         return toDto(entity);
@@ -68,7 +71,7 @@ public class DocumentRequirementService {
     @Transactional
     public void delete(Long id) {
         if (!repository.existsById(id)) {
-            throw new RuntimeException("Document requirement non trouvé: " + id);
+            throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Document requirement non trouvé: " + id);
         }
         repository.deleteById(id);
     }

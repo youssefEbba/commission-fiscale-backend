@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.DecisionUtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.RejetTempResponse;
@@ -43,20 +46,20 @@ public class DecisionUtilisationCreditService {
     @Transactional
     public DecisionCreditDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
         if (decisionId == null) {
-            throw new RuntimeException("Décision invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Décision invalide");
         }
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
 
         DecisionUtilisationCredit decision = decisionRepository.findById(decisionId)
-                .orElseThrow(() -> new RuntimeException("Décision utilisation non trouvée: " + decisionId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Décision utilisation non trouvée: " + decisionId));
 
         if (decision.getDecision() != DecisionCorrectionType.REJET_TEMP || decision.getRejetTempStatus() != RejetTempStatus.OUVERT) {
-            throw new RuntimeException("Résolution interdite: la décision n'est pas un REJET_TEMP OUVERT");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Résolution interdite: la décision n'est pas un REJET_TEMP OUVERT");
         }
         if (decision.getRole() == null || decision.getRole() != user.getRole()) {
-            throw new RuntimeException("Résolution interdite: rôle non autorisé");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Résolution interdite: rôle non autorisé");
         }
 
         decision.setRejetTempStatus(RejetTempStatus.RESOLU);
@@ -89,36 +92,37 @@ public class DecisionUtilisationCreditService {
                                          Set<TypeDocument> documentsDemandes,
                                          AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         Role role = user.getRole();
         if (role != Role.DGD && role != Role.DGTCP && role != Role.DGI) {
-            throw new RuntimeException("Rôle non autorisé pour la décision utilisation: " + role);
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Rôle non autorisé pour la décision utilisation: " + role);
         }
 
         if (decision == DecisionCorrectionType.REJET_TEMP) {
             if (motifRejet == null || motifRejet.isBlank()) {
-                throw new RuntimeException("Le motif de rejet est obligatoire");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de rejet est obligatoire");
             }
             if (documentsDemandes == null || documentsDemandes.isEmpty()) {
-                throw new RuntimeException("La liste des documents demandés est obligatoire");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La liste des documents demandés est obligatoire");
             }
         }
 
         UtilisationCredit utilisation = utilisationRepository.findById(utilisationCreditId)
-                .orElseThrow(() -> new RuntimeException("Utilisation de crédit non trouvée: " + utilisationCreditId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + utilisationCreditId));
 
         Set<StatutUtilisation> decisionInterdits = EnumSet.of(
                 StatutUtilisation.LIQUIDEE,
                 StatutUtilisation.APUREE,
                 StatutUtilisation.REJETEE);
         if (decisionInterdits.contains(utilisation.getStatut())) {
-            throw new RuntimeException("Décision interdite: l'utilisation est en statut "
-                    + utilisation.getStatut() + " (liquidée, apurée ou rejetée définitivement)");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Décision interdite: l'utilisation est en statut "
+                            + utilisation.getStatut() + " (liquidée, apurée ou rejetée définitivement)");
         }
 
         Utilisateur utilisateur = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
         // Vérifier si une décision existe déjà pour ce rôle
         DecisionUtilisationCredit existingDecision = decisionRepository
@@ -128,14 +132,14 @@ public class DecisionUtilisationCreditService {
         if (existingDecision != null) {
             // 1. Bloquer toute nouvelle décision si un VISA a déjà été donné par ce rôle
             if (existingDecision.getDecision() == DecisionCorrectionType.VISA) {
-                throw new RuntimeException("Décision impossible: un visa a déjà été accordé par ce rôle. Le visa clôture les interactions sur cette demande.");
+                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Décision impossible: un visa a déjà été accordé par ce rôle. Le visa clôture les interactions sur cette demande.");
             }
 
             // 2. Bloquer le VISA si un REJET_TEMP ouvert existe pour ce rôle
             if (decision == DecisionCorrectionType.VISA &&
                 existingDecision.getDecision() == DecisionCorrectionType.REJET_TEMP &&
                 existingDecision.getRejetTempStatus() == RejetTempStatus.OUVERT) {
-                throw new RuntimeException("VISA impossible: un rejet temporaire est en cours pour ce rôle. Vous devez d'abord résoudre le rejet via l'endpoint /resolve.");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "VISA impossible: un rejet temporaire est en cours pour ce rôle. Vous devez d'abord résoudre le rejet via l'endpoint /resolve.");
             }
         }
 
@@ -144,7 +148,7 @@ public class DecisionUtilisationCreditService {
             boolean visaExists = decisionRepository.existsByUtilisationCreditIdAndRoleAndDecision(
                     utilisationCreditId, role, DecisionCorrectionType.VISA);
             if (visaExists) {
-                throw new RuntimeException("Rejet temporaire impossible: un visa a déjà été accordé par ce rôle. Le visa clôture les interactions sur cette demande.");
+                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Rejet temporaire impossible: un visa a déjà été accordé par ce rôle. Le visa clôture les interactions sur cette demande.");
             }
         }
 
@@ -195,14 +199,14 @@ public class DecisionUtilisationCreditService {
             TypeDocument type,
             AuthenticatedUser user) throws IOException {
         if (message == null || message.isBlank()) {
-            throw new RuntimeException("Le message de réponse est obligatoire");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le message de réponse est obligatoire");
         }
         if (file != null && !file.isEmpty()) {
             if (type == null) {
-                throw new RuntimeException("Le type de document est obligatoire lors de l'envoi d'un fichier");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le type de document est obligatoire lors de l'envoi d'un fichier");
             }
             DecisionUtilisationCredit decision = decisionRepository.findById(decisionId)
-                    .orElseThrow(() -> new RuntimeException("Décision utilisation non trouvée: " + decisionId));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Décision utilisation non trouvée: " + decisionId));
             Long utilId = decision.getUtilisationCredit().getId();
             documentUtilisationCreditService.upload(utilId, type, message, file, user);
             return rejetTempResponseRepository.findByDecisionUtilisationCredit_IdOrderByCreatedAtAsc(decisionId).stream()

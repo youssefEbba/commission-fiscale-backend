@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
@@ -26,14 +29,13 @@ public class AutoriteContractanteService {
 
     @Transactional(readOnly = true)
     public AutoriteContractanteDto findById(Long id) {
-        return repository.findById(id).map(this::toDto).orElseThrow(
-                () -> new RuntimeException("Autorité contractante non trouvée: " + id));
+        return repository.findById(id).map(this::toDto).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée: " + id));
     }
 
     @Transactional
     public AutoriteContractanteDto create(AutoriteContractanteDto dto) {
         if (dto.getCode() != null && repository.existsByCode(dto.getCode())) {
-            throw new RuntimeException("Une autorité contractante avec ce code existe déjà");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Une autorité contractante avec ce code existe déjà");
         }
         AutoriteContractante entity = AutoriteContractante.builder()
                 .nom(dto.getNom())
@@ -48,8 +50,7 @@ public class AutoriteContractanteService {
 
     @Transactional
     public AutoriteContractanteDto update(Long id, AutoriteContractanteDto dto) {
-        AutoriteContractante entity = repository.findById(id).orElseThrow(
-                () -> new RuntimeException("Autorité contractante non trouvée: " + id));
+        AutoriteContractante entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée: " + id));
         entity.setNom(dto.getNom());
         entity.setCode(dto.getCode());
         entity.setContact(dto.getContact());
@@ -62,7 +63,7 @@ public class AutoriteContractanteService {
     @Transactional
     public void deleteById(Long id) {
         if (!repository.existsById(id)) {
-            throw new RuntimeException("Autorité contractante non trouvée: " + id);
+            throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée: " + id);
         }
         auditService.log(AuditAction.DELETE, "AutoriteContractante", String.valueOf(id), null);
         repository.deleteById(id);

@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.DecisionCorrection;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
@@ -46,20 +49,20 @@ public class DecisionCorrectionService {
     @Transactional
     public DecisionCorrectionDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
         if (decisionId == null) {
-            throw new RuntimeException("Décision invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Décision invalide");
         }
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
 
         DecisionCorrection decision = decisionRepository.findById(decisionId)
-                .orElseThrow(() -> new RuntimeException("Décision correction non trouvée: " + decisionId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Décision correction non trouvée: " + decisionId));
 
         if (decision.getDecision() != DecisionCorrectionType.REJET_TEMP || decision.getRejetTempStatus() != RejetTempStatus.OUVERT) {
-            throw new RuntimeException("Résolution interdite: la décision n'est pas un REJET_TEMP OUVERT");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Résolution interdite: la décision n'est pas un REJET_TEMP OUVERT");
         }
         if (decision.getRole() == null || decision.getRole() != user.getRole()) {
-            throw new RuntimeException("Résolution interdite: rôle non autorisé");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Résolution interdite: rôle non autorisé");
         }
 
         decision.setRejetTempStatus(RejetTempStatus.RESOLU);
@@ -87,39 +90,40 @@ public class DecisionCorrectionService {
     @Transactional
     public DecisionCorrectionDto saveDecision(Long demandeId, DecisionCorrectionType decision, String motifRejet, Set<TypeDocument> documentsDemandes, AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         Role role = user.getRole();
         if (role != Role.DGD && role != Role.DGTCP && role != Role.DGI && role != Role.DGB && role != Role.PRESIDENT) {
-            throw new RuntimeException("Rôle non autorisé pour la décision: " + role);
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Rôle non autorisé pour la décision: " + role);
         }
 
         if (role != Role.DGD && role != Role.PRESIDENT) {
             boolean dgdVisa = decisionRepository.existsByDemandeCorrectionIdAndRoleAndDecision(
                     demandeId, Role.DGD, DecisionCorrectionType.VISA);
             if (!dgdVisa) {
-                throw new RuntimeException("Le visa DGD est requis en premier");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le visa DGD est requis en premier");
             }
         }
         if (decision == DecisionCorrectionType.REJET_TEMP) {
             if (motifRejet == null || motifRejet.isBlank()) {
-                throw new RuntimeException("Le motif de rejet est obligatoire");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de rejet est obligatoire");
             }
             if (documentsDemandes == null || documentsDemandes.isEmpty()) {
-                throw new RuntimeException("La liste des documents demandés est obligatoire");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La liste des documents demandés est obligatoire");
             }
         }
 
         DemandeCorrection demande = demandeRepository.findById(demandeId)
-                .orElseThrow(() -> new RuntimeException("Demande de correction non trouvée: " + demandeId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + demandeId));
 
         if (!DECISION_ALLOWED_STATUTS.contains(demande.getStatut())) {
-            throw new RuntimeException("Décision impossible: la demande est en statut " + demande.getStatut()
-                    + ". Les décisions ne sont autorisées qu'en statut: " + DECISION_ALLOWED_STATUTS);
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Décision impossible: la demande est en statut " + demande.getStatut()
+                            + ". Les décisions ne sont autorisées qu'en statut: " + DECISION_ALLOWED_STATUTS);
         }
 
         Utilisateur utilisateur = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
         // Vérifier si une décision existe déjà pour ce rôle
         DecisionCorrection existingDecision = decisionRepository
@@ -129,14 +133,14 @@ public class DecisionCorrectionService {
         if (existingDecision != null) {
             // 1. Bloquer toute nouvelle décision si un VISA a déjà été donné par ce rôle
             if (existingDecision.getDecision() == DecisionCorrectionType.VISA) {
-                throw new RuntimeException("Décision impossible: un visa a déjà été accordé par ce rôle. Le visa clôture les interactions sur cette demande.");
+                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Décision impossible: un visa a déjà été accordé par ce rôle. Le visa clôture les interactions sur cette demande.");
             }
 
             // 2. Bloquer le VISA si un REJET_TEMP ouvert existe pour ce rôle
             if (decision == DecisionCorrectionType.VISA &&
                 existingDecision.getDecision() == DecisionCorrectionType.REJET_TEMP &&
                 existingDecision.getRejetTempStatus() == RejetTempStatus.OUVERT) {
-                throw new RuntimeException("VISA impossible: un rejet temporaire est en cours pour ce rôle. Vous devez d'abord résoudre le rejet via l'endpoint /resolve.");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "VISA impossible: un rejet temporaire est en cours pour ce rôle. Vous devez d'abord résoudre le rejet via l'endpoint /resolve.");
             }
         }
 
@@ -145,7 +149,7 @@ public class DecisionCorrectionService {
             boolean visaExists = decisionRepository.existsByDemandeCorrectionIdAndRoleAndDecision(
                     demandeId, role, DecisionCorrectionType.VISA);
             if (visaExists) {
-                throw new RuntimeException("Rejet temporaire impossible: un visa a déjà été accordé par ce rôle. Le visa clôture les interactions sur cette demande.");
+                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Rejet temporaire impossible: un visa a déjà été accordé par ce rôle. Le visa clôture les interactions sur cette demande.");
             }
         }
 

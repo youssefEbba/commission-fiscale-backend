@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.DocumentRequirement;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
@@ -40,7 +43,8 @@ public class DocumentRequirementValidator {
         }
         TypeFichierAutorise actual = resolveTypeFichierAutorise(file);
         if (actual == null || !req.getTypesAutorises().contains(actual)) {
-            throw new RuntimeException("Type de fichier non autorisé pour '" + typeDocument + "' (autorisé=" + req.getTypesAutorises() + ")");
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Type de fichier non autorisé pour '" + typeDocument + "' (autorisé=" + req.getTypesAutorises() + ")");
         }
     }
 
@@ -65,7 +69,7 @@ public class DocumentRequirementValidator {
                 .collect(Collectors.toList());
 
         if (!missing.isEmpty()) {
-            throw new RuntimeException("Documents obligatoires manquants: " + missing);
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Documents obligatoires manquants: " + missing, missing);
         }
     }
 

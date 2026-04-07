@@ -6,7 +6,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.service.PermissionService;
 
 import org.springframework.lang.NonNull;
@@ -33,6 +35,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final PermissionService permissionService;
+    private final UtilisateurRepository utilisateurRepository;
 
     @Override
     protected void doFilterInternal(
@@ -52,6 +55,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Long userId = jwtService.extractUserId(token);
             List<String> permissions = jwtService.extractPermissions(token);
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                if (userId != null) {
+                    Utilisateur account = utilisateurRepository.findById(userId).orElse(null);
+                    if (account == null || Boolean.FALSE.equals(account.getActif())) {
+                        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                        response.setContentType("application/json;charset=UTF-8");
+                        response.getWriter().write("{\"status\":403,\"error\":\"Compte désactivé ou introuvable\"}");
+                        return;
+                    }
+                }
                 Collection<SimpleGrantedAuthority> authorities = new ArrayList<>();
                 authorities.add(new SimpleGrantedAuthority("ROLE_" + role.name()));
 

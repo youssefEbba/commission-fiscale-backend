@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
@@ -67,11 +70,23 @@ public class UtilisationCreditService {
      *
      * @param demandeurSousTraitantOnly si {@code true} et rôle titulaire, ne garde que les demandes où
      *                                  {@link UtilisationCreditDto#getDemandeurEstSousTraitant()} est vrai.
+     * @param sousTraitantEntrepriseId  si renseigné et rôle titulaire, ne garde que les demandes dont
+     *                                  l'entreprise demandeuse est cette id et {@code demandeurEstSousTraitant}.
      */
     @Transactional(readOnly = true)
-    public List<UtilisationCreditDto> findAllVisible(AuthenticatedUser auth, Boolean demandeurSousTraitantOnly) {
+    public List<UtilisationCreditDto> findAllVisible(
+            AuthenticatedUser auth,
+            Boolean demandeurSousTraitantOnly,
+            Long sousTraitantEntrepriseId
+    ) {
         List<UtilisationCredit> rows = resolveVisibleEntities(auth);
         List<UtilisationCreditDto> dtos = rows.stream().map(this::toDto).collect(Collectors.toList());
+        if (auth != null && auth.getRole() == Role.ENTREPRISE && sousTraitantEntrepriseId != null) {
+            dtos = dtos.stream()
+                    .filter(d -> Boolean.TRUE.equals(d.getDemandeurEstSousTraitant())
+                            && sousTraitantEntrepriseId.equals(d.getEntrepriseId()))
+                    .collect(Collectors.toList());
+        }
         if (Boolean.TRUE.equals(demandeurSousTraitantOnly) && auth != null && auth.getRole() == Role.ENTREPRISE) {
             return dtos.stream()
                     .filter(d -> Boolean.TRUE.equals(d.getDemandeurEstSousTraitant()))
@@ -85,7 +100,7 @@ public class UtilisationCreditService {
             return repository.findAll();
         }
         Utilisateur u = utilisateurRepository.findById(auth.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         Role r = u.getRole();
         if (r == Role.SOUS_TRAITANT) {
             if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
@@ -104,8 +119,7 @@ public class UtilisationCreditService {
 
     @Transactional(readOnly = true)
     public UtilisationCreditDto findById(Long id, AuthenticatedUser user) {
-        UtilisationCredit entity = repository.findById(id).orElseThrow(
-                () -> new RuntimeException("Utilisation de crédit non trouvée: " + id));
+        UtilisationCredit entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
         if (user != null) {
             assertCanViewUtilisation(user, entity);
         }
@@ -115,7 +129,7 @@ public class UtilisationCreditService {
     @Transactional(readOnly = true)
     public List<UtilisationCreditDto> findByCertificatCreditId(Long certificatCreditId, AuthenticatedUser user) {
         CertificatCredit cert = certificatRepository.findById(certificatCreditId)
-                .orElseThrow(() -> new RuntimeException("Certificat de crédit non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé"));
         if (user != null) {
             assertCanAccessCertificatUtilisations(user, cert);
         }
@@ -126,13 +140,13 @@ public class UtilisationCreditService {
 
     private void assertCanViewUtilisation(AuthenticatedUser auth, UtilisationCredit u) {
         Utilisateur logged = utilisateurRepository.findById(auth.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         Role r = logged.getRole();
         if (r != Role.ENTREPRISE && r != Role.SOUS_TRAITANT) {
             return;
         }
         if (logged.getEntreprise() == null || logged.getEntreprise().getId() == null) {
-            throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
         }
         Long eid = logged.getEntreprise().getId();
         CertificatCredit cert = u.getCertificatCredit();
@@ -141,7 +155,7 @@ public class UtilisationCreditService {
             if (u.getEntreprise() != null && u.getEntreprise().getId().equals(eid)) {
                 return;
             }
-            throw new RuntimeException("Accès refusé: utilisation hors périmètre");
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: utilisation hors périmètre");
         }
         if (titId != null && titId.equals(eid)) {
             return;
@@ -149,18 +163,18 @@ public class UtilisationCreditService {
         if (u.getEntreprise() != null && u.getEntreprise().getId().equals(eid)) {
             return;
         }
-        throw new RuntimeException("Accès refusé: utilisation hors périmètre");
+        throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: utilisation hors périmètre");
     }
 
     private void assertCanAccessCertificatUtilisations(AuthenticatedUser auth, CertificatCredit cert) {
         Utilisateur logged = utilisateurRepository.findById(auth.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         Role r = logged.getRole();
         if (r != Role.ENTREPRISE && r != Role.SOUS_TRAITANT) {
             return;
         }
         if (logged.getEntreprise() == null || logged.getEntreprise().getId() == null) {
-            throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
         }
         Long eid = logged.getEntreprise().getId();
         Long titId = cert.getEntreprise() != null ? cert.getEntreprise().getId() : null;
@@ -171,7 +185,7 @@ public class UtilisationCreditService {
             sousTraitanceService.assertSousTraitantEntrepriseAuthorizedOnCertificat(cert.getId(), eid);
             return;
         }
-        throw new RuntimeException("Accès refusé: certificat hors périmètre");
+        throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
     }
 
     @Transactional(readOnly = true)
@@ -207,27 +221,27 @@ public class UtilisationCreditService {
     @Transactional
     public UtilisationCreditDto create(CreateUtilisationCreditRequest request, AuthenticatedUser user) {
         CertificatCredit certificat = certificatRepository.findById(request.getCertificatCreditId())
-                .orElseThrow(() -> new RuntimeException("Certificat de crédit non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé"));
         if (certificat.getStatut() != StatutCertificat.OUVERT) {
-            throw new RuntimeException("Le crédit doit être OUVERT pour créer une utilisation");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le crédit doit être OUVERT pour créer une utilisation");
         }
         Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
-                .orElseThrow(() -> new RuntimeException("Entreprise non trouvée"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée"));
 
         // Contrôle d'accès création
         if (user != null && user.getRole() != null) {
             Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                    .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
             if (u.getRole() == Role.ENTREPRISE || u.getRole() == Role.SOUS_TRAITANT) {
                 if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
-                    throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
+                    throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
                 }
                 if (!u.getEntreprise().getId().equals(entreprise.getId())) {
-                    throw new RuntimeException("Accès refusé: entreprise requête invalide");
+                    throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: entreprise requête invalide");
                 }
                 if (certificat.getEntreprise() == null || certificat.getEntreprise().getId() == null) {
-                    throw new RuntimeException("Certificat sans entreprise");
+                    throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat sans entreprise");
                 }
                 Long userEntrepriseId = u.getEntreprise().getId();
                 Long certificatEntrepriseId = certificat.getEntreprise().getId();
@@ -308,10 +322,9 @@ public class UtilisationCreditService {
 
     @Transactional
     public UtilisationCreditDto apurerTVAInterieure(Long id, ApurerTVAInterieureRequest request, AuthenticatedUser user) {
-        UtilisationCredit entity = repository.findById(id).orElseThrow(
-                () -> new RuntimeException("Utilisation de crédit non trouvée: " + id));
+        UtilisationCredit entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
         if (!(entity instanceof UtilisationTVAInterieure t)) {
-            throw new RuntimeException("Cette utilisation n'est pas de type TVA intérieure");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type TVA intérieure");
         }
 
         workflow.validateTransition(entity.getStatut(), StatutUtilisation.APUREE);
@@ -320,12 +333,12 @@ public class UtilisationCreditService {
 
         BigDecimal tvaCollectee = t.getMontantTVA() != null ? t.getMontantTVA() : BigDecimal.ZERO;
         if (tvaCollectee.compareTo(BigDecimal.ZERO) < 0) {
-            throw new RuntimeException("Montant TVA collectée invalide (doit être >= 0)");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Montant TVA collectée invalide (doit être >= 0)");
         }
 
         CertificatCredit certificat = t.getCertificatCredit();
         if (certificat == null) {
-            throw new RuntimeException("Certificat manquant");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat manquant");
         }
 
         // Calcul FIFO du stock disponible
@@ -342,11 +355,12 @@ public class UtilisationCreditService {
         } else {
             tvaDeductible = request.getTvaDeductibleUtilisee();
             if (tvaDeductible.compareTo(BigDecimal.ZERO) < 0) {
-                throw new RuntimeException("tvaDeductibleUtilisee doit être >= 0");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "tvaDeductibleUtilisee doit être >= 0");
             }
             if (tvaDeductible.compareTo(tvaDeductibleDispo) > 0) {
-                throw new RuntimeException("TVA déductible insuffisante (disponible=" + tvaDeductibleDispo
-                        + ", demandée=" + tvaDeductible + ")");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "TVA déductible insuffisante (disponible=" + tvaDeductibleDispo
+                                + ", demandée=" + tvaDeductible + ")");
             }
         }
 
@@ -418,7 +432,8 @@ public class UtilisationCreditService {
             tvaStockRepository.save(s);
         }
         if (remaining.compareTo(BigDecimal.ZERO) > 0) {
-            throw new RuntimeException("Consommation TVA déductible impossible (reste=" + remaining + ")");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Consommation TVA déductible impossible (reste=" + remaining + ")");
         }
     }
 
@@ -435,13 +450,14 @@ public class UtilisationCreditService {
             TypeAchat typeAchat = t.getTypeAchat();
             if (typeAchat == TypeAchat.ACHAT_LOCAL) {
                 if (!present.contains(TypeDocument.FACTURE) || !present.contains(TypeDocument.DECLARATION_TVA)) {
-                    throw new RuntimeException("Documents obligatoires manquants (Achat local): "
-                            + (present.contains(TypeDocument.FACTURE) ? "" : "FACTURE ")
-                            + (present.contains(TypeDocument.DECLARATION_TVA) ? "" : "DECLARATION_TVA"));
+                    throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                            "Documents obligatoires manquants (Achat local): "
+                                    + (present.contains(TypeDocument.FACTURE) ? "" : "FACTURE ")
+                                    + (present.contains(TypeDocument.DECLARATION_TVA) ? "" : "DECLARATION_TVA"));
                 }
             } else if (typeAchat == TypeAchat.DECOMPTE) {
                 if (!present.contains(TypeDocument.DECOMPTE)) {
-                    throw new RuntimeException("Document obligatoire manquant (Décompte): DECOMPTE");
+                    throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Document obligatoire manquant (Décompte): DECOMPTE");
                 }
             }
         }
@@ -471,10 +487,9 @@ public class UtilisationCreditService {
 
     @Transactional
     public UtilisationCreditDto liquiderDouane(Long id, LiquiderUtilisationDouaneRequest request, AuthenticatedUser user) {
-        UtilisationCredit entity = repository.findById(id).orElseThrow(
-                () -> new RuntimeException("Utilisation de crédit non trouvée: " + id));
+        UtilisationCredit entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
         if (!(entity instanceof UtilisationDouaniere d)) {
-            throw new RuntimeException("Cette utilisation n'est pas de type Douane");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type Douane");
         }
 
         workflow.validateTransition(entity.getStatut(), StatutUtilisation.LIQUIDEE);
@@ -483,11 +498,11 @@ public class UtilisationCreditService {
         BigDecimal droits = request != null && request.getMontantDroits() != null ? request.getMontantDroits() : BigDecimal.ZERO;
         BigDecimal tva = request != null && request.getMontantTVA() != null ? request.getMontantTVA() : BigDecimal.ZERO;
         if (droits.compareTo(BigDecimal.ZERO) < 0 || tva.compareTo(BigDecimal.ZERO) < 0) {
-            throw new RuntimeException("Montants d'imputation invalides (doivent être >= 0)");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Montants d'imputation invalides (doivent être >= 0)");
         }
         BigDecimal total = droits.add(tva);
         if (total.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("Le montant total imputé doit être > 0");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le montant total imputé doit être > 0");
         }
 
         d.setMontantDroits(droits);
@@ -526,17 +541,16 @@ public class UtilisationCreditService {
 
     @Transactional
     public UtilisationCreditDto updateStatut(Long id, StatutUtilisation statut, AuthenticatedUser user) {
-        UtilisationCredit entity = repository.findById(id).orElseThrow(
-                () -> new RuntimeException("Utilisation de crédit non trouvée: " + id));
+        UtilisationCredit entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
         workflow.validateTransition(entity.getStatut(), statut);
 
         assertActorCanTransition(entity, statut, user);
 
         if (entity.getType() == TypeUtilisation.DOUANIER && statut == StatutUtilisation.LIQUIDEE) {
-            throw new RuntimeException("Liquidation Douane: veuillez utiliser POST /{id}/liquidation-douane avec les montants d'imputation");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Liquidation Douane: veuillez utiliser POST /{id}/liquidation-douane avec les montants d'imputation");
         }
         if (entity.getType() == TypeUtilisation.TVA_INTERIEURE && statut == StatutUtilisation.APUREE) {
-            throw new RuntimeException("Apurement TVA: veuillez utiliser POST /{id}/apurement-tva (calcul FIFO automatique)");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Apurement TVA: veuillez utiliser POST /{id}/apurement-tva (calcul FIFO automatique)");
         }
 
         if (statut == StatutUtilisation.EN_VERIFICATION) {
@@ -566,10 +580,10 @@ public class UtilisationCreditService {
 
     private void assertActorCanTransition(UtilisationCredit utilisation, StatutUtilisation to, AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (utilisation == null || utilisation.getType() == null) {
-            throw new RuntimeException("Type d'utilisation manquant");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Type d'utilisation manquant");
         }
         Role role = user.getRole();
 
@@ -581,7 +595,8 @@ public class UtilisationCreditService {
                     && to != StatutUtilisation.VISE
                     && to != StatutUtilisation.LIQUIDEE
                     && to != StatutUtilisation.REJETEE) {
-                throw new RuntimeException("Transition non autorisée (Douane): vers " + to);
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Transition non autorisée (Douane): vers " + to);
             }
         }
         if (utilisation.getType() == TypeUtilisation.TVA_INTERIEURE) {
@@ -591,32 +606,34 @@ public class UtilisationCreditService {
                     && to != StatutUtilisation.VALIDEE
                     && to != StatutUtilisation.APUREE
                     && to != StatutUtilisation.REJETEE) {
-                throw new RuntimeException("Transition non autorisée (TVA intérieure): vers " + to);
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Transition non autorisée (TVA intérieure): vers " + to);
             }
         }
 
         if (to == StatutUtilisation.INCOMPLETE || to == StatutUtilisation.A_RECONTROLER) {
-            throw new RuntimeException("Transition " + to + " est gérée automatiquement par le système (rejet temporaire / résolution)");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Transition " + to + " est gérée automatiquement par le système (rejet temporaire / résolution)");
         }
 
         if (utilisation.getType() == TypeUtilisation.DOUANIER) {
             if (to == StatutUtilisation.EN_VERIFICATION || to == StatutUtilisation.VISE) {
                 if (role != Role.DGD) {
-                    throw new RuntimeException("Seul DGD peut traiter cette étape Douane");
+                    throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGD peut traiter cette étape Douane");
                 }
                 return;
             }
 
             if (to == StatutUtilisation.LIQUIDEE) {
                 if (role != Role.DGTCP) {
-                    throw new RuntimeException("Seul DGTCP peut liquider l'utilisation Douane");
+                    throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut liquider l'utilisation Douane");
                 }
                 return;
             }
 
             if (to == StatutUtilisation.REJETEE) {
                 if (role != Role.DGD && role != Role.DGTCP) {
-                    throw new RuntimeException("Seul DGD ou DGTCP peut rejeter l'utilisation Douane");
+                    throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGD ou DGTCP peut rejeter l'utilisation Douane");
                 }
                 return;
             }
@@ -625,7 +642,7 @@ public class UtilisationCreditService {
 
         if (utilisation.getType() == TypeUtilisation.TVA_INTERIEURE) {
             if (role != Role.DGTCP) {
-                throw new RuntimeException("Seul DGTCP peut traiter les utilisations TVA intérieure");
+                throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut traiter les utilisations TVA intérieure");
             }
         }
     }
@@ -643,13 +660,15 @@ public class UtilisationCreditService {
         if (utilisation.getType() == TypeUtilisation.DOUANIER) {
             BigDecimal solde = certificat.getSoldeCordon() != null ? certificat.getSoldeCordon() : BigDecimal.ZERO;
             if (solde.compareTo(montant) < 0) {
-                throw new RuntimeException("Solde cordon insuffisant pour imputer l'utilisation (solde=" + solde + ", montant=" + montant + ")");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Solde cordon insuffisant pour imputer l'utilisation (solde=" + solde + ", montant=" + montant + ")");
             }
             certificat.setSoldeCordon(solde.subtract(montant));
         } else if (utilisation.getType() == TypeUtilisation.TVA_INTERIEURE) {
             BigDecimal solde = certificat.getSoldeTVA() != null ? certificat.getSoldeTVA() : BigDecimal.ZERO;
             if (solde.compareTo(montant) < 0) {
-                throw new RuntimeException("Solde TVA insuffisant pour imputer l'utilisation (solde=" + solde + ", montant=" + montant + ")");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Solde TVA insuffisant pour imputer l'utilisation (solde=" + solde + ", montant=" + montant + ")");
             }
             certificat.setSoldeTVA(solde.subtract(montant));
         }

@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.*;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
@@ -27,7 +30,7 @@ public class RejetTempResponseService {
     @Transactional
     public List<RejetTempResponseDto> addResponseToCertificatDecision(Long decisionId, String message, AuthenticatedUser user) {
         DecisionCertificatCredit decision = decisionCertificatCreditRepository.findById(decisionId)
-                .orElseThrow(() -> new RuntimeException("Décision certificat non trouvée: " + decisionId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Décision certificat non trouvée: " + decisionId));
         assertDecisionOpenRejetTemp(decision.getDecision(), decision.getRejetTempStatus());
         Utilisateur utilisateur = resolveUtilisateur(user);
 
@@ -44,7 +47,7 @@ public class RejetTempResponseService {
     @Transactional
     public List<RejetTempResponseDto> addResponseToUtilisationDecision(Long decisionId, String message, AuthenticatedUser user) {
         DecisionUtilisationCredit decision = decisionUtilisationCreditRepository.findById(decisionId)
-                .orElseThrow(() -> new RuntimeException("Décision utilisation non trouvée: " + decisionId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Décision utilisation non trouvée: " + decisionId));
         assertDecisionOpenRejetTemp(decision.getDecision(), decision.getRejetTempStatus());
         Utilisateur utilisateur = resolveUtilisateur(user);
 
@@ -61,7 +64,7 @@ public class RejetTempResponseService {
     @Transactional
     public List<RejetTempResponseDto> addResponseToCorrectionDecision(Long decisionId, String message, AuthenticatedUser user) {
         DecisionCorrection decision = decisionCorrectionRepository.findById(decisionId)
-                .orElseThrow(() -> new RuntimeException("Décision correction non trouvée: " + decisionId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Décision correction non trouvée: " + decisionId));
         assertDecisionOpenRejetTemp(decision.getDecision(), decision.getRejetTempStatus());
         Utilisateur utilisateur = resolveUtilisateur(user);
 
@@ -158,21 +161,21 @@ public class RejetTempResponseService {
 
     private void assertDecisionOpenRejetTemp(DecisionCorrectionType decision, RejetTempStatus status) {
         if (decision != DecisionCorrectionType.REJET_TEMP || status != RejetTempStatus.OUVERT) {
-            throw new RuntimeException("Réponse rejet temporaire interdite: la décision n'est pas un REJET_TEMP OUVERT");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Réponse rejet temporaire interdite: la décision n'est pas un REJET_TEMP OUVERT");
         }
     }
 
     private Utilisateur resolveUtilisateur(AuthenticatedUser user) {
         if (user == null || user.getUserId() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         return utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
     }
 
     private String validateMessage(String message) {
         if (message == null || message.isBlank()) {
-            throw new RuntimeException("Le message de réponse est obligatoire");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le message de réponse est obligatoire");
         }
         return message;
     }

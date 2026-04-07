@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.web.controller;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.NotificationService;
@@ -23,7 +26,7 @@ public class NotificationController {
     @PreAuthorize("isAuthenticated()")
     public List<NotificationDto> getAll(@AuthenticationPrincipal AuthenticatedUser user) {
         if (user == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         return service.findByUser(user.getUserId());
     }
@@ -32,7 +35,7 @@ public class NotificationController {
     @PreAuthorize("isAuthenticated()")
     public long getUnreadCount(@AuthenticationPrincipal AuthenticatedUser user) {
         if (user == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         return service.countUnread(user.getUserId());
     }
@@ -42,7 +45,7 @@ public class NotificationController {
     @PreAuthorize("isAuthenticated()")
     public NotificationDto markAsRead(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
         if (user == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         return service.markAsRead(id, user.getUserId());
     }
@@ -52,7 +55,7 @@ public class NotificationController {
     @PreAuthorize("isAuthenticated()")
     public void markAllAsRead(@AuthenticationPrincipal AuthenticatedUser user) {
         if (user == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         service.markAllAsRead(user.getUserId());
     }

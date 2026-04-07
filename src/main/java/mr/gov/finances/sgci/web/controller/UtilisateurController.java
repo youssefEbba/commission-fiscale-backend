@@ -1,13 +1,16 @@
 package mr.gov.finances.sgci.web.controller;
 
 import lombok.RequiredArgsConstructor;
-import mr.gov.finances.sgci.service.EntrepriseService;
+import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.service.SousTraitanceService;
 import mr.gov.finances.sgci.service.UtilisateurService;
 import mr.gov.finances.sgci.web.dto.EntrepriseDto;
 import mr.gov.finances.sgci.web.dto.UtilisateurDto;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,7 +23,7 @@ public class UtilisateurController {
 
     private final UtilisateurService utilisateurService;
 
-    private final EntrepriseService entrepriseService;
+    private final SousTraitanceService sousTraitanceService;
 
     /**
      * Liste tous les utilisateurs (réservé à l'administrateur / PRESIDENT).
@@ -31,10 +34,23 @@ public class UtilisateurController {
         return utilisateurService.findAll();
     }
 
+    /**
+     * Entreprises sous-traitantes (référencées sur des sous-traitances), pas l’ensemble du référentiel entreprises.
+     * Titulaire : sous-traitants liés à ses certificats ; autres rôles autorisés : vue globale distincte.
+     */
     @GetMapping("/sous-traitants")
-    @PreAuthorize("isAuthenticated()")
-    public List<EntrepriseDto> getSousTraitants() {
-        return entrepriseService.findAll();
+    @PreAuthorize("hasAnyAuthority('sous_traitant.list', 'sous_traitance.dgtcp.queue.view', 'user.list')")
+    public List<EntrepriseDto> getSousTraitants(@AuthenticationPrincipal AuthenticatedUser user) {
+        if (user == null || user.getRole() == null) {
+            return List.of();
+        }
+        if (user.getRole() == Role.ENTREPRISE) {
+            return sousTraitanceService.findSousTraitantEntreprisesForTitulaire(user);
+        }
+        if (user.getRole() == Role.SOUS_TRAITANT) {
+            return List.of();
+        }
+        return sousTraitanceService.findDistinctSousTraitantEntreprisesGlobally();
     }
 
     /**

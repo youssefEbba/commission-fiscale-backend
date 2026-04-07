@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.web.controller;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
@@ -67,7 +70,7 @@ public class MarcheController {
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         if (request == null || request.getDelegueId() == null) {
-            throw new RuntimeException("delegueId est obligatoire");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "delegueId est obligatoire");
         }
         return service.addDelegue(id, request.getDelegueId(), user);
     }

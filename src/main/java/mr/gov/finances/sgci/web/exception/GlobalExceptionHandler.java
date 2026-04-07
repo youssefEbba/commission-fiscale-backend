@@ -13,78 +13,96 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import mr.gov.finances.sgci.workflow.WorkflowTransitionException;
 
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static ResponseEntity<ErrorResponse> body(ErrorResponse body) {
+        return ResponseEntity.status(body.status()).body(body);
+    }
+
+    @ExceptionHandler(ApiException.class)
+    public ResponseEntity<ErrorResponse> handleApi(ApiException ex) {
+        return body(ErrorResponse.of(ex.getStatus(), ex.getCode(), ex.getMessage(), ex.getDetails()));
+    }
+
     @ExceptionHandler(MaxUploadSizeExceededException.class)
-    public ResponseEntity<Map<String, Object>> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", HttpStatus.PAYLOAD_TOO_LARGE.value());
-        body.put("error", "Fichier trop volumineux");
-        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
+    public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.PAYLOAD_TOO_LARGE.value(),
+                ApiErrorCode.FILE_TOO_LARGE,
+                "Fichier trop volumineux",
+                null));
     }
 
     @ExceptionHandler(BadCredentialsException.class)
-    public ResponseEntity<Map<String, Object>> handleBadCredentials(BadCredentialsException ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", HttpStatus.UNAUTHORIZED.value());
-        body.put("error", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
+    public ResponseEntity<ErrorResponse> handleBadCredentials(BadCredentialsException ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.UNAUTHORIZED.value(),
+                ApiErrorCode.INVALID_CREDENTIALS,
+                ex.getMessage() != null ? ex.getMessage() : "Identifiants invalides",
+                null));
     }
 
     @ExceptionHandler({InsufficientAuthenticationException.class, AuthenticationCredentialsNotFoundException.class})
-    public ResponseEntity<Map<String, Object>> handleAuthMissing(RuntimeException ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", HttpStatus.UNAUTHORIZED.value());
-        body.put("error", "Non authentifié");
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
+    public ResponseEntity<ErrorResponse> handleAuthMissing(RuntimeException ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.UNAUTHORIZED.value(),
+                ApiErrorCode.AUTH_REQUIRED,
+                "Non authentifié",
+                null));
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", HttpStatus.FORBIDDEN.value());
-        body.put("error", "Accès refusé");
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.FORBIDDEN.value(),
+                ApiErrorCode.ACCESS_DENIED,
+                "Accès refusé",
+                null));
     }
 
     @ExceptionHandler(WorkflowTransitionException.class)
-    public ResponseEntity<Map<String, Object>> handleWorkflowTransition(WorkflowTransitionException ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", HttpStatus.CONFLICT.value());
-        body.put("error", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    public ResponseEntity<ErrorResponse> handleWorkflowTransition(WorkflowTransitionException ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.CONFLICT.value(),
+                ex.getCode() != null ? ex.getCode() : WorkflowTransitionException.DEFAULT_CODE,
+                ex.getMessage(),
+                null));
     }
 
+    /**
+     * Erreurs métier historiques : HTTP 400 + code générique.
+     * Préférer {@link ApiException} avec un code plus fin lors des évolutions.
+     */
     @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", HttpStatus.BAD_REQUEST.value());
-        body.put("error", ex.getMessage());
-        return ResponseEntity.badRequest().body(body);
+    public ResponseEntity<ErrorResponse> handleRuntime(RuntimeException ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                ex.getMessage() != null ? ex.getMessage() : ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                null));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", HttpStatus.BAD_REQUEST.value());
-        String errors = ex.getBindingResult().getFieldErrors().stream()
+    public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
+        String details = ex.getBindingResult().getFieldErrors().stream()
                 .map(e -> e.getField() + ": " + e.getDefaultMessage())
                 .collect(Collectors.joining(", "));
-        body.put("error", "Validation échouée");
-        body.put("details", errors);
-        return ResponseEntity.badRequest().body(body);
+        return body(ErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ApiErrorCode.VALIDATION_FAILED,
+                "Validation échouée",
+                details.isEmpty() ? null : details));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleAny(Exception ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                ApiErrorCode.INTERNAL_ERROR,
+                "Erreur interne",
+                null));
     }
 }

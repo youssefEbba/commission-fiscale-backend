@@ -4,13 +4,18 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.DelegueService;
+import mr.gov.finances.sgci.service.MarcheService;
 import mr.gov.finances.sgci.web.dto.CreateDelegueRequest;
+import mr.gov.finances.sgci.web.dto.MarcheDto;
+import mr.gov.finances.sgci.web.dto.SyncDelegueMarchesRequest;
+import mr.gov.finances.sgci.web.dto.UpdateDelegueRequest;
 import mr.gov.finances.sgci.web.dto.UtilisateurDto;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.List;
 
 @RestController
@@ -20,6 +25,7 @@ import java.util.List;
 public class DelegueController {
 
     private final DelegueService service;
+    private final MarcheService marcheService;
 
     @GetMapping
     @PreAuthorize("hasAuthority('delegue.list')")
@@ -35,6 +41,47 @@ public class DelegueController {
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return service.createDelegue(request, user);
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('delegue.list')")
+    public UtilisateurDto getById(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.findById(id, user);
+    }
+
+    @PatchMapping("/{id}")
+    @PreAuthorize("hasAuthority('delegue.update')")
+    public UtilisateurDto updateDelegue(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateDelegueRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.updateDelegue(id, request, user);
+    }
+
+    @GetMapping("/{id}/marches")
+    @PreAuthorize("hasAuthority('delegue.list')")
+    public List<MarcheDto> listMarches(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return marcheService.findMarchesForDelegue(id, user);
+    }
+
+    @PutMapping("/{id}/marches")
+    @PreAuthorize("hasAuthority('marche.manage')")
+    public List<MarcheDto> syncMarches(
+            @PathVariable Long id,
+            @RequestBody(required = false) SyncDelegueMarchesRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        List<Long> ids = request != null && request.getMarcheIds() != null
+                ? request.getMarcheIds()
+                : Collections.emptyList();
+        return marcheService.syncDelegueMarches(id, ids, user);
     }
 
     @PatchMapping("/{id}/actif")

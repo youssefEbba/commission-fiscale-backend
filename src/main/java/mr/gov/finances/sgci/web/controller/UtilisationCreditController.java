@@ -35,9 +35,10 @@ public class UtilisationCreditController {
     @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'utilisation.douane.history.view', 'utilisation.interieur.history.view', 'archivage.view')")
     public List<UtilisationCreditDto> getAll(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @RequestParam(required = false) Boolean demandeurSousTraitantOnly
+            @RequestParam(required = false) Boolean demandeurSousTraitantOnly,
+            @RequestParam(required = false) Long sousTraitantEntrepriseId
     ) {
-        return service.findAllVisible(user, demandeurSousTraitantOnly);
+        return service.findAllVisible(user, demandeurSousTraitantOnly, sousTraitantEntrepriseId);
     }
 
     @GetMapping("/{id}")

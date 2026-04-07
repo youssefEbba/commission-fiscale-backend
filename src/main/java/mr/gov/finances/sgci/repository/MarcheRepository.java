@@ -25,4 +25,8 @@ public interface MarcheRepository extends JpaRepository<Marche, Long> {
     @Query("select distinct m from Marche m join m.delegues md where m.demandeCorrection.autoriteContractante.id = :autoriteContractanteId and md.delegue.id = :delegueId")
     List<Marche> findAllByDemandeCorrectionAutoriteContractanteIdAndDelegueId(@Param("autoriteContractanteId") Long autoriteContractanteId,
                                                                              @Param("delegueId") Long delegueId);
+
+    /** Marchés de l'AC auxquels le délégué est rattaché (via table marche_delegue). */
+    @Query("select distinct m from Marche m join m.delegues md where md.delegue.id = :delegueId and m.convention.autoriteContractante.id = :acId")
+    List<Marche> findAllByDelegueIdAndAutoriteContractanteId(@Param("delegueId") Long delegueId, @Param("acId") Long acId);
 }

@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit;
@@ -41,10 +44,10 @@ public class DocumentUtilisationCreditService {
     @Transactional
     public DocumentUtilisationCreditDto upload(Long utilisationCreditId, TypeDocument type, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
-            throw new RuntimeException("Le fichier est vide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         UtilisationCredit utilisation = utilisationRepository.findById(utilisationCreditId)
-                .orElseThrow(() -> new RuntimeException("Utilisation de crédit non trouvée: " + utilisationCreditId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + utilisationCreditId));
 
         ProcessusDocument processus = resolveProcessus(utilisation);
         requirementValidator.validateUpload(processus, type, file);
@@ -65,16 +68,11 @@ public class DocumentUtilisationCreditService {
                 ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(type));
 
         if (askedByOpenRejetTemp && (message == null || message.isBlank())) {
-            throw new RuntimeException("Le message de réponse est obligatoire");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le message de réponse est obligatoire");
         }
 
         String originalFilename = file.getOriginalFilename();
-        String fileUrl;
-        try {
-            fileUrl = minioService.uploadFile(file);
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur upload MinIO: " + e.getMessage(), e);
-        }
+        String fileUrl = minioService.uploadFile(file);
 
         DocumentUtilisationCredit doc = DocumentUtilisationCredit.builder()
                 .type(type)
@@ -99,16 +97,16 @@ public class DocumentUtilisationCreditService {
 
     private void assertReplacementAllowed(UtilisationCredit utilisation, TypeDocument type, AuthenticatedUser user) {
         if (utilisation == null || utilisation.getId() == null) {
-            throw new RuntimeException("Utilisation invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Utilisation invalide");
         }
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.ENTREPRISE) {
-            throw new RuntimeException("Remplacement interdit: réservé à l'Entreprise");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Remplacement interdit: réservé à l'Entreprise");
         }
         if (utilisation.getStatut() != StatutUtilisation.INCOMPLETE) {
-            throw new RuntimeException("Remplacement interdit: l'utilisation n'est pas en statut INCOMPLETE");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Remplacement interdit: l'utilisation n'est pas en statut INCOMPLETE");
         }
         boolean asked = decisionRepository.findByUtilisationCreditId(utilisation.getId()).stream()
                 .anyMatch(d -> d.getDecision() == DecisionCorrectionType.REJET_TEMP
@@ -116,7 +114,7 @@ public class DocumentUtilisationCreditService {
                         && d.getDocumentsDemandes() != null
                         && d.getDocumentsDemandes().contains(type));
         if (!asked) {
-            throw new RuntimeException("Remplacement interdit: aucun acteur n'a demandé ce document");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Remplacement interdit: aucun acteur n'a demandé ce document");
         }
     }
 

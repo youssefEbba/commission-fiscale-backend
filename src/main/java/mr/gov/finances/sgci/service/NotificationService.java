@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,7 +43,7 @@ public class NotificationService {
                                       String message,
                                       Map<String, Object> payload) {
         Utilisateur utilisateur = utilisateurRepository.findById(utilisateurId)
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
         Notification notification = buildNotification(utilisateur, type, entityType, entityId, message, payload);
         notification = repository.save(notification);
@@ -99,7 +102,7 @@ public class NotificationService {
     @Transactional
     public NotificationDto markAsRead(Long id, Long utilisateurId) {
         Notification notification = repository.findByIdAndUtilisateurId(id, utilisateurId)
-                .orElseThrow(() -> new RuntimeException("Notification non trouvée"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Notification non trouvée"));
         notification.setRead(true);
         notification = repository.save(notification);
         return toDto(notification);
@@ -119,7 +122,7 @@ public class NotificationService {
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
-            throw new RuntimeException("Erreur sérialisation notification", e);
+            throw ApiException.internal(ApiErrorCode.INTERNAL_ERROR, "Erreur sérialisation notification", e);
         }
     }
 

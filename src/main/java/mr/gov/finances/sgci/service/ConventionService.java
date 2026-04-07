@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
 import mr.gov.finances.sgci.domain.entity.Convention;
@@ -50,9 +53,9 @@ public class ConventionService {
     @Transactional(readOnly = true)
     public ConventionDto findById(Long id, AuthenticatedUser user) {
         Convention c = conventionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Convention non trouvée: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + id));
         if (!canAccessConvention(c.getId(), user)) {
-            throw new RuntimeException("Accès refusé: convention hors périmètre");
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: convention hors périmètre");
         }
         return toDto(c);
     }
@@ -72,7 +75,7 @@ public class ConventionService {
         }
 
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         Role role = u.getRole();
 
         // Référentiel partagé : conventions (et entreprises côté API dédiée) visibles par toutes les AC / délégués.
@@ -80,7 +83,7 @@ public class ConventionService {
                 || role == Role.AUTORITE_UPM
                 || role == Role.AUTORITE_UEP) {
             if (u.getAutoriteContractante() == null) {
-                throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
             }
             if (statut == null) {
                 return conventionRepository.findAll();
@@ -116,7 +119,7 @@ public class ConventionService {
     @Transactional
     public ConventionDto create(CreateConventionRequest request, Long userId) {
         if (conventionRepository.findByReference(request.getReference()).isPresent()) {
-            throw new RuntimeException("Référence de convention déjà utilisée");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Référence de convention déjà utilisée");
         }
         AutoriteContractante autorite = resolveAutorite(request.getAutoriteContractanteId(), userId);
         Convention convention = Convention.builder()
@@ -142,18 +145,13 @@ public class ConventionService {
     @Transactional
     public DocumentConventionDto uploadDocument(Long conventionId, TypeDocumentConvention type, MultipartFile file) throws IOException {
         if (file.isEmpty()) {
-            throw new RuntimeException("Le fichier est vide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         Convention convention = conventionRepository.findById(conventionId)
-                .orElseThrow(() -> new RuntimeException("Convention non trouvée: " + conventionId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + conventionId));
         assertConventionEditable(convention);
         String originalFilename = file.getOriginalFilename();
-        String fileUrl;
-        try {
-            fileUrl = minioService.uploadFile(file);
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur upload MinIO: " + e.getMessage(), e);
-        }
+        String fileUrl = minioService.uploadFile(file);
 
         DocumentConvention doc = DocumentConvention.builder()
                 .type(type)
@@ -172,21 +170,16 @@ public class ConventionService {
     @Transactional
     public DocumentConventionDto replaceDocument(Long conventionId, Long documentId, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
-            throw new RuntimeException("Le fichier est vide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         Convention convention = conventionRepository.findById(conventionId)
-                .orElseThrow(() -> new RuntimeException("Convention non trouvée: " + conventionId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + conventionId));
         assertConventionEditable(convention);
         DocumentConvention doc = documentConventionRepository.findByIdAndConventionId(documentId, conventionId)
-                .orElseThrow(() -> new RuntimeException("Document convention non trouvé: " + documentId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Document convention non trouvé: " + documentId));
 
         String originalFilename = file.getOriginalFilename();
-        String fileUrl;
-        try {
-            fileUrl = minioService.uploadFile(file);
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur upload MinIO: " + e.getMessage(), e);
-        }
+        String fileUrl = minioService.uploadFile(file);
         doc.setNomFichier(originalFilename != null ? originalFilename : file.getName());
         doc.setChemin(fileUrl);
         doc.setDateUpload(Instant.now());
@@ -200,10 +193,10 @@ public class ConventionService {
     @Transactional
     public void deleteDocument(Long conventionId, Long documentId) {
         Convention convention = conventionRepository.findById(conventionId)
-                .orElseThrow(() -> new RuntimeException("Convention non trouvée: " + conventionId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + conventionId));
         assertConventionEditable(convention);
         DocumentConvention doc = documentConventionRepository.findByIdAndConventionId(documentId, conventionId)
-                .orElseThrow(() -> new RuntimeException("Document convention non trouvé: " + documentId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Document convention non trouvé: " + documentId));
         documentConventionRepository.delete(doc);
         auditService.log(AuditAction.DELETE, "DocumentConvention", String.valueOf(documentId), null);
     }
@@ -219,9 +212,9 @@ public class ConventionService {
     @Transactional
     public ConventionDto updateStatut(Long id, StatutConvention statut, Long userId, String motifRejet) {
         Convention convention = conventionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Convention non trouvée: " + id));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + id));
         if (statut == StatutConvention.ANNULEE && convention.getStatut() == StatutConvention.VALIDE) {
-            throw new RuntimeException("Annulation impossible: la convention est déjà validée");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Annulation impossible: la convention est déjà validée");
         }
         convention.setStatut(statut);
         if (statut == StatutConvention.VALIDE || statut == StatutConvention.REJETE || statut == StatutConvention.ANNULEE) {
@@ -239,15 +232,15 @@ public class ConventionService {
     private AutoriteContractante resolveAutorite(Long autoriteContractanteId, Long userId) {
         if (autoriteContractanteId != null) {
             return autoriteRepository.findById(autoriteContractanteId)
-                    .orElseThrow(() -> new RuntimeException("Autorité contractante non trouvée"));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée"));
         }
         if (userId == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         Utilisateur user = utilisateurRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         if (user.getAutoriteContractante() == null) {
-            throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
         }
         return user.getAutoriteContractante();
     }
@@ -315,13 +308,13 @@ public class ConventionService {
 
     private void assertConventionEditable(Convention convention) {
         if (convention == null) {
-            throw new RuntimeException("Convention non trouvée");
+            throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée");
         }
         if (convention.getStatut() == StatutConvention.VALIDE) {
-            throw new RuntimeException("Modification des documents interdite: convention déjà validée");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Modification des documents interdite: convention déjà validée");
         }
         if (convention.getStatut() == StatutConvention.ANNULEE) {
-            throw new RuntimeException("Modification des documents interdite: convention annulée");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Modification des documents interdite: convention annulée");
         }
     }
 }

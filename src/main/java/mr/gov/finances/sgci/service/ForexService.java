@@ -1,10 +1,14 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -27,14 +31,14 @@ public class ForexService {
     @SuppressWarnings("unchecked")
     public BigDecimal convert(String from, String to, BigDecimal amount) {
         if (!StringUtils.hasText(from) || !StringUtils.hasText(to)) {
-            throw new RuntimeException("Les devises from/to sont obligatoires");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Les devises from/to sont obligatoires");
         }
         if (amount == null) {
-            throw new RuntimeException("Le montant est obligatoire");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le montant est obligatoire");
         }
 
         if (!StringUtils.hasText(accessKey)) {
-            throw new RuntimeException("Clé API exchangerate.host manquante. Renseigner 'app.exchangerate.host.access-key' (ou variable env APP_EXCHANGERATE_HOST_ACCESS_KEY)");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Clé API exchangerate.host manquante. Renseigner 'app.exchangerate.host.access-key' (ou variable env APP_EXCHANGERATE_HOST_ACCESS_KEY)");
         }
 
         String f = from.trim().toUpperCase();
@@ -45,36 +49,43 @@ public class ForexService {
                 ? (url + "?access_key={accessKey}&from={from}&to={to}&amount={amount}")
                 : (url + "?from={from}&to={to}&amount={amount}");
 
-        Map<String, Object> response = StringUtils.hasText(accessKey)
-                ? restClient.get()
-                .uri(template, accessKey, f, t, amount)
-                .accept(MediaType.APPLICATION_JSON)
-                .retrieve()
-                .body(Map.class)
-                : restClient.get()
-                .uri(template, f, t, amount)
-                .accept(MediaType.APPLICATION_JSON)
-                .retrieve()
-                .body(Map.class);
+        Map<String, Object> response;
+        try {
+            response = StringUtils.hasText(accessKey)
+                    ? restClient.get()
+                    .uri(template, accessKey, f, t, amount)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .retrieve()
+                    .body(Map.class)
+                    : restClient.get()
+                    .uri(template, f, t, amount)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .retrieve()
+                    .body(Map.class);
+        } catch (RestClientException e) {
+            throw ApiException.serviceUnavailable(ApiErrorCode.EXTERNAL_EXCHANGE_SERVICE_UNAVAILABLE,
+                    "Service de change externe injoignable ou en erreur (vérifier app.exchangerate.host.url)", e);
+        }
         if (response == null) {
-            throw new RuntimeException("Réponse vide du service de change");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Réponse vide du service de change");
         }
 
         Object successObj = response.get("success");
         if (successObj instanceof Boolean b && !b) {
             String errorMessage = resolveErrorMessage(response);
-            throw new RuntimeException(errorMessage != null ? errorMessage : "Service de change: success=false");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    errorMessage != null ? errorMessage : "Service de change: success=false");
         }
 
         Object resultObj = response.get("result");
         if (resultObj == null) {
-            throw new RuntimeException("Résultat introuvable dans la réponse du service de change");
+            throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Résultat introuvable dans la réponse du service de change");
         }
 
         try {
             return new BigDecimal(resultObj.toString());
         } catch (Exception e) {
-            throw new RuntimeException("Résultat invalide du service de change");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Résultat invalide du service de change");
         }
     }
 

@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.ClotureCredit;
 import mr.gov.finances.sgci.domain.entity.DocumentClotureCredit;
@@ -31,13 +34,13 @@ public class DocumentClotureCreditService {
     @Transactional
     public DocumentClotureCreditDto upload(Long clotureCreditId, TypeDocument type, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
-            throw new RuntimeException("Le fichier est vide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
 
         requirementValidator.validateUpload(ProcessusDocument.CLOTURE_CI, type, file);
 
         ClotureCredit cloture = clotureCreditRepository.findById(clotureCreditId)
-                .orElseThrow(() -> new RuntimeException("Clôture crédit non trouvée: " + clotureCreditId));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Clôture crédit non trouvée: " + clotureCreditId));
 
         int nextVersion = 1;
         DocumentClotureCredit previous = repository.findByClotureCreditIdAndTypeAndActifTrue(clotureCreditId, type)
@@ -48,12 +51,7 @@ public class DocumentClotureCreditService {
         }
 
         String originalFilename = file.getOriginalFilename();
-        String fileUrl;
-        try {
-            fileUrl = minioService.uploadFile(file);
-        } catch (Exception e) {
-            throw new RuntimeException("Erreur upload MinIO: " + e.getMessage(), e);
-        }
+        String fileUrl = minioService.uploadFile(file);
 
         DocumentClotureCredit doc = DocumentClotureCredit.builder()
                 .type(type)

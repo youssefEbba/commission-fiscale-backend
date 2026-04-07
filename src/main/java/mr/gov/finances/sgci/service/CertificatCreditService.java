@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
@@ -58,10 +61,9 @@ public class CertificatCreditService {
 
     @Transactional(readOnly = true)
     public CertificatCreditDto findById(Long id, AuthenticatedUser user) {
-        CertificatCredit c = repository.findById(id).orElseThrow(
-                () -> new RuntimeException("Certificat de crédit non trouvé: " + id));
+        CertificatCredit c = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + id));
         if (!canAccessCertificat(c.getId(), user)) {
-            throw new RuntimeException("Accès refusé: certificat hors périmètre");
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
         }
         return toDto(c);
     }
@@ -86,20 +88,20 @@ public class CertificatCreditService {
         }
 
         mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         Role role = u.getRole();
 
         List<CertificatCredit> base;
         if (role == Role.AUTORITE_CONTRACTANTE) {
             if (u.getAutoriteContractante() == null) {
-                throw new RuntimeException("Aucune autorité contractante liée à l'utilisateur");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
             }
             base = repository.findAllByAutoriteContractanteId(u.getAutoriteContractante().getId());
         } else if (role == Role.AUTORITE_UPM || role == Role.AUTORITE_UEP) {
             base = repository.findAllByDelegueId(u.getId());
         } else if (role == Role.ENTREPRISE) {
             if (u.getEntreprise() == null) {
-                throw new RuntimeException("Aucune entreprise liée à l'utilisateur");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
             }
             base = repository.findByEntrepriseIdOrderByDateEmissionDescIdDesc(u.getEntreprise().getId());
         } else {
@@ -148,10 +150,10 @@ public class CertificatCreditService {
     @Transactional
     public CertificatCreditDto create(CreateCertificatCreditRequest request) {
         Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
-                .orElseThrow(() -> new RuntimeException("Entreprise non trouvée"));
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée"));
 
         if (request.getLettreCorrectionId() == null && request.getDemandeCorrectionId() == null) {
-            throw new RuntimeException("La demande de correction ou la lettre de correction est obligatoire pour la mise en place du crédit d'impôt");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La demande de correction ou la lettre de correction est obligatoire pour la mise en place du crédit d'impôt");
         }
 
         LettreCorrection lettreCorrection = null;
@@ -159,13 +161,13 @@ public class CertificatCreditService {
 
         if (request.getLettreCorrectionId() != null) {
             lettreCorrection = lettreCorrectionRepository.findById(request.getLettreCorrectionId())
-                    .orElseThrow(() -> new RuntimeException("Lettre de correction non trouvée: " + request.getLettreCorrectionId()));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Lettre de correction non trouvée: " + request.getLettreCorrectionId()));
             demandeCorrection = lettreCorrection.getFeuilleEvaluation() != null
                     ? lettreCorrection.getFeuilleEvaluation().getDemandeCorrection()
                     : null;
         } else if (request.getDemandeCorrectionId() != null) {
             demandeCorrection = demandeCorrectionRepository.findById(request.getDemandeCorrectionId())
-                    .orElseThrow(() -> new RuntimeException("Demande de correction non trouvée: " + request.getDemandeCorrectionId()));
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + request.getDemandeCorrectionId()));
         }
 
         assertMiseEnPlaceTrigger(lettreCorrection, demandeCorrection);
@@ -174,14 +176,16 @@ public class CertificatCreditService {
         if (demandeCorrection != null && demandeCorrection.getId() != null) {
             Optional<CertificatCredit> existingCertificat = repository.findFirstByDemandeCorrectionId(demandeCorrection.getId());
             if (existingCertificat.isPresent() && existingCertificat.get().getStatut() != StatutCertificat.ANNULE) {
-                throw new RuntimeException("Un certificat de crédit actif existe déjà pour cette demande de correction (statut: " + existingCertificat.get().getStatut() + ")");
+                throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                        "Un certificat de crédit actif existe déjà pour cette demande de correction (statut: "
+                                + existingCertificat.get().getStatut() + ")");
             }
         }
 
         if (demandeCorrection != null && demandeCorrection.getEntreprise() != null
                 && demandeCorrection.getEntreprise().getId() != null
                 && !demandeCorrection.getEntreprise().getId().equals(entreprise.getId())) {
-            throw new RuntimeException("Incohérence: l'entreprise de la demande de correction ne correspond pas à l'entreprise du certificat");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Incohérence: l'entreprise de la demande de correction ne correspond pas à l'entreprise du certificat");
         }
 
         String numero = "CERT-" + Instant.now().getEpochSecond() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
@@ -213,8 +217,7 @@ public class CertificatCreditService {
 
     @Transactional
     public CertificatCreditDto updateStatut(Long id, StatutCertificat statut, AuthenticatedUser user) {
-        CertificatCredit entity = repository.findById(id).orElseThrow(
-                () -> new RuntimeException("Certificat de crédit non trouvé: " + id));
+        CertificatCredit entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + id));
         StatutCertificat fromStatut = entity.getStatut();
         workflow.validateTransition(entity.getStatut(), statut);
 
@@ -243,13 +246,12 @@ public class CertificatCreditService {
     @Transactional
     public CertificatCreditDto updateMontants(Long id, UpdateCertificatCreditMontantsRequest request, AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         if (user.getRole() != Role.DGTCP) {
-            throw new RuntimeException("Seul DGTCP peut renseigner les montants");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut renseigner les montants");
         }
-        CertificatCredit entity = repository.findById(id).orElseThrow(
-                () -> new RuntimeException("Certificat de crédit non trouvé: " + id));
+        CertificatCredit entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + id));
 
         entity.setMontantCordon(request.getMontantCordon());
         entity.setMontantTVAInterieure(request.getMontantTVAInterieure());
@@ -272,32 +274,34 @@ public class CertificatCreditService {
 
     private void assertActorCanTransition(StatutCertificat from, StatutCertificat to, AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
-            throw new RuntimeException("Utilisateur non authentifié");
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         Role role = user.getRole();
 
         if (to == StatutCertificat.INCOMPLETE || to == StatutCertificat.A_RECONTROLER) {
-            throw new RuntimeException("Transition manuelle vers " + to
-                    + " interdite : ce statut est géré automatiquement par le système (via rejet temporaire / résolution de documents).");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Transition manuelle vers " + to
+                            + " interdite : ce statut est géré automatiquement par le système (via rejet temporaire / résolution de documents).");
         }
 
         if (to == StatutCertificat.EN_VALIDATION_PRESIDENT) {
-            throw new RuntimeException("Transition manuelle vers EN_VALIDATION_PRESIDENT interdite : "
-                    + "ce statut est attribué automatiquement lorsque les 3 visas (DGI, DGD, DGTCP) sont validés.");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Transition manuelle vers EN_VALIDATION_PRESIDENT interdite : "
+                            + "ce statut est attribué automatiquement lorsque les 3 visas (DGI, DGD, DGTCP) sont validés.");
         }
 
         if (to == StatutCertificat.EN_CONTROLE) {
             if (role != Role.DGI && role != Role.DGD && role != Role.DGTCP) {
-                throw new RuntimeException("Seuls DGI, DGD ou DGTCP peuvent remettre le certificat en contrôle");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Seuls DGI, DGD ou DGTCP peuvent remettre le certificat en contrôle");
             }
         }
 
         if (to == StatutCertificat.VALIDE_PRESIDENT && role != Role.PRESIDENT) {
-            throw new RuntimeException("Seul le Président peut valider le certificat");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul le Président peut valider le certificat");
         }
 
         if (to == StatutCertificat.EN_OUVERTURE_DGTCP && role != Role.DGTCP) {
-            throw new RuntimeException("Seul DGTCP peut passer en ouverture");
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut passer en ouverture");
         }
 
         if (to == StatutCertificat.OUVERT) {
@@ -306,7 +310,7 @@ public class CertificatCreditService {
             boolean byDgtcp = role == Role.DGTCP
                     && (from == StatutCertificat.EN_OUVERTURE_DGTCP);
             if (!byPresident && !byDgtcp) {
-                throw new RuntimeException(
+                throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
                         "Seul le Président peut ouvrir le crédit après son visa, ou DGTCP après la phase EN_OUVERTURE_DGTCP");
             }
         }
@@ -314,46 +318,46 @@ public class CertificatCreditService {
         if (to == StatutCertificat.ANNULE) {
             if (role != Role.AUTORITE_CONTRACTANTE && role != Role.AUTORITE_UPM
                     && role != Role.AUTORITE_UEP && role != Role.PRESIDENT) {
-                throw new RuntimeException("Rôle non autorisé à annuler le certificat");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Rôle non autorisé à annuler le certificat");
             }
         }
     }
 
     private void assertMiseEnPlaceTrigger(LettreCorrection lettreCorrection, DemandeCorrection demandeCorrection) {
         if (demandeCorrection == null) {
-            throw new RuntimeException("La demande de correction est obligatoire pour la mise en place du crédit d'impôt");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La demande de correction est obligatoire pour la mise en place du crédit d'impôt");
         }
         if (lettreCorrection != null) {
             if (!Boolean.TRUE.equals(lettreCorrection.getSignee())) {
-                throw new RuntimeException("La lettre de correction doit être signée");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La lettre de correction doit être signée");
             }
             if (!Boolean.TRUE.equals(lettreCorrection.getNotifiee())) {
-                throw new RuntimeException("La lettre de correction doit être notifiée");
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La lettre de correction doit être notifiée");
             }
         }
         if (demandeCorrection.getMarche() == null) {
-            throw new RuntimeException("Le certificat doit être rattaché à un marché (via la demande de correction)");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat doit être rattaché à un marché (via la demande de correction)");
         }
 
         StatutDemande statutDemande = demandeCorrection.getStatut();
         if (statutDemande != StatutDemande.ADOPTEE && statutDemande != StatutDemande.NOTIFIEE) {
-            throw new RuntimeException("La demande de correction doit être visée (ADOPTEE/NOTIFIEE) avant la mise en place du crédit d'impôt");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La demande de correction doit être visée (ADOPTEE/NOTIFIEE) avant la mise en place du crédit d'impôt");
         }
 
         if (demandeCorrection.getMarche().getDateSignature() == null) {
-            throw new RuntimeException("Le contrat (marché) doit être signé");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le contrat (marché) doit être signé");
         }
     }
 
     private void assertMontantsRenseignes(CertificatCredit entity) {
         if (entity == null) {
-            throw new RuntimeException("Certificat invalide");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat invalide");
         }
         if (entity.getMontantCordon() == null || entity.getMontantTVAInterieure() == null) {
-            throw new RuntimeException("Les montants (cordon et TVA intérieure) doivent être renseignés avant l'ouverture du crédit");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Les montants (cordon et TVA intérieure) doivent être renseignés avant l'ouverture du crédit");
         }
         if (entity.getMontantCordon().compareTo(BigDecimal.ZERO) <= 0 || entity.getMontantTVAInterieure().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("Les montants (cordon et TVA intérieure) doivent être strictement supérieurs à zéro");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Les montants (cordon et TVA intérieure) doivent être strictement supérieurs à zéro");
         }
     }
 

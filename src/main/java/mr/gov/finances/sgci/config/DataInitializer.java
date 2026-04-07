@@ -166,11 +166,11 @@ public class DataInitializer implements CommandLineRunner {
         seedDocReq(ProcessusDocument.MODIFICATION_CI, TypeDocument.DECISION_COMMISSION, false,
                 all, "Décision de la commission / validation formelle", 8);
 
-        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, TypeDocument.DEMANDE_MOTIVEE_TRANSFERT, false,
+        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, TypeDocument.DEMANDE_MOTIVEE_TRANSFERT, true,
                 all, "Demande motivée", 1);
-        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, TypeDocument.DECLARATION_CLOTURE_DOUANE, false,
+        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, TypeDocument.DECLARATION_CLOTURE_DOUANE, true,
                 all, "Déclaration de clôture", 2);
-        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, TypeDocument.JUSTIFICATIFS_CLOTURE_DOUANE, false,
+        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, TypeDocument.JUSTIFICATIFS_CLOTURE_DOUANE, true,
                 all, "Justificatifs de clôture douane", 3);
 
         seedDocReq(ProcessusDocument.SOUS_TRAITANCE, TypeDocument.CONTRAT_SOUS_TRAITANCE_ENREGISTRE, false,
@@ -187,6 +187,23 @@ public class DataInitializer implements CommandLineRunner {
                 all, "Projet: document joint", 1);
         seedDocReq(ProcessusDocument.MARCHE, TypeDocument.AUTRE_DOCUMENT, false,
                 all, "Marché: document joint", 1);
+
+        upgradeTransfertCreditDocumentsToObligatoires();
+    }
+
+    /** Bases déjà seedées avec obligatoire=false : passage à obligatoire pour le P9. */
+    private void upgradeTransfertCreditDocumentsToObligatoires() {
+        for (TypeDocument type : java.util.List.of(
+                TypeDocument.DEMANDE_MOTIVEE_TRANSFERT,
+                TypeDocument.DECLARATION_CLOTURE_DOUANE,
+                TypeDocument.JUSTIFICATIFS_CLOTURE_DOUANE)) {
+            documentRequirementRepository.findByProcessusAndTypeDocument(ProcessusDocument.TRANSFERT_CREDIT, type)
+                    .filter(req -> !Boolean.TRUE.equals(req.getObligatoire()))
+                    .ifPresent(req -> {
+                        req.setObligatoire(true);
+                        documentRequirementRepository.save(req);
+                    });
+        }
     }
 
     private void seedDocReq(ProcessusDocument processus, TypeDocument type, boolean obligatoire,
@@ -629,6 +646,9 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("permissions.view", "Consulter les permissions");
         createPermission("document.requirements.view", "Consulter la configuration des documents requis");
         createPermission("entreprise.list", "Consulter la liste des entreprises");
+        createPermission("entreprise.create", "Créer une entreprise");
+        createPermission("entreprise.update", "Modifier une entreprise");
+        createPermission("entreprise.delete", "Supprimer une entreprise");
         createPermission("marche.manage", "Gérer les marchés");
 
         createPermission("bailleur.list", "Consulter la liste des bailleurs");
@@ -639,6 +659,7 @@ public class DataInitializer implements CommandLineRunner {
 
         createPermission("delegue.list", "Consulter la liste des délégués");
         createPermission("delegue.create", "Créer un délégué");
+        createPermission("delegue.update", "Modifier un délégué (identité, e-mail, mot de passe)");
         createPermission("delegue.disable", "Activer/désactiver un délégué");
 
         createPermission("reporting.view", "Consulter les tableaux de bord et statistiques agrégées");
@@ -662,6 +683,7 @@ public class DataInitializer implements CommandLineRunner {
                 "taux_change.view",
                 "delegue.list",
                 "delegue.create",
+                "delegue.update",
                 "delegue.disable",
                 "correction.submit",
                 "correction.offer.upload",
@@ -834,6 +856,9 @@ public class DataInitializer implements CommandLineRunner {
                 "permissions.manage",
                 "permissions.view",
                 "entreprise.list",
+                "entreprise.create",
+                "entreprise.update",
+                "entreprise.delete",
                 "reporting.view"
         );
 
@@ -922,6 +947,9 @@ public class DataInitializer implements CommandLineRunner {
             "permissions.manage",
             "permissions.view",
             "entreprise.list",
+            "entreprise.create",
+            "entreprise.update",
+            "entreprise.delete",
             "reporting.view"
     );
 }

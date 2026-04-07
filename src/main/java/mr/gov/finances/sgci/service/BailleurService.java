@@ -1,5 +1,8 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.web.exception.ApiErrorCode;
+import mr.gov.finances.sgci.web.exception.ApiException;
+
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.Bailleur;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
@@ -25,10 +28,10 @@ public class BailleurService {
     @Transactional
     public BailleurDto create(BailleurDto dto) {
         if (dto.getNom() == null || dto.getNom().isBlank()) {
-            throw new RuntimeException("Le nom du bailleur est obligatoire");
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le nom du bailleur est obligatoire");
         }
         if (repository.existsByNom(dto.getNom())) {
-            throw new RuntimeException("Un bailleur avec ce nom existe déjà");
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Un bailleur avec ce nom existe déjà");
         }
 
         Bailleur entity = Bailleur.builder()
