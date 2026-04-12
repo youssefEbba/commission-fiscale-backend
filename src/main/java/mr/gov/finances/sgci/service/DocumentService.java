@@ -58,6 +58,11 @@ public class DocumentService {
             assertReplacementAllowed(demande, type, user);
             previous.setActif(false);
             nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
+        } else {
+            nextVersion = documentRepository
+                    .findTopByDemandeCorrection_IdAndTypeOrderByVersionDesc(demandeCorrectionId, type)
+                    .map(d -> d.getVersion() != null ? d.getVersion() + 1 : 1)
+                    .orElse(1);
         }
 
         boolean askedByOpenRejetTemp = decisionCorrectionRepository.findByDemandeCorrectionIdAndDecisionAndRejetTempStatus(
@@ -134,6 +139,24 @@ public class DocumentService {
                 .map(Document::getType)
                 .distinct()
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Lors d'une réclamation acceptée : les versions actives de la lettre d'adoption et des offres corrigées
+     * passent en historique (actif = false). Les nouveaux dépôts reprennent la chaîne de versions (n, n+1…).
+     */
+    @Transactional
+    public void archiveAdoptionEtOffresCorrigePourRouverture(Long demandeCorrectionId) {
+        for (TypeDocument type : java.util.EnumSet.of(
+                TypeDocument.LETTRE_ADOPTION,
+                TypeDocument.OFFRE_FISCALE_CORRIGEE,
+                TypeDocument.OFFRE_CORRIGEE)) {
+            documentRepository.findByDemandeCorrectionIdAndTypeAndActifTrue(demandeCorrectionId, type)
+                    .ifPresent(d -> {
+                        d.setActif(false);
+                        documentRepository.save(d);
+                    });
+        }
     }
 
     @Transactional(readOnly = true)

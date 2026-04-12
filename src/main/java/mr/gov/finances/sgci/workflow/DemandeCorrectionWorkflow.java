@@ -12,7 +12,8 @@ import java.util.Set;
 
 /**
  * Workflow Demande de Correction (Processus 1-3).
- * RECUE → RECEVABLE/INCOMPLETE/REJETEE → EN_EVALUATION → EN_VALIDATION → ADOPTEE/REJETEE → NOTIFIEE
+ * RECUE → RECEVABLE/INCOMPLETE/REJETEE → EN_EVALUATION → EN_VALIDATION → ADOPTEE/REJETEE → NOTIFIEE.
+ * Une réclamation acceptée (DGTCP) rouvre le dossier en RECUE depuis ADOPTEE ou NOTIFIEE (hors map de transitions standard).
  */
 @Component
 public class DemandeCorrectionWorkflow {
@@ -37,5 +38,20 @@ public class DemandeCorrectionWorkflow {
         if (allowed == null || !allowed.contains(to)) {
             throw new WorkflowTransitionException(from.name(), to.name(), "DemandeCorrection");
         }
+    }
+
+    /** Vérifie qu'une réclamation peut être déposée (dossier adopté ou déjà notifié). */
+    public void assertDemandeStatutAllowsReclamation(StatutDemande statut) {
+        if (statut != ADOPTEE && statut != NOTIFIEE) {
+            throw new WorkflowTransitionException(
+                    "RECLAMATION_STATUT_INVALID",
+                    "Réclamation impossible dans le statut: " + statut
+            );
+        }
+    }
+
+    /** Vérifie qu'une réclamation acceptée peut rouvrir le dossier en évaluation. */
+    public void assertDemandeStatutAllowsReopenAfterReclamation(StatutDemande statut) {
+        assertDemandeStatutAllowsReclamation(statut);
     }
 }

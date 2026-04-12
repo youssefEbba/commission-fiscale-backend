@@ -4,7 +4,6 @@ package mr.gov.finances.sgci.config;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
 import mr.gov.finances.sgci.domain.entity.Convention;
-import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.Dqe;
 import mr.gov.finances.sgci.domain.entity.DocumentRequirement;
@@ -12,20 +11,13 @@ import mr.gov.finances.sgci.domain.entity.Entreprise;
 import mr.gov.finances.sgci.domain.entity.Marche;
 import mr.gov.finances.sgci.domain.entity.ModeleFiscal;
 import mr.gov.finances.sgci.domain.entity.Permission;
-import mr.gov.finances.sgci.domain.entity.ReferentielProjet;
 import mr.gov.finances.sgci.domain.entity.RolePermission;
-import mr.gov.finances.sgci.domain.entity.UtilisationDouaniere;
-import mr.gov.finances.sgci.domain.entity.UtilisationTVAInterieure;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.Role;
-import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.StatutMarche;
 import mr.gov.finances.sgci.domain.enums.StatutConvention;
-import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
-import mr.gov.finances.sgci.domain.enums.StatutReferentielProjet;
-import mr.gov.finances.sgci.domain.enums.TypeAchat;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.domain.enums.TypeFichierAutorise;
 import mr.gov.finances.sgci.repository.AutoriteContractanteRepository;
@@ -33,16 +25,14 @@ import mr.gov.finances.sgci.repository.ConventionRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.DocumentRequirementRepository;
 import mr.gov.finances.sgci.repository.EntrepriseRepository;
-import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.MarcheRepository;
 import mr.gov.finances.sgci.repository.PermissionRepository;
-import mr.gov.finances.sgci.repository.ReferentielProjetRepository;
 import mr.gov.finances.sgci.repository.RolePermissionRepository;
-import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.service.DossierGedService;
 
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -52,21 +42,19 @@ import java.util.EnumSet;
 import java.time.Instant;
 
 @Component
+@Order(100)
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
 
     private final UtilisateurRepository utilisateurRepository;
     private final AutoriteContractanteRepository autoriteContractanteRepository;
     private final ConventionRepository conventionRepository;
-    private final ReferentielProjetRepository referentielProjetRepository;
     private final DemandeCorrectionRepository demandeCorrectionRepository;
     private final EntrepriseRepository entrepriseRepository;
     private final MarcheRepository marcheRepository;
-    private final CertificatCreditRepository certificatCreditRepository;
     private final DocumentRequirementRepository documentRequirementRepository;
     private final PermissionRepository permissionRepository;
     private final RolePermissionRepository rolePermissionRepository;
-    private final UtilisationCreditRepository utilisationCreditRepository;
     private final PasswordEncoder passwordEncoder;
     private final DossierGedService dossierGedService;
 
@@ -87,8 +75,7 @@ public class DataInitializer implements CommandLineRunner {
         seedRolePermissions();
         seedDocumentRequirements();
         seedDefaultUsers();
-        seedDefaultReferentielAndDemande();
-        seedCertificatOuvert();
+        seedDemandeCorrectionAdopteeDemo();
     }
 
     private void seedDocumentRequirements() {
@@ -114,6 +101,7 @@ public class DataInitializer implements CommandLineRunner {
         seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, TypeDocument.FEUILLE_EVALUATION_SIGNEE, false,
                 all, "Feuille d’évaluation signée", 9);
 
+        /* GED / exigences pièces : ne pas retirer — utilisées par mise en place, utilisations, etc. */
         seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, TypeDocument.LETTRE_SAISINE, false,
                 all, "Lettre de saisine", 1);
         seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, TypeDocument.CONTRAT, false,
@@ -225,7 +213,8 @@ public class DataInitializer implements CommandLineRunner {
         documentRequirementRepository.save(req);
     }
 
-    private void seedDefaultReferentielAndDemande() {
+    /** Données de démo : une seule demande de correction adoptée (+ marché lié), sans mise en place, certificat ni utilisation. */
+    private void seedDemandeCorrectionAdopteeDemo() {
         AutoriteContractante autoriteContractante = autoriteContractanteRepository.findByCode("AC_DEFAULT")
                 .orElseThrow(() -> new IllegalStateException("Autorité Contractante par défaut manquante"));
         Entreprise entreprise = entrepriseRepository.findByNif("NIF_DEFAULT")
@@ -234,16 +223,6 @@ public class DataInitializer implements CommandLineRunner {
                 .orElseThrow(() -> new IllegalStateException("Convention par défaut manquante"));
 
         String uniqueSuffix = String.valueOf(Instant.now().getEpochSecond());
-        ReferentielProjet referentielProjet = ReferentielProjet.builder()
-                .numero("REF-DEFAULT-" + uniqueSuffix)
-                .nomProjet("Réhabilitation de voirie et réseaux – Nouakchott (données de démonstration)")
-                .administrateurProjet("Chef de projet infrastructure – AC pilote")
-                .referenceBciSecteur("BCI-2024-INFRA-NKC-001")
-                .statut(StatutReferentielProjet.EN_ATTENTE)
-                .autoriteContractante(autoriteContractante)
-                .convention(convention)
-                .build();
-        referentielProjet = referentielProjetRepository.save(referentielProjet);
 
         Marche marche = Marche.builder()
                 .numeroMarche("MP-NKC-2024-TRVX-VOIRIE-REHAB-" + uniqueSuffix)
@@ -296,63 +275,6 @@ public class DataInitializer implements CommandLineRunner {
         marche = marcheRepository.save(marche);
         demande.setMarche(marche);
         demandeCorrectionRepository.save(demande);
-    }
-
-    private void seedCertificatOuvert() {
-        String numero = "CI-TEST-OUVERT";
-        if (certificatCreditRepository.existsByNumero(numero)) {
-            return;
-        }
-
-        Entreprise entreprise = entrepriseRepository.findByNif("NIF_DEFAULT").orElse(null);
-        if (entreprise == null) {
-            return;
-        }
-
-        DemandeCorrection demande = demandeCorrectionRepository.findAll().stream()
-                .filter(d -> d.getEntreprise() != null && d.getEntreprise().getId().equals(entreprise.getId()))
-                .findFirst().orElse(null);
-
-        CertificatCredit certificat = CertificatCredit.builder()
-                .numero(numero)
-                .dateEmission(Instant.now())
-                .dateValidite(Instant.now().plusSeconds(365L * 24 * 3600))
-                .montantCordon(BigDecimal.valueOf(5_000_000))
-                .montantTVAInterieure(BigDecimal.valueOf(3_000_000))
-                .soldeCordon(BigDecimal.valueOf(5_000_000))
-                .soldeTVA(BigDecimal.valueOf(3_000_000))
-                .statut(StatutCertificat.OUVERT)
-                .entreprise(entreprise)
-                .demandeCorrection(demande)
-                .build();
-
-        certificat = certificatCreditRepository.save(certificat);
-
-        UtilisationDouaniere utilDouane = new UtilisationDouaniere();
-        utilDouane.setDateDemande(Instant.now());
-        utilDouane.setStatut(StatutUtilisation.DEMANDEE);
-        utilDouane.setCertificatCredit(certificat);
-        utilDouane.setEntreprise(entreprise);
-        utilDouane.setNumeroDeclaration("DEC-SEED-001");
-        utilDouane.setNumeroBulletin("BUL-SEED-001");
-        utilDouane.setDateDeclaration(Instant.now());
-        utilDouane.setMontantDroits(BigDecimal.valueOf(70_000));
-        utilDouane.setMontantTVA(BigDecimal.valueOf(30_000));
-        utilDouane.setMontant(BigDecimal.valueOf(100_000));
-        utilDouane.setEnregistreeSYDONIA(true);
-        utilisationCreditRepository.save(utilDouane);
-
-        UtilisationTVAInterieure utilTva = new UtilisationTVAInterieure();
-        utilTva.setDateDemande(Instant.now());
-        utilTva.setStatut(StatutUtilisation.DEMANDEE);
-        utilTva.setCertificatCredit(certificat);
-        utilTva.setEntreprise(entreprise);
-        utilTva.setTypeAchat(TypeAchat.ACHAT_LOCAL);
-        utilTva.setNumeroFacture("FAC-SEED-001");
-        utilTva.setDateFacture(Instant.now());
-        utilTva.setMontantTVA(BigDecimal.valueOf(55_000));
-        utilTva.setMontant(BigDecimal.valueOf(55_000));
-        utilisationCreditRepository.save(utilTva);
     }
 
     private void seedDefaultUsers() {
@@ -525,6 +447,10 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("correction.president.signature.upload", "Déposer le scan de signature");
         createPermission("correction.president.reject", "Rejeter la correction fiscale");
         createPermission("correction.view.audit", "Consulter correction (audit)");
+        createPermission("correction.reclamation.submit", "Déposer une réclamation sur une correction adoptée ou notifiée");
+        createPermission("correction.reclamation.annuler", "Annuler une réclamation en cours avant DGTCP (demande inchangée)");
+        createPermission("correction.reclamation.traiter", "Accepter ou rejeter une réclamation sur une demande de correction");
+        createPermission("correction.demande.reactivate", "Réactiver une demande de correction annulée (retour RECUE, AC)");
 
         createPermission("mise_en_place.submit", "Soumettre une demande de mise en place");
         createPermission("mise_en_place.document.upload", "Déposer les pièces justificatives");
@@ -583,6 +509,8 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("utilisation.interieur.dgtcp.solde.update", "Mettre à jour le solde Intérieur");
         createPermission("utilisation.interieur.dgtcp.reject", "Rejeter la demande Intérieur");
         createPermission("utilisation.interieur.dgi.view", "Consulter les utilisations Intérieur");
+        createPermission("utilisation.ac.view",
+                "Consulter les utilisations de crédit liées aux certificats de son périmètre (AC / délégué)");
         createPermission("utilisation.interieur.dgi.decision", "Enregistrer visa ou rejet temporaire (DGI, TVA intérieure)");
 
         createPermission("utilisation.douane.dgd.resolve", "Résoudre un rejet temporaire (DGD, utilisation douane)");
@@ -690,13 +618,18 @@ public class DataInitializer implements CommandLineRunner {
                 "correction.offer.view",
                 "correction.complement.add",
                 "correction.visa.history.view",
+                "correction.reclamation.submit",
+                "correction.reclamation.annuler",
+                "correction.demande.reactivate",
                 "marche.manage",
                 "mise_en_place.submit",
                 "mise_en_place.document.upload",
                 "mise_en_place.view",
                 "modification.submit",
                 "modification.document.upload",
-                "modification.view"
+                "modification.view",
+                "utilisation.ac.view",
+                "reporting.view"
         );
 
         assign(Role.AUTORITE_UPM,
@@ -719,13 +652,16 @@ public class DataInitializer implements CommandLineRunner {
                 "correction.offer.view",
                 "correction.complement.add",
                 "correction.visa.history.view",
+                "correction.reclamation.submit",
+                "correction.reclamation.annuler",
                 "marche.manage",
                 "mise_en_place.submit",
                 "mise_en_place.document.upload",
                 "mise_en_place.view",
                 "modification.submit",
                 "modification.document.upload",
-                "modification.view"
+                "modification.view",
+                "reporting.view"
         );
 
         assign(Role.AUTORITE_UEP,
@@ -749,18 +685,24 @@ public class DataInitializer implements CommandLineRunner {
                 "correction.offer.view",
                 "correction.complement.add",
                 "correction.visa.history.view",
+                "correction.reclamation.submit",
+                "correction.reclamation.annuler",
                 "marche.manage",
                 "mise_en_place.submit",
                 "mise_en_place.document.upload",
                 "mise_en_place.view",
                 "modification.submit",
                 "modification.document.upload",
-                "modification.view"
+                "modification.view",
+                "utilisation.ac.view",
+                "reporting.view"
         );
 
         assign(Role.ENTREPRISE,
                 "mise_en_place.annuler",
                 "correction.entreprise.queue.view",
+                "correction.reclamation.submit",
+                "correction.reclamation.annuler",
                 "mise_en_place.entreprise.queue.view",
                 "document.requirements.view",
                 "utilisation.douane.submit",
@@ -780,7 +722,8 @@ public class DataInitializer implements CommandLineRunner {
                 "transfert.solde.view",
                 "sous_traitance.submit",
                 "sous_traitance.solde.view",
-                "sous_traitant.list"
+                "sous_traitant.list",
+                "reporting.view"
         );
 
         assign(Role.SOUS_TRAITANT,
@@ -796,7 +739,8 @@ public class DataInitializer implements CommandLineRunner {
                 "utilisation.entreprise.rejet.repondre",
                 "sous_traitance.submit",
                 "sous_traitance.solde.view",
-                "sous_traitant.list"
+                "sous_traitant.list",
+                "reporting.view"
         );
 
         assign(Role.DGD,
@@ -819,7 +763,8 @@ public class DataInitializer implements CommandLineRunner {
                 "mise_en_place.dgd.queue.view",
                 "mise_en_place.dgd.validate",
                 "mise_en_place.dgd.reject",
-                "mise_en_place.dgd.resolve"
+                "mise_en_place.dgd.resolve",
+                "reporting.view"
         );
 
         assign(Role.DGI,
@@ -887,6 +832,7 @@ public class DataInitializer implements CommandLineRunner {
                 "correction.dgtcp.reject",
                 "correction.offer.view",
                 "correction.status.update",
+                "correction.reclamation.traiter",
                 "mise_en_place.dgtcp.queue.view",
                 "mise_en_place.dgtcp.validate",
                 "mise_en_place.dgtcp.reject",

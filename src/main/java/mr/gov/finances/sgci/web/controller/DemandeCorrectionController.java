@@ -7,11 +7,14 @@ import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.DemandeCorrectionService;
 import mr.gov.finances.sgci.service.DocumentService;
+import mr.gov.finances.sgci.service.ReclamationDemandeCorrectionService;
+import mr.gov.finances.sgci.web.dto.ReclamationDemandeCorrectionDto;
 import mr.gov.finances.sgci.web.dto.CreateDemandeCorrectionRequest;
 import mr.gov.finances.sgci.web.dto.DemandeCorrectionDto;
 import mr.gov.finances.sgci.web.dto.DocumentDto;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -28,6 +31,7 @@ public class DemandeCorrectionController {
 
     private final DemandeCorrectionService service;
     private final DocumentService documentService;
+    private final ReclamationDemandeCorrectionService reclamationDemandeCorrectionService;
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('demande_correction.list', 'correction.dgd.queue.view', 'correction.dgtcp.queue.view', 'correction.dgi.queue.view', 'correction.dgb.queue.view', 'correction.president.queue.view', 'correction.view.audit', 'correction.visa.history.view', 'correction.entreprise.queue.view')")
@@ -76,7 +80,7 @@ public class DemandeCorrectionController {
     }
 
     @PatchMapping("/{id}/statut")
-    @PreAuthorize("hasAnyAuthority('correction.submit', 'correction.dgd.save', 'correction.dgd.transmit', 'correction.dgtcp.visa', 'correction.dgtcp.reject', 'correction.dgtcp.request_complements', 'correction.dgi.visa', 'correction.dgi.reject', 'correction.dgb.visa', 'correction.dgb.reject', 'correction.president.validate', 'correction.president.reject', 'correction.president.letter.generate', 'correction.president.signature.upload')")
+    @PreAuthorize("hasAnyAuthority('correction.submit', 'correction.demande.reactivate', 'correction.dgd.save', 'correction.dgd.transmit', 'correction.dgtcp.visa', 'correction.dgtcp.reject', 'correction.dgtcp.request_complements', 'correction.dgi.visa', 'correction.dgi.reject', 'correction.dgb.visa', 'correction.dgb.reject', 'correction.president.validate', 'correction.president.reject', 'correction.president.letter.generate', 'correction.president.signature.upload')")
     public DemandeCorrectionDto updateStatut(
             @PathVariable Long id,
             @RequestParam StatutDemande statut,
@@ -106,5 +110,56 @@ public class DemandeCorrectionController {
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
         return documentService.upload(id, type, message, file, user);
+    }
+
+    /** Réclamations sur une demande adoptée ou notifiée (dépôt AC / délégués / entreprise). */
+    @GetMapping("/{id}/reclamations")
+    @PreAuthorize("hasAnyAuthority('demande_correction.list', 'correction.dgd.queue.view', 'correction.dgtcp.queue.view', 'correction.dgi.queue.view', 'correction.dgb.queue.view', 'correction.president.queue.view', 'correction.view.audit', 'correction.visa.history.view', 'correction.entreprise.queue.view', 'correction.reclamation.submit', 'correction.reclamation.annuler', 'correction.reclamation.traiter')")
+    public List<ReclamationDemandeCorrectionDto> listReclamations(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return reclamationDemandeCorrectionService.listByDemande(id, user);
+    }
+
+    @PostMapping(value = "/{id}/reclamations", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAuthority('correction.reclamation.submit')")
+    public ReclamationDemandeCorrectionDto createReclamation(
+            @PathVariable Long id,
+            @RequestParam("texte") String texte,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) throws IOException {
+        return reclamationDemandeCorrectionService.create(id, texte, file, user);
+    }
+
+    /**
+     * Acceptation (DGTCP) ou rejet (DGTCP / Président) : {@code multipart/form-data}.
+     * Rejet : {@code motifReponse} + {@code file} obligatoires. Acceptation : ne pas envoyer de {@code file}.
+     */
+    @PatchMapping(value = "/{demandeId}/reclamations/{reclamationId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('correction.reclamation.traiter')")
+    public ReclamationDemandeCorrectionDto traiterReclamation(
+            @PathVariable Long demandeId,
+            @PathVariable Long reclamationId,
+            @RequestParam("acceptee") String acceptee,
+            @RequestParam(value = "motifReponse", required = false) String motifReponse,
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) throws IOException {
+        boolean accept = acceptee != null && ("true".equalsIgnoreCase(acceptee.trim()) || "1".equals(acceptee.trim()));
+        return reclamationDemandeCorrectionService.traiter(demandeId, reclamationId, accept, motifReponse, file, user);
+    }
+
+    /** Annule une réclamation SOUMISE avant DGTCP : statut de la demande et visas inchangés (auteur ou AC du dossier). */
+    @PostMapping("/{demandeId}/reclamations/{reclamationId}/annuler")
+    @PreAuthorize("hasAuthority('correction.reclamation.annuler')")
+    public ReclamationDemandeCorrectionDto annulerReclamation(
+            @PathVariable Long demandeId,
+            @PathVariable Long reclamationId,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return reclamationDemandeCorrectionService.annuler(demandeId, reclamationId, user);
     }
 }

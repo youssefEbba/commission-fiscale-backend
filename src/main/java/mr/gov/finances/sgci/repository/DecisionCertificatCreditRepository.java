@@ -8,12 +8,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface DecisionCertificatCreditRepository extends JpaRepository<DecisionCertificatCredit, Long> {
-    Optional<DecisionCertificatCredit> findByCertificatCreditIdAndRole(Long certificatCreditId, Role role);
-
     List<DecisionCertificatCredit> findByCertificatCreditId(Long certificatCreditId);
 
     List<DecisionCertificatCredit> findByCertificatCreditIdAndDecisionAndRejetTempStatus(Long certificatCreditId,
@@ -21,4 +18,10 @@ public interface DecisionCertificatCreditRepository extends JpaRepository<Decisi
                                                                                         RejetTempStatus rejetTempStatus);
 
     boolean existsByCertificatCreditIdAndRoleAndDecision(Long certificatCreditId, Role role, DecisionCorrectionType decision);
+
+    boolean existsByCertificatCreditIdAndRoleAndDecisionAndRejetTempStatus(
+            Long certificatCreditId,
+            Role role,
+            DecisionCorrectionType decision,
+            RejetTempStatus rejetTempStatus);
 }

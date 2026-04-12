@@ -58,8 +58,19 @@ public class DecisionCorrectionController {
         return rejetTempResponseService.addResponseToCorrectionDecision(decisionId, request.getMessage(), user);
     }
 
+    /**
+     * Clôturer un REJET_TEMP ouvert : seul le rôle qui a émis la décision peut résoudre (voir {@code DecisionCorrectionService}).
+     * Les permissions ici doivent couvrir DGD / DGTCP / DGI / DGB (visa, rejet, save) en plus de l’AC (compléments),
+     * sinon un contrôleur émetteur reçoit 403 avant la vérification métier.
+     */
     @PutMapping("/decisions/{decisionId}/resolve")
-    @PreAuthorize("hasAnyAuthority('correction.offer.upload', 'correction.complement.add')")
+    @PreAuthorize("hasAnyAuthority("
+            + "'correction.offer.upload', 'correction.complement.add', "
+            + "'correction.dgd.save', "
+            + "'correction.dgtcp.visa', 'correction.dgtcp.reject', "
+            + "'correction.dgi.visa', 'correction.dgi.reject', "
+            + "'correction.dgb.visa', 'correction.dgb.reject'"
+            + ")")
     public DecisionCorrectionDto resolveRejetTemp(
             @PathVariable Long decisionId,
             @AuthenticationPrincipal AuthenticatedUser user

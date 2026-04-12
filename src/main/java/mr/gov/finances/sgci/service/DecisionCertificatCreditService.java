@@ -126,22 +126,21 @@ public class DecisionCertificatCreditService {
         Utilisateur utilisateur = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
-        DecisionCertificatCredit existingDecision = decisionRepository
-                .findByCertificatCreditIdAndRole(certificatCreditId, role)
-                .orElse(null);
+        boolean visaAlreadyForRole = decisionRepository.existsByCertificatCreditIdAndRoleAndDecision(
+                certificatCreditId, role, DecisionCorrectionType.VISA);
+        if (visaAlreadyForRole) {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                    "Décision impossible: un visa a déjà été accordé par " + role
+                            + ". Le visa clôture les interactions sur cette demande.");
+        }
 
-        if (existingDecision != null) {
-            if (existingDecision.getDecision() == DecisionCorrectionType.VISA) {
-                throw ApiException.conflict(ApiErrorCode.CONFLICT,
-                        "Décision impossible: un visa a déjà été accordé par " + role
-                                + ". Le visa clôture les interactions sur cette demande.");
-            }
-            if (decision == DecisionCorrectionType.VISA
-                    && existingDecision.getDecision() == DecisionCorrectionType.REJET_TEMP
-                    && existingDecision.getRejetTempStatus() == RejetTempStatus.OUVERT) {
+        if (decision == DecisionCorrectionType.VISA) {
+            boolean openRejetForRole = decisionRepository.existsByCertificatCreditIdAndRoleAndDecisionAndRejetTempStatus(
+                    certificatCreditId, role, DecisionCorrectionType.REJET_TEMP, RejetTempStatus.OUVERT);
+            if (openRejetForRole) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                        "VISA impossible: un rejet temporaire est en cours pour " + role
-                                + ". Résolvez d'abord le rejet via l'endpoint /resolve.");
+                        "VISA impossible: un ou plusieurs rejets temporaires sont encore ouverts pour ce rôle. "
+                                + "Résolvez-les via PUT .../decisions/{id}/resolve pour chaque rejet concerné.");
             }
         }
 
@@ -149,13 +148,10 @@ public class DecisionCertificatCreditService {
             assertMontantsRenseignes(certificat);
         }
 
-        DecisionCertificatCredit entity = existingDecision;
-        if (entity == null) {
-            entity = DecisionCertificatCredit.builder()
-                    .certificatCredit(certificat)
-                    .role(role)
-                    .build();
-        }
+        DecisionCertificatCredit entity = DecisionCertificatCredit.builder()
+                .certificatCredit(certificat)
+                .role(role)
+                .build();
 
         entity.setDecision(decision);
         entity.setMotifRejet(decision == DecisionCorrectionType.REJET_TEMP ? motifRejet : null);

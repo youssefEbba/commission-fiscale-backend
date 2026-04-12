@@ -114,6 +114,15 @@ public class UtilisationCreditService {
             }
             return repository.findByCertificatCredit_Entreprise_Id(u.getEntreprise().getId());
         }
+        if (r == Role.AUTORITE_CONTRACTANTE) {
+            if (u.getAutoriteContractante() == null || u.getAutoriteContractante().getId() == null) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
+            }
+            return repository.findAllByAutoriteContractanteId(u.getAutoriteContractante().getId());
+        }
+        if (r == Role.AUTORITE_UPM || r == Role.AUTORITE_UEP) {
+            return repository.findAllByDelegueId(u.getId());
+        }
         return repository.findAll();
     }
 
@@ -142,6 +151,10 @@ public class UtilisationCreditService {
         Utilisateur logged = utilisateurRepository.findById(auth.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         Role r = logged.getRole();
+        if (r == Role.AUTORITE_CONTRACTANTE || r == Role.AUTORITE_UPM || r == Role.AUTORITE_UEP) {
+            assertAcOrDelegueCanAccessCertificat(logged, u.getCertificatCredit());
+            return;
+        }
         if (r != Role.ENTREPRISE && r != Role.SOUS_TRAITANT) {
             return;
         }
@@ -170,6 +183,10 @@ public class UtilisationCreditService {
         Utilisateur logged = utilisateurRepository.findById(auth.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         Role r = logged.getRole();
+        if (r == Role.AUTORITE_CONTRACTANTE || r == Role.AUTORITE_UPM || r == Role.AUTORITE_UEP) {
+            assertAcOrDelegueCanAccessCertificat(logged, cert);
+            return;
+        }
         if (r != Role.ENTREPRISE && r != Role.SOUS_TRAITANT) {
             return;
         }
@@ -186,6 +203,32 @@ public class UtilisationCreditService {
             return;
         }
         throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
+    }
+
+    private void assertAcOrDelegueCanAccessCertificat(Utilisateur logged, CertificatCredit cert) {
+        if (cert == null || cert.getId() == null) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat invalide");
+        }
+        if (logged.getRole() == Role.AUTORITE_CONTRACTANTE) {
+            if (logged.getAutoriteContractante() == null || logged.getAutoriteContractante().getId() == null) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
+            }
+            Long acId = logged.getAutoriteContractante().getId();
+            boolean ok = certificatRepository.findById(cert.getId())
+                    .map(c -> c.getDemandeCorrection() != null
+                            && c.getDemandeCorrection().getAutoriteContractante() != null
+                            && c.getDemandeCorrection().getAutoriteContractante().getId().equals(acId))
+                    .orElse(false);
+            if (!ok) {
+                throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
+            }
+            return;
+        }
+        if (logged.getRole() == Role.AUTORITE_UPM || logged.getRole() == Role.AUTORITE_UEP) {
+            if (!certificatRepository.existsAccessByDelegue(logged.getId(), cert.getId())) {
+                throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
+            }
+        }
     }
 
     @Transactional(readOnly = true)

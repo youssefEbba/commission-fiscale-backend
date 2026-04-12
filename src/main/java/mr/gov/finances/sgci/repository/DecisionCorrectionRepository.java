@@ -9,14 +9,19 @@ import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.Role;
 
 import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface DecisionCorrectionRepository extends JpaRepository<DecisionCorrection, Long> {
-    Optional<DecisionCorrection> findByDemandeCorrectionIdAndRole(Long demandeCorrectionId, Role role);
     List<DecisionCorrection> findByDemandeCorrectionId(Long demandeCorrectionId);
 
     List<DecisionCorrection> findByDemandeCorrectionIdAndDecisionAndRejetTempStatus(Long demandeCorrectionId, DecisionCorrectionType decision, RejetTempStatus rejetTempStatus);
 
     boolean existsByDemandeCorrectionIdAndRoleAndDecision(Long demandeCorrectionId, Role role, DecisionCorrectionType decision);
+
+    /** Au moins un rejet temporaire encore ouvert pour ce rôle sur la demande (plusieurs rejets isolés possibles). */
+    boolean existsByDemandeCorrectionIdAndRoleAndDecisionAndRejetTempStatus(
+            Long demandeCorrectionId,
+            Role role,
+            DecisionCorrectionType decision,
+            RejetTempStatus rejetTempStatus);
 }

@@ -225,6 +225,21 @@ public class DemandeCorrectionService {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: demande hors périmètre");
         }
 
+        if (statut == StatutDemande.RECUE && entity.getStatut() == StatutDemande.ANNULEE) {
+            if (user == null || user.getRole() != Role.AUTORITE_CONTRACTANTE) {
+                throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                        "Seule l'autorité contractante peut réactiver une demande annulée");
+            }
+            resetParallelValidations(entity);
+            entity.setStatut(StatutDemande.RECUE);
+            entity.setMotifRejet(null);
+            entity = demandeRepository.save(entity);
+            DemandeCorrectionDto reactivated = toDto(entity);
+            auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), reactivated);
+            notifyDemandeCorrection(entity, StatutDemande.RECUE, null, user, false);
+            return reactivated;
+        }
+
         if (user != null && user.getRole() != null
                 && (user.getRole() == Role.AUTORITE_CONTRACTANTE || user.getRole() == Role.ENTREPRISE)
                 && statut != StatutDemande.ANNULEE) {
@@ -309,6 +324,21 @@ public class DemandeCorrectionService {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
                     "Rôle non autorisé pour la décision finale: " + user.getRole());
         }
+    }
+
+    private void resetParallelValidations(DemandeCorrection d) {
+        d.setValidationDgd(false);
+        d.setValidationDgdUserId(null);
+        d.setValidationDgdDate(null);
+        d.setValidationDgtcp(false);
+        d.setValidationDgtcpUserId(null);
+        d.setValidationDgtcpDate(null);
+        d.setValidationDgi(false);
+        d.setValidationDgiUserId(null);
+        d.setValidationDgiDate(null);
+        d.setValidationDgb(false);
+        d.setValidationDgbUserId(null);
+        d.setValidationDgbDate(null);
     }
 
     @Transactional(readOnly = true)
@@ -694,5 +724,18 @@ public class DemandeCorrectionService {
         return Stream.concat(entrepriseUsers.stream(), autoriteUsers.stream())
                 .distinct()
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public boolean userCanAccessDemandeCorrection(Long demandeId, AuthenticatedUser user) {
+        return canAccessDemandeCorrection(demandeId, user);
+    }
+
+    public void notifyCorrectionStatutChange(DemandeCorrection entity,
+                                            StatutDemande statut,
+                                            AuthenticatedUser user,
+                                            String motifRejet,
+                                            boolean finale) {
+        notifyDemandeCorrection(entity, statut, motifRejet, user, finale);
     }
 }

@@ -125,41 +125,27 @@ public class DecisionCorrectionService {
         Utilisateur utilisateur = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
-        // Vérifier si une décision existe déjà pour ce rôle
-        DecisionCorrection existingDecision = decisionRepository
-                .findByDemandeCorrectionIdAndRole(demandeId, role)
-                .orElse(null);
+        boolean visaAlreadyForRole = decisionRepository.existsByDemandeCorrectionIdAndRoleAndDecision(
+                demandeId, role, DecisionCorrectionType.VISA);
+        if (visaAlreadyForRole) {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                    "Décision impossible: un visa a déjà été accordé par ce rôle. Le visa clôture les interactions sur cette demande.");
+        }
 
-        if (existingDecision != null) {
-            // 1. Bloquer toute nouvelle décision si un VISA a déjà été donné par ce rôle
-            if (existingDecision.getDecision() == DecisionCorrectionType.VISA) {
-                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Décision impossible: un visa a déjà été accordé par ce rôle. Le visa clôture les interactions sur cette demande.");
-            }
-
-            // 2. Bloquer le VISA si un REJET_TEMP ouvert existe pour ce rôle
-            if (decision == DecisionCorrectionType.VISA &&
-                existingDecision.getDecision() == DecisionCorrectionType.REJET_TEMP &&
-                existingDecision.getRejetTempStatus() == RejetTempStatus.OUVERT) {
-                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "VISA impossible: un rejet temporaire est en cours pour ce rôle. Vous devez d'abord résoudre le rejet via l'endpoint /resolve.");
+        if (decision == DecisionCorrectionType.VISA) {
+            boolean openRejetForRole = decisionRepository.existsByDemandeCorrectionIdAndRoleAndDecisionAndRejetTempStatus(
+                    demandeId, role, DecisionCorrectionType.REJET_TEMP, RejetTempStatus.OUVERT);
+            if (openRejetForRole) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "VISA impossible: un ou plusieurs rejets temporaires sont encore ouverts pour ce rôle. "
+                                + "Résolvez-les via PUT .../decisions/{id}/resolve pour chaque rejet concerné.");
             }
         }
 
-        // 3. Bloquer un nouveau REJET_TEMP si un VISA a déjà été donné par ce rôle
-        if (decision == DecisionCorrectionType.REJET_TEMP) {
-            boolean visaExists = decisionRepository.existsByDemandeCorrectionIdAndRoleAndDecision(
-                    demandeId, role, DecisionCorrectionType.VISA);
-            if (visaExists) {
-                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Rejet temporaire impossible: un visa a déjà été accordé par ce rôle. Le visa clôture les interactions sur cette demande.");
-            }
-        }
-
-        DecisionCorrection entity = existingDecision;
-        if (entity == null) {
-            entity = DecisionCorrection.builder()
-                    .demandeCorrection(demande)
-                    .role(role)
-                    .build();
-        }
+        DecisionCorrection entity = DecisionCorrection.builder()
+                .demandeCorrection(demande)
+                .role(role)
+                .build();
 
         entity.setDecision(decision);
         entity.setMotifRejet(decision == DecisionCorrectionType.REJET_TEMP ? motifRejet : null);

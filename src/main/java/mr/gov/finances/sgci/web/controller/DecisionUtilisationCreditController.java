@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.service.DecisionUtilisationCreditService;
+import mr.gov.finances.sgci.service.UtilisationCreditService;
 import mr.gov.finances.sgci.service.RejetTempResponseService;
 import mr.gov.finances.sgci.web.dto.DecisionCreditDto;
 import mr.gov.finances.sgci.web.dto.DecisionCreditRequest;
@@ -29,10 +30,14 @@ public class DecisionUtilisationCreditController {
 
     private final DecisionUtilisationCreditService service;
     private final RejetTempResponseService rejetTempResponseService;
+    private final UtilisationCreditService utilisationCreditService;
 
     @GetMapping("/{id}/decisions")
-    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'archivage.view')")
-    public List<DecisionCreditDto> getDecisions(@PathVariable Long id) {
+    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'utilisation.ac.view', 'archivage.view')")
+    public List<DecisionCreditDto> getDecisions(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        utilisationCreditService.findById(id, user);
         return service.findByUtilisation(id);
     }
 

@@ -8,12 +8,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface DecisionUtilisationCreditRepository extends JpaRepository<DecisionUtilisationCredit, Long> {
-    Optional<DecisionUtilisationCredit> findByUtilisationCreditIdAndRole(Long utilisationCreditId, Role role);
-
     List<DecisionUtilisationCredit> findByUtilisationCreditId(Long utilisationCreditId);
 
     List<DecisionUtilisationCredit> findByUtilisationCreditIdAndDecisionAndRejetTempStatus(Long utilisationCreditId,
@@ -21,4 +18,10 @@ public interface DecisionUtilisationCreditRepository extends JpaRepository<Decis
                                                                                           RejetTempStatus rejetTempStatus);
 
     boolean existsByUtilisationCreditIdAndRoleAndDecision(Long utilisationCreditId, Role role, DecisionCorrectionType decision);
+
+    boolean existsByUtilisationCreditIdAndRoleAndDecisionAndRejetTempStatus(
+            Long utilisationCreditId,
+            Role role,
+            DecisionCorrectionType decision,
+            RejetTempStatus rejetTempStatus);
 }

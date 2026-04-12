@@ -32,7 +32,7 @@ public class UtilisationCreditController {
     private final DocumentUtilisationCreditService documentService;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'utilisation.douane.history.view', 'utilisation.interieur.history.view', 'archivage.view')")
+    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'utilisation.douane.history.view', 'utilisation.interieur.history.view', 'utilisation.ac.view', 'archivage.view')")
     public List<UtilisationCreditDto> getAll(
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam(required = false) Boolean demandeurSousTraitantOnly,
@@ -42,7 +42,7 @@ public class UtilisationCreditController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'utilisation.douane.history.view', 'utilisation.interieur.history.view', 'archivage.view')")
+    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'utilisation.douane.history.view', 'utilisation.interieur.history.view', 'utilisation.ac.view', 'archivage.view')")
     public UtilisationCreditDto getById(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
         return service.findById(id, user);
     }
@@ -95,8 +95,11 @@ public class UtilisationCreditController {
     }
 
     @GetMapping("/{id}/documents")
-    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'archivage.view')")
-    public List<DocumentUtilisationCreditDto> getDocuments(@PathVariable Long id) {
+    @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.queue.view', 'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', 'utilisation.interieur.dgi.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view', 'utilisation.ac.view', 'archivage.view')")
+    public List<DocumentUtilisationCreditDto> getDocuments(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        service.findById(id, user);
         return documentService.findByUtilisationCreditId(id);
     }
 
