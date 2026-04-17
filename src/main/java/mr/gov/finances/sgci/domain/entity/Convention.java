@@ -26,6 +26,10 @@ public class Convention {
     @Column(nullable = false, unique = true)
     private String reference;
 
+    /** Référence projet (cadrage interne AC / bailleur), distincte de {@link #reference}. */
+    @Column(length = 255)
+    private String projectReference;
+
     @Column(nullable = false)
     private String intitule;
 
@@ -50,6 +54,11 @@ public class Convention {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "autorite_contractante_id", nullable = false)
     private AutoriteContractante autoriteContractante;
+
+    /** Autorité dont l’utilisateur a créé l’enregistrement (souvent identique à {@link #autoriteContractante}). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cree_par_autorite_contractante_id")
+    private AutoriteContractante creeParAutoriteContractante;
 
     private Long valideParUserId;
     private Instant dateValidation;

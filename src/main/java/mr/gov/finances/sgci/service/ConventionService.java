@@ -30,7 +30,9 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -45,9 +47,16 @@ public class ConventionService {
     private final NotificationService notificationService;
 
     @Transactional(readOnly = true)
-    public List<ConventionDto> findAll(AuthenticatedUser user) {
-        List<Convention> list = resolveConventionList(user, null);
-        return list.stream().map(this::toDto).collect(Collectors.toList());
+    public List<ConventionDto> findAll(AuthenticatedUser user, String q) {
+        if (q == null || q.isBlank()) {
+            List<Convention> list = resolveConventionList(user, null);
+            return list.stream().map(this::toDto).collect(Collectors.toList());
+        }
+        String trimmed = q.trim();
+        return conventionRepository.searchByReferenceIntituleOrProject(trimmed).stream()
+                .filter(c -> canAccessConvention(c.getId(), user))
+                .map(this::toDto)
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -122,9 +131,14 @@ public class ConventionService {
             throw ApiException.conflict(ApiErrorCode.CONFLICT, "Référence de convention déjà utilisée");
         }
         AutoriteContractante autorite = resolveAutorite(request.getAutoriteContractanteId(), userId);
+        Utilisateur creator = userId != null ? utilisateurRepository.findById(userId).orElse(null) : null;
+        AutoriteContractante creeParAc = creator != null && creator.getAutoriteContractante() != null
+                ? creator.getAutoriteContractante()
+                : autorite;
         Convention convention = Convention.builder()
                 .reference(request.getReference())
                 .intitule(request.getIntitule())
+                .projectReference(request.getProjectReference())
                 .bailleur(request.getBailleur())
                 .bailleurDetails(request.getBailleurDetails())
                 .dateSignature(request.getDateSignature())
@@ -135,10 +149,12 @@ public class ConventionService {
                 .tauxChange(request.getTauxChange())
                 .statut(StatutConvention.EN_ATTENTE)
                 .autoriteContractante(autorite)
+                .creeParAutoriteContractante(creeParAc)
                 .build();
         convention = conventionRepository.save(convention);
         ConventionDto result = toDto(convention);
         auditService.log(AuditAction.CREATE, "Convention", String.valueOf(convention.getId()), result);
+        notifyConventionCreated(convention, userId);
         return result;
     }
 
@@ -249,6 +265,7 @@ public class ConventionService {
         return ConventionDto.builder()
                 .id(convention.getId())
                 .reference(convention.getReference())
+                .projectReference(convention.getProjectReference())
                 .intitule(convention.getIntitule())
                 .bailleur(convention.getBailleur())
                 .bailleurDetails(convention.getBailleurDetails())
@@ -261,6 +278,10 @@ public class ConventionService {
                 .statut(convention.getStatut())
                 .autoriteContractanteId(convention.getAutoriteContractante() != null ? convention.getAutoriteContractante().getId() : null)
                 .autoriteContractanteNom(convention.getAutoriteContractante() != null ? convention.getAutoriteContractante().getNom() : null)
+                .creeParAutoriteContractanteId(convention.getCreeParAutoriteContractante() != null
+                        ? convention.getCreeParAutoriteContractante().getId() : null)
+                .creeParAutoriteContractanteNom(convention.getCreeParAutoriteContractante() != null
+                        ? convention.getCreeParAutoriteContractante().getNom() : null)
                 .dateCreation(convention.getDateCreation())
                 .valideParUserId(convention.getValideParUserId())
                 .dateValidation(convention.getDateValidation())
@@ -282,14 +303,52 @@ public class ConventionService {
                 .build();
     }
 
-    private void notifyConvention(Convention convention, StatutConvention statut, String motifRejet, Long userId) {
-        if (convention == null || convention.getAutoriteContractante() == null) {
+    private List<Long> resolveCommissionMemberUserIds() {
+        return Stream.of(Role.PRESIDENT, Role.DGD, Role.DGTCP, Role.DGI, Role.DGB)
+                .flatMap(r -> utilisateurRepository.findByRole(r).stream())
+                .map(Utilisateur::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private List<Long> resolveConventionNotificationRecipients(Convention convention) {
+        List<Long> acUsers = convention.getAutoriteContractante() == null
+                ? List.of()
+                : utilisateurRepository.findByAutoriteContractanteId(convention.getAutoriteContractante().getId())
+                        .stream()
+                        .map(Utilisateur::getId)
+                        .collect(Collectors.toList());
+        List<Long> commission = resolveCommissionMemberUserIds();
+        return Stream.concat(acUsers.stream(), commission.stream())
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private void notifyConventionCreated(Convention convention, Long userId) {
+        if (convention == null) {
             return;
         }
-        List<Long> userIds = utilisateurRepository.findByAutoriteContractanteId(convention.getAutoriteContractante().getId())
-                .stream()
-                .map(Utilisateur::getId)
-                .collect(Collectors.toList());
+        List<Long> userIds = resolveConventionNotificationRecipients(convention);
+        if (userIds.isEmpty()) {
+            return;
+        }
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("event", "CONVENTION_CREATED");
+        payload.put("reference", convention.getReference());
+        if (userId != null) {
+            payload.put("acteurUserId", userId);
+        }
+        String message = "Nouvelle convention: " + convention.getReference();
+        notificationService.notifyUsers(userIds, NotificationType.CONVENTION_STATUT_CHANGE,
+                "Convention", convention.getId(), message, payload);
+    }
+
+    private void notifyConvention(Convention convention, StatutConvention statut, String motifRejet, Long userId) {
+        if (convention == null) {
+            return;
+        }
+        List<Long> userIds = resolveConventionNotificationRecipients(convention);
         if (userIds.isEmpty()) {
             return;
         }

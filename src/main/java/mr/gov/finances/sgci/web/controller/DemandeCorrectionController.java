@@ -75,8 +75,11 @@ public class DemandeCorrectionController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('correction.submit')")
-    public DemandeCorrectionDto create(@Valid @RequestBody CreateDemandeCorrectionRequest request) {
-        return service.create(request);
+    public DemandeCorrectionDto create(
+            @Valid @RequestBody CreateDemandeCorrectionRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.create(request, user);
     }
 
     @PatchMapping("/{id}/statut")

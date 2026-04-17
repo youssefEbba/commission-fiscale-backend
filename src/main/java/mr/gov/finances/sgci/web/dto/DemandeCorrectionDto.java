@@ -40,6 +40,8 @@ public class DemandeCorrectionDto {
     private Long entrepriseId;
     private String entrepriseRaisonSociale;
     private Long conventionId;
+    /** Marché détaché après annulation — id conservé pour la traçabilité. */
+    private Long marcheIdTrace;
     private ModeleFiscalDto modeleFiscal;
     private DqeDto dqe;
     private MarcheDto marche;

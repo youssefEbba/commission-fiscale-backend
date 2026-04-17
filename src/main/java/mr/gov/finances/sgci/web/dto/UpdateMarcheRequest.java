@@ -1,5 +1,7 @@
 package mr.gov.finances.sgci.web.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -19,11 +21,14 @@ public class UpdateMarcheRequest {
     @NotNull(message = "Le numéro de marché est obligatoire")
     private String numeroMarche;
 
-    @NotNull(message = "La date de signature est obligatoire")
+    private String intitule;
+
     private LocalDate dateSignature;
 
-    @NotNull(message = "Le montant TTC est obligatoire")
-    private BigDecimal montantContratTtc;
+    @NotNull(message = "Le montant HT est obligatoire")
+    @JsonProperty("montantContratHt")
+    @JsonAlias("montantContratTtc")
+    private BigDecimal montantContratHt;
 
     @NotNull(message = "Le statut est obligatoire")
     private StatutMarche statut;

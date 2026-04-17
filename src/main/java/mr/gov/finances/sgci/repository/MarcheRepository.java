@@ -29,4 +29,13 @@ public interface MarcheRepository extends JpaRepository<Marche, Long> {
     /** Marchés de l'AC auxquels le délégué est rattaché (via table marche_delegue). */
     @Query("select distinct m from Marche m join m.delegues md where md.delegue.id = :delegueId and m.convention.autoriteContractante.id = :acId")
     List<Marche> findAllByDelegueIdAndAutoriteContractanteId(@Param("delegueId") Long delegueId, @Param("acId") Long acId);
+
+    @Query("SELECT m FROM Marche m JOIN m.convention c WHERE c.autoriteContractante.id = :acId AND ("
+            + "LOWER(m.numeroMarche) LIKE LOWER(CONCAT('%', :q, '%')) "
+            + "OR (m.intitule IS NOT NULL AND LOWER(m.intitule) LIKE LOWER(CONCAT('%', :q, '%'))))")
+    List<Marche> searchByAcAndNumeroOrIntitule(@Param("acId") Long acId, @Param("q") String q);
+
+    @Query("SELECT m FROM Marche m WHERE LOWER(m.numeroMarche) LIKE LOWER(CONCAT('%', :q, '%')) "
+            + "OR (m.intitule IS NOT NULL AND LOWER(m.intitule) LIKE LOWER(CONCAT('%', :q, '%')))")
+    List<Marche> searchByNumeroOrIntitule(@Param("q") String q);
 }

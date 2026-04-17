@@ -1,5 +1,7 @@
 package mr.gov.finances.sgci.web.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,8 +22,13 @@ public class MarcheDto {
     private Long conventionId;
     private Long demandeCorrectionId;
     private String numeroMarche;
+    /** Libellé / objet du marché (recherche & affichage). */
+    private String intitule;
     private LocalDate dateSignature;
-    private BigDecimal montantContratTtc;
+    /** Montant HT (nom JSON canonique ; l’ancien nom {@code montantContratTtc} est encore accepté en entrée). */
+    @JsonProperty("montantContratHt")
+    @JsonAlias("montantContratTtc")
+    private BigDecimal montantContratHt;
     private StatutMarche statut;
     private List<Long> delegueIds;
 }

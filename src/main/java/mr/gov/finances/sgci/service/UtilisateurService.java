@@ -24,7 +24,7 @@ public class UtilisateurService {
 
     @Transactional(readOnly = true)
     public List<UtilisateurDto> findAll() {
-        return utilisateurRepository.findAll()
+        return utilisateurRepository.findAllByOrderByIdDesc()
                 .stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -49,9 +49,8 @@ public class UtilisateurService {
 
     @Transactional(readOnly = true)
     public List<UtilisateurDto> findPending() {
-        return utilisateurRepository.findAll()
+        return utilisateurRepository.findByActifFalseOrderByIdDesc()
                 .stream()
-                .filter(u -> Boolean.FALSE.equals(u.getActif()))
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }

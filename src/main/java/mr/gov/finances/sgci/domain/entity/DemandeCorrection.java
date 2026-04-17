@@ -65,6 +65,9 @@ public class DemandeCorrection {
     @Column(length = 1000)
     private String motifRejet;
 
+    /** Id du marché au moment du détachement (demande annulée) — traçabilité. */
+    private Long marcheIdTrace;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "autorite_contractante_id", nullable = false)
     private AutoriteContractante autoriteContractante;

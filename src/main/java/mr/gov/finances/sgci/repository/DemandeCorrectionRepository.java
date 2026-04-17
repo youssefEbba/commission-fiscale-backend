@@ -17,6 +17,9 @@ public interface DemandeCorrectionRepository extends JpaRepository<DemandeCorrec
     Optional<DemandeCorrection> findByNumero(String numero);
     boolean existsByNumero(String numero);
 
+    /** Vrai si l’entreprise a déjà une demande dont le numéro commence par {@code prefix} (seed démo idempotent). */
+    boolean existsByEntreprise_IdAndNumeroStartingWith(Long entrepriseId, String prefix);
+
     /** Plus récentes en tête (listes UI, sélecteurs) */
     List<DemandeCorrection> findByStatutOrderByDateDepotDescIdDesc(StatutDemande statut);
 

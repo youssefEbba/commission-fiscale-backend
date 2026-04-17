@@ -33,6 +33,7 @@ import mr.gov.finances.sgci.service.DossierGedService;
 
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -57,6 +58,7 @@ public class DataInitializer implements CommandLineRunner {
     private final RolePermissionRepository rolePermissionRepository;
     private final PasswordEncoder passwordEncoder;
     private final DossierGedService dossierGedService;
+    private final Environment environment;
 
     @Override
     public void run(String... args) {
@@ -75,7 +77,9 @@ public class DataInitializer implements CommandLineRunner {
         seedRolePermissions();
         seedDocumentRequirements();
         seedDefaultUsers();
-        seedDemandeCorrectionAdopteeDemo();
+        if (Boolean.TRUE.equals(environment.getProperty("app.seed.demande-correction.enabled", Boolean.class, Boolean.TRUE))) {
+            seedDemandeCorrectionAdopteeDemo();
+        }
     }
 
     private void seedDocumentRequirements() {
@@ -213,7 +217,14 @@ public class DataInitializer implements CommandLineRunner {
         documentRequirementRepository.save(req);
     }
 
-    /** Données de démo : une seule demande de correction adoptée (+ marché lié), sans mise en place, certificat ni utilisation. */
+    private static final String DEMO_CORRECTION_NUMERO_PREFIX = "DC-DEFAULT-";
+    private static final String DEMO_CORRECTION_NUMERO = "DC-DEFAULT-DEMO";
+    private static final String DEMO_MARCHE_NUMERO = "MP-DEMO-DEFAULT-VOIRIE";
+
+    /**
+     * Données de démo : au plus une demande adoptée (+ marché lié) pour l’entreprise NIF_DEFAULT.
+     * Idempotent : aucune nouvelle ligne aux redémarrages si une demande {@code DC-DEFAULT-*} existe déjà pour cette entreprise.
+     */
     private void seedDemandeCorrectionAdopteeDemo() {
         AutoriteContractante autoriteContractante = autoriteContractanteRepository.findByCode("AC_DEFAULT")
                 .orElseThrow(() -> new IllegalStateException("Autorité Contractante par défaut manquante"));
@@ -222,19 +233,21 @@ public class DataInitializer implements CommandLineRunner {
         Convention convention = conventionRepository.findByReference("CONV-DEFAULT")
                 .orElseThrow(() -> new IllegalStateException("Convention par défaut manquante"));
 
-        String uniqueSuffix = String.valueOf(Instant.now().getEpochSecond());
+        if (demandeCorrectionRepository.existsByEntreprise_IdAndNumeroStartingWith(entreprise.getId(), DEMO_CORRECTION_NUMERO_PREFIX)) {
+            return;
+        }
 
         Marche marche = Marche.builder()
-                .numeroMarche("MP-NKC-2024-TRVX-VOIRIE-REHAB-" + uniqueSuffix)
+                .numeroMarche(DEMO_MARCHE_NUMERO)
                 .dateSignature(LocalDate.now())
-                .montantContratTtc(BigDecimal.valueOf(1000000))
+                .montantContratHt(BigDecimal.valueOf(1000000))
                 .statut(StatutMarche.EN_COURS)
                 .convention(convention)
                 .build();
         marche = marcheRepository.save(marche);
 
         DemandeCorrection demande = DemandeCorrection.builder()
-                .numero("DC-DEFAULT-" + uniqueSuffix)
+                .numero(DEMO_CORRECTION_NUMERO)
                 .dateDepot(Instant.now())
                 .statut(StatutDemande.ADOPTEE)
                 .autoriteContractante(autoriteContractante)
@@ -818,6 +831,7 @@ public class DataInitializer implements CommandLineRunner {
                 "correction.dgb.queue.view",
                 "correction.dgb.visa",
                 "correction.dgb.reject",
+                "correction.offer.view",
                 "reporting.view");
 
         // Président : accès complet (toutes les permissions enregistrées)

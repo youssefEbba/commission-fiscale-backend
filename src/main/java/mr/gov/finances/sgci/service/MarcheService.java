@@ -33,6 +33,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.Map;
 import java.time.Instant;
 import java.util.stream.Collectors;
 
@@ -93,6 +94,35 @@ public class MarcheService {
         }
 
         return marcheRepository.findAll().stream()
+                .map(this::toDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Recherche par numéro ou intitulé (périmètre AC pour AC/délégués ; sinon filtré par {@link #canAccessMarche}).
+     */
+    @Transactional(readOnly = true)
+    public List<MarcheDto> searchMarches(String q, AuthenticatedUser user) {
+        if (user == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        if (q == null || q.isBlank()) {
+            return findAll(user);
+        }
+        String trimmed = q.trim();
+        Utilisateur u = utilisateurRepository.findById(user.getUserId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+
+        List<Marche> candidates;
+        if ((u.getRole() == Role.AUTORITE_CONTRACTANTE || u.getRole() == Role.AUTORITE_UPM || u.getRole() == Role.AUTORITE_UEP)
+                && u.getAutoriteContractante() != null) {
+            candidates = marcheRepository.searchByAcAndNumeroOrIntitule(u.getAutoriteContractante().getId(), trimmed);
+        } else {
+            candidates = marcheRepository.searchByNumeroOrIntitule(trimmed);
+        }
+
+        return candidates.stream()
+                .filter(m -> canAccessMarche(m, user))
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
@@ -181,7 +211,8 @@ public class MarcheService {
                 : null;
 
         if (marcheAcId == null || !marcheAcId.equals(ac.getAutoriteContractante().getId())) {
-            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: marché hors périmètre de votre autorité contractante");
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: marché hors périmètre de votre autorité contractante",
+                    Map.of("marcheId", marcheId, "code", "MARCHE_HORS_PERIMETRE_AC"));
         }
 
         Utilisateur delegue = null;
@@ -391,7 +422,8 @@ public class MarcheService {
             }
 
             if (marcheRepository.findByDemandeCorrectionId(request.getDemandeCorrectionId()).isPresent()) {
-                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Un marché existe déjà pour cette correction");
+                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Un marché existe déjà pour cette correction",
+                        Map.of("demandeCorrectionId", request.getDemandeCorrectionId(), "code", "MARCHE_DEJA_LIE_CORRECTION"));
             }
         }
 
@@ -407,8 +439,9 @@ public class MarcheService {
 
         Marche marche = Marche.builder()
                 .numeroMarche(request.getNumeroMarche())
+                .intitule(request.getIntitule())
                 .dateSignature(request.getDateSignature())
-                .montantContratTtc(request.getMontantContratTtc())
+                .montantContratHt(request.getMontantContratHt())
                 .statut(request.getStatut())
                 .convention(convention)
                 .demandeCorrection(demande)
@@ -436,8 +469,9 @@ public class MarcheService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Marché annulé: changement de statut interdit");
         }
         marche.setNumeroMarche(request.getNumeroMarche());
+        marche.setIntitule(request.getIntitule());
         marche.setDateSignature(request.getDateSignature());
-        marche.setMontantContratTtc(request.getMontantContratTtc());
+        marche.setMontantContratHt(request.getMontantContratHt());
         marche.setStatut(request.getStatut());
         marche = marcheRepository.save(marche);
         return toDto(marche);
@@ -449,8 +483,9 @@ public class MarcheService {
                 .conventionId(marche.getConvention() != null ? marche.getConvention().getId() : null)
                 .demandeCorrectionId(marche.getDemandeCorrection() != null ? marche.getDemandeCorrection().getId() : null)
                 .numeroMarche(marche.getNumeroMarche())
+                .intitule(marche.getIntitule())
                 .dateSignature(marche.getDateSignature())
-                .montantContratTtc(marche.getMontantContratTtc())
+                .montantContratHt(marche.getMontantContratHt())
                 .statut(marche.getStatut())
                 .delegueIds(marche.getDelegues() != null
                         ? marche.getDelegues().stream()

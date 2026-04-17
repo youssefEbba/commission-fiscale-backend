@@ -41,11 +41,15 @@ public class Marche {
     @Column(nullable = false)
     private String numeroMarche;
 
-    @Column(nullable = false)
+    /** Libellé descriptif (affichage, recherche). */
+    @Column(length = 500)
+    private String intitule;
+
     private LocalDate dateSignature;
 
-    @Column(nullable = false, precision = 18, scale = 2)
-    private BigDecimal montantContratTtc;
+    /** Montant HT du contrat (colonne historique {@code montant_contrat_ttc} conservée en base). */
+    @Column(name = "montant_contrat_ttc", nullable = false, precision = 18, scale = 2)
+    private BigDecimal montantContratHt;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

@@ -53,6 +53,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Stream;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -163,7 +164,7 @@ public class DemandeCorrectionService {
     }
 
     @Transactional
-    public DemandeCorrectionDto create(CreateDemandeCorrectionRequest request) {
+    public DemandeCorrectionDto create(CreateDemandeCorrectionRequest request, AuthenticatedUser user) {
         AutoriteContractante autorite = autoriteRepository.findById(request.getAutoriteContractanteId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée"));
         Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
@@ -174,8 +175,17 @@ public class DemandeCorrectionService {
         if (request.getMarcheId() != null) {
             marche = marcheRepository.findById(request.getMarcheId())
                     .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + request.getMarcheId()));
-            if (marche.getDemandeCorrection() != null) {
-                throw ApiException.conflict(ApiErrorCode.CONFLICT, "Le marché est déjà associé à une correction");
+            DemandeCorrection liee = marche.getDemandeCorrection();
+            if (liee != null) {
+                if (liee.getStatut() != StatutDemande.ANNULEE) {
+                    throw ApiException.conflict(ApiErrorCode.MARCHE_DEMANDE_ACTIVE,
+                            "Le marché est déjà associé à une demande de correction active",
+                            Map.of(
+                                    "code", ApiErrorCode.MARCHE_DEMANDE_ACTIVE,
+                                    "marcheId", marche.getId(),
+                                    "demandeCorrectionId", liee.getId()));
+                }
+                detachMarcheFromCancelledDemande(liee, marche);
             }
 
             if (marche.getConvention() == null || marche.getConvention().getId() == null) {
@@ -214,7 +224,30 @@ public class DemandeCorrectionService {
 
         DemandeCorrectionDto result = toDto(entity);
         auditService.log(AuditAction.CREATE, "DemandeCorrection", String.valueOf(entity.getId()), result);
+        notifyDemandeCorrection(entity, StatutDemande.RECUE, null, user, false);
         return result;
+    }
+
+    private void detachMarcheFromCancelledDemande(DemandeCorrection cancelled, Marche marche) {
+        if (cancelled == null || marche == null) {
+            return;
+        }
+        cancelled.setMarcheIdTrace(marche.getId());
+        cancelled.setMarche(null);
+        marche.setDemandeCorrection(null);
+        demandeRepository.save(cancelled);
+        marcheRepository.save(marche);
+    }
+
+    private void detachMarcheOnAnnulation(DemandeCorrection entity) {
+        Marche marche = entity.getMarche();
+        if (marche == null) {
+            return;
+        }
+        entity.setMarcheIdTrace(marche.getId());
+        entity.setMarche(null);
+        marche.setDemandeCorrection(null);
+        marcheRepository.save(marche);
     }
 
     @Transactional
@@ -247,6 +280,10 @@ public class DemandeCorrectionService {
         }
 
         workflow.validateTransition(entity.getStatut(), statut);
+
+        if (statut == StatutDemande.ANNULEE) {
+            detachMarcheOnAnnulation(entity);
+        }
 
         if (statut == StatutDemande.RECEVABLE || statut == StatutDemande.EN_EVALUATION) {
             requirementValidator.assertRequiredDocumentsPresent(
@@ -399,6 +436,7 @@ public class DemandeCorrectionService {
                 .entrepriseId(d.getEntreprise() != null ? d.getEntreprise().getId() : null)
                 .entrepriseRaisonSociale(d.getEntreprise() != null ? d.getEntreprise().getRaisonSociale() : null)
                 .conventionId(d.getConvention() != null ? d.getConvention().getId() : null)
+                .marcheIdTrace(d.getMarcheIdTrace())
                 .modeleFiscal(toModeleFiscalDto(d.getModeleFiscal()))
                 .dqe(toDqeDto(d.getDqe()))
                 .marche(toMarcheDto(d.getMarche()))
@@ -664,10 +702,12 @@ public class DemandeCorrectionService {
         }
         return MarcheDto.builder()
                 .id(marche.getId())
+                .conventionId(marche.getConvention() != null ? marche.getConvention().getId() : null)
                 .demandeCorrectionId(marche.getDemandeCorrection() != null ? marche.getDemandeCorrection().getId() : null)
                 .numeroMarche(marche.getNumeroMarche())
+                .intitule(marche.getIntitule())
                 .dateSignature(marche.getDateSignature())
-                .montantContratTtc(marche.getMontantContratTtc())
+                .montantContratHt(marche.getMontantContratHt())
                 .statut(marche.getStatut())
                 .build();
     }
@@ -721,7 +761,13 @@ public class DemandeCorrectionService {
                 .map(Utilisateur::getId)
                 .collect(Collectors.toList())
                 : List.of();
-        return Stream.concat(entrepriseUsers.stream(), autoriteUsers.stream())
+        List<Long> commission = Stream.of(Role.PRESIDENT, Role.DGD, Role.DGTCP, Role.DGI, Role.DGB)
+                .flatMap(r -> utilisateurRepository.findByRole(r).stream())
+                .map(Utilisateur::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        return Stream.of(entrepriseUsers.stream(), autoriteUsers.stream(), commission.stream())
+                .flatMap(s -> s)
                 .distinct()
                 .collect(Collectors.toList());
     }

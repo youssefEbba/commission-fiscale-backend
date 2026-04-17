@@ -18,6 +18,7 @@ import java.util.List;
 public class ConventionDto {
     private Long id;
     private String reference;
+    private String projectReference;
     private String intitule;
     private String bailleur;
     private String bailleurDetails;
@@ -30,6 +31,8 @@ public class ConventionDto {
     private StatutConvention statut;
     private Long autoriteContractanteId;
     private String autoriteContractanteNom;
+    private Long creeParAutoriteContractanteId;
+    private String creeParAutoriteContractanteNom;
     private Instant dateCreation;
     private Long valideParUserId;
     private Instant dateValidation;

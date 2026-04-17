@@ -31,5 +31,8 @@ public class CreateConventionRequest {
     private String deviseOrigine;
     private BigDecimal tauxChange;
 
+    /** Référence projet (optionnel). */
+    private String projectReference;
+
     private Long autoriteContractanteId;
 }

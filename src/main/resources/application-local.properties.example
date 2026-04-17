@@ -3,4 +3,5 @@
 #
 # spring.datasource.password=secret
 # spring.jpa.hibernate.ddl-auto=none
+# Désactiver la demande de correction « démo » adoptée au démarrage (ne supprime pas les lignes déjà en base MySQL).
 # app.seed.demande-correction.enabled=false

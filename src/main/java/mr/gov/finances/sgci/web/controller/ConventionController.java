@@ -28,8 +28,11 @@ public class ConventionController {
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('convention.view', 'convention.view.all')")
-    public List<ConventionDto> getAll(@AuthenticationPrincipal AuthenticatedUser user) {
-        return service.findAll(user);
+    public List<ConventionDto> getAll(
+            @RequestParam(required = false) String q,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.findAll(user, q);
     }
 
     @GetMapping("/{id}")

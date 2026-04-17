@@ -32,7 +32,13 @@ public class MarcheController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('marche.manage')")
-    public List<MarcheDto> getAll(@AuthenticationPrincipal AuthenticatedUser user) {
+    public List<MarcheDto> getAll(
+            @RequestParam(required = false) String q,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        if (q != null && !q.isBlank()) {
+            return service.searchMarches(q, user);
+        }
         return service.findAll(user);
     }
 
