@@ -18,6 +18,12 @@ public interface CertificatCreditRepository extends JpaRepository<CertificatCred
     boolean existsByNumero(String numero);
     boolean existsByDemandeCorrectionId(Long demandeCorrectionId);
     Optional<CertificatCredit> findFirstByDemandeCorrectionId(Long demandeCorrectionId);
+
+    /** Certificats non annulés pour cette demande (unicité mise en place). */
+    long countByDemandeCorrectionIdAndStatutNot(Long demandeCorrectionId, StatutCertificat statut);
+
+    /** Autres certificats non annulés pour la même demande (exclut le certificat en cours d’édition / soumission). */
+    long countByDemandeCorrectionIdAndStatutNotAndIdNot(Long demandeCorrectionId, StatutCertificat statut, Long excludeCertificatId);
     List<CertificatCredit> findByStatutOrderByDateEmissionDescIdDesc(StatutCertificat statut);
 
     List<CertificatCredit> findByEntrepriseIdOrderByDateEmissionDescIdDesc(Long entrepriseId);

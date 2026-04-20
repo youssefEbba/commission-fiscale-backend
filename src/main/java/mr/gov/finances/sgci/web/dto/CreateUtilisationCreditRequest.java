@@ -42,4 +42,7 @@ public class CreateUtilisationCreditRequest {
     private Instant dateFacture;
     private BigDecimal montantTVAInterieure;
     private String numeroDecompte;
+
+    /** Si {@code true}, statut {@code BROUILLON} jusqu'à soumission explicite. */
+    private Boolean brouillon;
 }

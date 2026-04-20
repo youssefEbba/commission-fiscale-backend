@@ -24,11 +24,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Chaîne complète sur données seed ({@link mr.gov.finances.sgci.config.DataInitializer}) :
  * annulation du certificat seed → mise en place (montants + 3 visas + ouverture président) →
  * notification demande → utilisation douanière → rejet DGD.
+ * <p>
+ * Préfixe {@code Z} : en général après {@link RejetWorkflowsIT} (ordre alphabétique des classes).
+ * URL H2 dédiée : avec {@code DB_CLOSE_DELAY=-1} la mémoire H2 est partagée entre rechargements de
+ * contexte ; une base isolée garantit le seed {@code CI-TEST-OUVERT} + une demande ADOPTEE libre.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {
+                "spring.datasource.url=jdbc:h2:mem:sgci_it_zall;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1"
+        }
+)
 @ActiveProfiles("test")
 @SuppressWarnings({"rawtypes", "unchecked"})
-class AllWorkflowsIT {
+class ZAllWorkflowsIT {
 
     @LocalServerPort
     private int port;
@@ -109,7 +118,7 @@ class AllWorkflowsIT {
         assertThat(certsList.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(certsList.getBody()).isNotNull();
         Long seedCertId = findCertificatIdByNumero(certsList.getBody(), "CI-TEST-OUVERT");
-
+        // Libère la demande ADOPTEE seed (TestWorkflowDataSeed : un seul certificat non annulé par demande).
         ResponseEntity<Map> annule = restTemplate.exchange(
                 baseUrl() + "/api/certificats-credit/" + seedCertId + "/statut?statut=ANNULE",
                 HttpMethod.PATCH,
@@ -143,7 +152,15 @@ class AllWorkflowsIT {
         assertThat(createdCert.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(createdCert.getBody()).isNotNull();
         Long newCertId = ((Number) createdCert.getBody().get("id")).longValue();
-        assertThat(createdCert.getBody().get("statut")).isEqualTo("EN_CONTROLE");
+        assertThat(createdCert.getBody().get("statut")).isEqualTo("ENVOYEE");
+
+        LoginResult dgdTake = login("dgd", "123456");
+        assertThat(restTemplate.exchange(
+                baseUrl() + "/api/certificats-credit/" + newCertId + "/prendre-en-charge",
+                HttpMethod.POST,
+                bearer(dgdTake.token()),
+                Map.class
+        ).getStatusCode()).isEqualTo(HttpStatus.OK);
 
         LoginResult dgtcp = login("dgtcp", "123456");
         Map<String, Object> montants = new LinkedHashMap<>();

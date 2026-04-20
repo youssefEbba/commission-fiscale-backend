@@ -149,6 +149,10 @@ public class DelegueService {
         if (user == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
+        if (user.isImpersonating()) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED,
+                    "Gestion des délégués interdite pendant une session d’impersonation");
+        }
         if (user.getRole() != Role.AUTORITE_CONTRACTANTE) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Action réservée à l'autorité contractante");
         }

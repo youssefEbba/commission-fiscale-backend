@@ -25,6 +25,7 @@ import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.repository.AutoriteContractanteRepository;
 import mr.gov.finances.sgci.repository.ConventionRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
@@ -32,6 +33,7 @@ import mr.gov.finances.sgci.repository.EntrepriseRepository;
 import mr.gov.finances.sgci.repository.MarcheRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.web.dto.CreateDemandeCorrectionRequest;
+import mr.gov.finances.sgci.web.dto.UpdateDemandeCorrectionRequest;
 import mr.gov.finances.sgci.web.dto.DecisionCorrectionDto;
 import mr.gov.finances.sgci.web.dto.DemandeCorrectionDto;
 import mr.gov.finances.sgci.web.dto.DemandeCorrectionRejetDto;
@@ -50,10 +52,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Stream;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -74,6 +78,7 @@ public class DemandeCorrectionService {
     private final DocumentService documentService;
     private final DocumentRequirementValidator requirementValidator;
     private final DossierGedService dossierGedService;
+    private final EffectiveIdentityService effectiveIdentityService;
 
     private static String generateNumero() {
         return "DC-" + Instant.now().getEpochSecond() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
@@ -97,67 +102,98 @@ public class DemandeCorrectionService {
 
     private List<DemandeCorrection> resolveDemandeList(AuthenticatedUser user) {
         if (user == null || user.getUserId() == null) {
-            return demandeRepository.findAllByOrderByDateDepotDescIdDesc();
+            return filterBrouillonHorsAc(demandeRepository.findAllByOrderByDateDepotDescIdDesc());
         }
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        Role role = u.getRole();
+        Role role = user.getRole();
 
         if (role == Role.AUTORITE_CONTRACTANTE) {
-            if (u.getAutoriteContractante() == null) {
+            Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, u);
+            if (acId == null) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
             }
-            return demandeRepository.findByAutoriteContractanteIdOrderByDateDepotDescIdDesc(u.getAutoriteContractante().getId());
+            return demandeRepository.findByAutoriteContractanteIdOrderByDateDepotDescIdDesc(acId);
         }
 
         if (role == Role.AUTORITE_UPM || role == Role.AUTORITE_UEP) {
-            return demandeRepository.findByDelegueId(u.getId());
+            return filterBrouillonHorsAc(demandeRepository.findByDelegueId(u.getId()));
         }
 
         if (role == Role.ENTREPRISE) {
-            if (u.getEntreprise() == null) {
+            Long entId = effectiveIdentityService.resolveEntrepriseId(user, u);
+            if (entId == null) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
             }
-            return demandeRepository.findByEntrepriseIdOrderByDateDepotDescIdDesc(u.getEntreprise().getId());
+            return filterBrouillonHorsAc(demandeRepository.findByEntrepriseIdOrderByDateDepotDescIdDesc(entId));
         }
 
-        return demandeRepository.findAllByOrderByDateDepotDescIdDesc();
+        return filterBrouillonHorsAc(demandeRepository.findAllByOrderByDateDepotDescIdDesc());
+    }
+
+    /** Les brouillons ne sont visibles que pour l’AC créatrice (pas pour les autres rôles / files). */
+    private List<DemandeCorrection> filterBrouillonHorsAc(List<DemandeCorrection> list) {
+        if (list == null || list.isEmpty()) {
+            return list;
+        }
+        return list.stream()
+                .filter(d -> d.getStatut() != StatutDemande.BROUILLON)
+                .collect(Collectors.toList());
     }
 
     private boolean canAccessDemandeCorrection(Long demandeId, AuthenticatedUser user) {
         if (demandeId == null) {
             return false;
         }
+        return demandeRepository.findById(demandeId)
+                .map(dc -> canAccessDemandeCorrectionEntity(dc, user))
+                .orElse(false);
+    }
+
+    private boolean canAccessDemandeCorrectionEntity(DemandeCorrection dc, AuthenticatedUser user) {
+        if (dc.getStatut() == StatutDemande.BROUILLON) {
+            if (user == null || user.getUserId() == null) {
+                return false;
+            }
+            Utilisateur u = utilisateurRepository.findById(user.getUserId()).orElse(null);
+            if (u == null || user.getRole() != Role.AUTORITE_CONTRACTANTE) {
+                return false;
+            }
+            Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, u);
+            if (acId == null) {
+                return false;
+            }
+            return dc.getAutoriteContractante() != null
+                    && acId.equals(dc.getAutoriteContractante().getId());
+        }
         if (user == null || user.getUserId() == null) {
             return true;
         }
         Utilisateur u = utilisateurRepository.findById(user.getUserId()).orElse(null);
-        if (u == null || u.getRole() == null) {
+        if (u == null || user.getRole() == null) {
             return false;
         }
 
-        if (u.getRole() == Role.AUTORITE_CONTRACTANTE) {
-            if (u.getAutoriteContractante() == null) {
+        if (user.getRole() == Role.AUTORITE_CONTRACTANTE) {
+            Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, u);
+            if (acId == null) {
                 return false;
             }
-            return demandeRepository.findById(demandeId)
-                    .map(dc -> dc.getAutoriteContractante() != null
-                            && dc.getAutoriteContractante().getId().equals(u.getAutoriteContractante().getId()))
-                    .orElse(false);
+            return dc.getAutoriteContractante() != null
+                    && dc.getAutoriteContractante().getId().equals(acId);
         }
 
-        if (u.getRole() == Role.AUTORITE_UPM || u.getRole() == Role.AUTORITE_UEP) {
-            return demandeRepository.existsAccessByDelegue(u.getId(), demandeId);
+        if (user.getRole() == Role.AUTORITE_UPM || user.getRole() == Role.AUTORITE_UEP) {
+            return demandeRepository.existsAccessByDelegue(u.getId(), dc.getId());
         }
 
-        if (u.getRole() == Role.ENTREPRISE) {
-            if (u.getEntreprise() == null) {
+        if (user.getRole() == Role.ENTREPRISE) {
+            Long entId = effectiveIdentityService.resolveEntrepriseId(user, u);
+            if (entId == null) {
                 return false;
             }
-            return demandeRepository.findById(demandeId)
-                    .map(dc -> dc.getEntreprise() != null
-                            && dc.getEntreprise().getId().equals(u.getEntreprise().getId()))
-                    .orElse(false);
+            return dc.getEntreprise() != null
+                    && dc.getEntreprise().getId().equals(entId);
         }
 
         return true;
@@ -165,6 +201,12 @@ public class DemandeCorrectionService {
 
     @Transactional
     public DemandeCorrectionDto create(CreateDemandeCorrectionRequest request, AuthenticatedUser user) {
+        boolean brouillon = Boolean.TRUE.equals(request.getBrouillon());
+        if (!brouillon && (request.getModeleFiscal() == null || request.getDqe() == null)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Le modèle fiscal et le DQE sont obligatoires (ou utilisez brouillon=true)");
+        }
+
         AutoriteContractante autorite = autoriteRepository.findById(request.getAutoriteContractanteId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée"));
         Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
@@ -202,10 +244,11 @@ public class DemandeCorrectionService {
                 throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Le marché est hors périmètre de l'autorité contractante sélectionnée");
             }
         }
+        StatutDemande initial = brouillon ? StatutDemande.BROUILLON : StatutDemande.RECUE;
         DemandeCorrection entity = DemandeCorrection.builder()
                 .numero(generateNumero())
                 .dateDepot(Instant.now())
-                .statut(StatutDemande.RECUE)
+                .statut(initial)
                 .autoriteContractante(autorite)
                 .entreprise(entreprise)
                 .convention(convention)
@@ -224,7 +267,185 @@ public class DemandeCorrectionService {
 
         DemandeCorrectionDto result = toDto(entity);
         auditService.log(AuditAction.CREATE, "DemandeCorrection", String.valueOf(entity.getId()), result);
+        if (!brouillon) {
+            notifyDemandeCorrection(entity, StatutDemande.RECUE, null, user, false);
+        }
+        return result;
+    }
+
+    private static boolean isEvaluationNotStarted(DemandeCorrection d) {
+        return d != null && !d.isValidationDgd() && !d.isValidationDgtcp() && !d.isValidationDgi() && !d.isValidationDgb();
+    }
+
+    private static final Set<StatutDemande> STATUTS_EDITABLE_CONTENT = EnumSet.of(
+            StatutDemande.BROUILLON, StatutDemande.RECUE, StatutDemande.INCOMPLETE);
+
+    private void assertDemandeCorrectionContentEditable(DemandeCorrection d) {
+        if (d == null) {
+            throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande introuvable");
+        }
+        if (!isEvaluationNotStarted(d)) {
+            throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE,
+                    "Modification impossible : le traitement par les services a déjà commencé");
+        }
+        if (!STATUTS_EDITABLE_CONTENT.contains(d.getStatut())) {
+            throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE,
+                    "Modification impossible dans le statut: " + d.getStatut());
+        }
+    }
+
+    private void assertDeposantPeutModifierDemande(AuthenticatedUser user, DemandeCorrection d) {
+        if (user == null || user.getUserId() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Authentification requise");
+        }
+        Utilisateur u = utilisateurRepository.findById(user.getUserId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        if (user.getRole() == Role.ENTREPRISE) {
+            Long entId = effectiveIdentityService.resolveEntrepriseId(user, u);
+            if (entId == null || d.getEntreprise() == null || !entId.equals(d.getEntreprise().getId())) {
+                throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Seule l'entreprise dépositaire peut modifier cette demande");
+            }
+            return;
+        }
+        if (user.getRole() == Role.AUTORITE_CONTRACTANTE) {
+            Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, u);
+            if (acId == null || d.getAutoriteContractante() == null || !acId.equals(d.getAutoriteContractante().getId())) {
+                throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Seule l'autorité contractante liée peut modifier cette demande");
+            }
+            return;
+        }
+        throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seuls l'entreprise ou l'autorité contractante peuvent modifier cette demande");
+    }
+
+    private void assertSoumissionCorrectionPret(DemandeCorrection entity) {
+        if (entity.getModeleFiscal() == null || entity.getDqe() == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Modèle fiscal et DQE obligatoires pour la soumission");
+        }
+    }
+
+    /**
+     * Passe une demande {@link StatutDemande#BROUILLON} → {@link StatutDemande#RECUE} (notification, même effet qu'une création directe).
+     */
+    @Transactional
+    public DemandeCorrectionDto soumettreBrouillon(Long id, AuthenticatedUser user) {
+        DemandeCorrection entity = demandeRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + id));
+        if (!canAccessDemandeCorrection(id, user)) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: demande hors périmètre");
+        }
+        assertDeposantPeutModifierDemande(user, entity);
+        if (entity.getStatut() != StatutDemande.BROUILLON) {
+            throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Soumission réservée aux demandes en brouillon (statut actuel: " + entity.getStatut() + ")");
+        }
+        assertSoumissionCorrectionPret(entity);
+        workflow.validateTransition(StatutDemande.BROUILLON, StatutDemande.RECUE);
+        entity.setStatut(StatutDemande.RECUE);
+        entity = demandeRepository.save(entity);
+        DemandeCorrectionDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), result);
         notifyDemandeCorrection(entity, StatutDemande.RECUE, null, user, false);
+        return result;
+    }
+
+    /**
+     * Suppression définitive d'un brouillon uniquement. Les demandes déjà soumises se gèrent par {@link StatutDemande#ANNULEE}.
+     */
+    @Transactional
+    public void deleteBrouillon(Long id, AuthenticatedUser user) {
+        DemandeCorrection entity = demandeRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + id));
+        if (!canAccessDemandeCorrection(id, user)) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: demande hors périmètre");
+        }
+        assertDeposantPeutModifierDemande(user, entity);
+        if (entity.getStatut() != StatutDemande.BROUILLON) {
+            throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Suppression réservée aux brouillons. Pour une demande soumise, utilisez l'annulation (statut ANNULEE).");
+        }
+        Marche marche = entity.getMarche();
+        if (marche != null) {
+            entity.setMarche(null);
+            marche.setDemandeCorrection(null);
+            marcheRepository.save(marche);
+        }
+        dossierGedService.deleteDossierForDemandeCorrectionIfPresent(id);
+        auditService.log(AuditAction.DELETE, "DemandeCorrection", String.valueOf(id), null);
+        demandeRepository.delete(entity);
+    }
+
+    @Transactional
+    public DemandeCorrectionDto update(Long id, UpdateDemandeCorrectionRequest request, AuthenticatedUser user) {
+        DemandeCorrection entity = demandeRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + id));
+        if (!canAccessDemandeCorrection(id, user)) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: demande hors périmètre");
+        }
+        assertDeposantPeutModifierDemande(user, entity);
+        assertDemandeCorrectionContentEditable(entity);
+
+        AutoriteContractante autorite = autoriteRepository.findById(request.getAutoriteContractanteId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée"));
+        Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée"));
+        Convention convention = conventionRepository.findById(request.getConventionId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée"));
+        entity.setAutoriteContractante(autorite);
+        entity.setEntreprise(entreprise);
+        entity.setConvention(convention);
+
+        Marche marcheCible = null;
+        if (request.getMarcheId() != null) {
+            marcheCible = marcheRepository.findById(request.getMarcheId())
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + request.getMarcheId()));
+            DemandeCorrection liee = marcheCible.getDemandeCorrection();
+            if (liee != null && !liee.getId().equals(entity.getId())) {
+                if (liee.getStatut() != StatutDemande.ANNULEE) {
+                    throw ApiException.conflict(ApiErrorCode.MARCHE_DEMANDE_ACTIVE,
+                            "Le marché est déjà associé à une autre demande active",
+                            Map.of("code", ApiErrorCode.MARCHE_DEMANDE_ACTIVE,
+                                    "marcheId", marcheCible.getId(),
+                                    "demandeCorrectionId", liee.getId()));
+                }
+                detachMarcheFromCancelledDemande(liee, marcheCible);
+            }
+            if (marcheCible.getConvention() == null || !marcheCible.getConvention().getId().equals(request.getConventionId())) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le marché n'appartient pas à la convention sélectionnée");
+            }
+            Long marcheAcId = marcheCible.getConvention().getAutoriteContractante() != null
+                    ? marcheCible.getConvention().getAutoriteContractante().getId() : null;
+            if (marcheAcId == null || !marcheAcId.equals(request.getAutoriteContractanteId())) {
+                throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Le marché est hors périmètre de l'autorité contractante sélectionnée");
+            }
+        }
+
+        if (entity.getMarche() != null) {
+            Marche ancien = entity.getMarche();
+            if (marcheCible == null || !ancien.getId().equals(marcheCible.getId())) {
+                entity.setMarche(null);
+                ancien.setDemandeCorrection(null);
+                marcheRepository.save(ancien);
+            }
+        }
+        if (marcheCible != null) {
+            entity.setMarche(marcheCible);
+            marcheCible.setDemandeCorrection(entity);
+            marcheRepository.save(marcheCible);
+        }
+
+        entity.setModeleFiscal(null);
+        entity.setDqe(null);
+        demandeRepository.saveAndFlush(entity);
+
+        ModeleFiscal modeleFiscal = toModeleFiscalEntity(request.getModeleFiscal(), entity);
+        Dqe dqe = toDqeEntity(request.getDqe(), entity);
+        entity.setModeleFiscal(modeleFiscal);
+        entity.setDqe(dqe);
+        entity = demandeRepository.save(entity);
+
+        DemandeCorrectionDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), result);
         return result;
     }
 
@@ -250,6 +471,41 @@ public class DemandeCorrectionService {
         marcheRepository.save(marche);
     }
 
+    /**
+     * Réactivation ANNULEE → RECUE : le marché historique ({@link DemandeCorrection#getMarcheIdTrace()}) ne doit pas
+     * être déjà rattaché à une autre demande.
+     */
+    private void assertMarcheDisponiblePourReactivation(DemandeCorrection demandeReactivee) {
+        Long traceId = demandeReactivee.getMarcheIdTrace();
+        if (traceId == null) {
+            return;
+        }
+        marcheRepository.findById(traceId).ifPresent(m -> {
+            DemandeCorrection occupe = m.getDemandeCorrection();
+            if (occupe != null && occupe.getId() != null && !occupe.getId().equals(demandeReactivee.getId())) {
+                String num = occupe.getNumero() != null ? occupe.getNumero() : String.valueOf(occupe.getId());
+                throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Réactivation impossible : le marché est déjà rattaché à une autre demande active (" + num + ").");
+            }
+        });
+    }
+
+    /** {@code true} si aucun conflit avec une autre demande sur le marché tracé. */
+    private boolean isMarcheLibrePourDemande(DemandeCorrection d) {
+        Long traceId = d.getMarcheIdTrace();
+        if (traceId == null) {
+            return true;
+        }
+        return marcheRepository.findById(traceId)
+                .map(m -> {
+                    DemandeCorrection occupe = m.getDemandeCorrection();
+                    return occupe == null
+                            || occupe.getId() == null
+                            || occupe.getId().equals(d.getId());
+                })
+                .orElse(true);
+    }
+
     @Transactional
     public DemandeCorrectionDto updateStatut(Long id, StatutDemande statut, AuthenticatedUser user, String motifRejet, Boolean decisionFinale) {
         DemandeCorrection entity = demandeRepository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + id));
@@ -263,6 +519,7 @@ public class DemandeCorrectionService {
                 throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
                         "Seule l'autorité contractante peut réactiver une demande annulée");
             }
+            assertMarcheDisponiblePourReactivation(entity);
             resetParallelValidations(entity);
             entity.setStatut(StatutDemande.RECUE);
             entity.setMotifRejet(null);
@@ -273,13 +530,23 @@ public class DemandeCorrectionService {
             return reactivated;
         }
 
+        boolean soumissionDepuisBrouillon = user != null && user.getRole() != null
+                && (user.getRole() == Role.AUTORITE_CONTRACTANTE || user.getRole() == Role.ENTREPRISE)
+                && entity.getStatut() == StatutDemande.BROUILLON
+                && statut == StatutDemande.RECUE;
+
         if (user != null && user.getRole() != null
                 && (user.getRole() == Role.AUTORITE_CONTRACTANTE || user.getRole() == Role.ENTREPRISE)
-                && statut != StatutDemande.ANNULEE) {
+                && statut != StatutDemande.ANNULEE
+                && !soumissionDepuisBrouillon) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: action non autorisée");
         }
 
         workflow.validateTransition(entity.getStatut(), statut);
+
+        if (soumissionDepuisBrouillon) {
+            assertSoumissionCorrectionPret(entity);
+        }
 
         if (statut == StatutDemande.ANNULEE) {
             detachMarcheOnAnnulation(entity);
@@ -379,13 +646,38 @@ public class DemandeCorrectionService {
     }
 
     @Transactional(readOnly = true)
-    public List<DemandeCorrectionDto> findByAutoriteContractante(Long autoriteId) {
-        return demandeRepository.findByAutoriteContractanteIdOrderByDateDepotDescIdDesc(autoriteId).stream().map(this::toDto).collect(Collectors.toList());
+    public List<DemandeCorrectionDto> findByAutoriteContractante(Long autoriteId, AuthenticatedUser user) {
+        List<DemandeCorrection> raw = demandeRepository.findByAutoriteContractanteIdOrderByDateDepotDescIdDesc(autoriteId);
+        raw = filterBrouillonPourConsultationAutorite(raw, autoriteId, user);
+        return raw.stream().map(this::toDto).collect(Collectors.toList());
+    }
+
+    /**
+     * Brouillons : visibles seulement si l’appelant est un utilisateur AC de cette même autorité.
+     */
+    private List<DemandeCorrection> filterBrouillonPourConsultationAutorite(
+            List<DemandeCorrection> list, Long autoriteId, AuthenticatedUser user) {
+        if (list == null || list.isEmpty()) {
+            return list;
+        }
+        boolean acConsulteSaStructure = user != null && user.getUserId() != null
+                && Role.AUTORITE_CONTRACTANTE.equals(user.getRole())
+                && utilisateurRepository.findById(user.getUserId())
+                .map(u -> {
+                    Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, u);
+                    return acId != null && autoriteId != null && autoriteId.equals(acId);
+                })
+                .orElse(false);
+        if (acConsulteSaStructure) {
+            return list;
+        }
+        return filterBrouillonHorsAc(list);
     }
 
     @Transactional(readOnly = true)
     public List<DemandeCorrectionDto> findByEntreprise(Long entrepriseId) {
-        return demandeRepository.findByEntrepriseIdOrderByDateDepotDescIdDesc(entrepriseId).stream()
+        return filterBrouillonHorsAc(demandeRepository.findByEntrepriseIdOrderByDateDepotDescIdDesc(entrepriseId))
+                .stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
@@ -399,14 +691,30 @@ public class DemandeCorrectionService {
                 && (delegueId == null || !delegueId.equals(user.getUserId()))) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: vous ne pouvez consulter que vos propres demandes");
         }
-        return demandeRepository.findByDelegueId(delegueId)
+        return filterBrouillonHorsAc(demandeRepository.findByDelegueId(delegueId))
                 .stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
-    public List<DemandeCorrectionDto> findByStatut(StatutDemande statut) {
+    public List<DemandeCorrectionDto> findByStatut(StatutDemande statut, AuthenticatedUser user) {
+        if (statut == StatutDemande.BROUILLON) {
+            if (user == null || user.getUserId() == null || user.getRole() != Role.AUTORITE_CONTRACTANTE) {
+                return List.of();
+            }
+            Utilisateur u = utilisateurRepository.findById(user.getUserId()).orElse(null);
+            Long acId = u != null ? effectiveIdentityService.resolveAutoriteContractanteId(user, u) : null;
+            if (acId == null) {
+                return List.of();
+            }
+            return demandeRepository
+                    .findByAutoriteContractanteIdAndStatutOrderByDateDepotDescIdDesc(
+                            acId, StatutDemande.BROUILLON)
+                    .stream()
+                    .map(this::toDto)
+                    .collect(Collectors.toList());
+        }
         return demandeRepository.findByStatutOrderByDateDepotDescIdDesc(statut).stream().map(this::toDto).collect(Collectors.toList());
     }
 
@@ -436,7 +744,11 @@ public class DemandeCorrectionService {
                 .entrepriseId(d.getEntreprise() != null ? d.getEntreprise().getId() : null)
                 .entrepriseRaisonSociale(d.getEntreprise() != null ? d.getEntreprise().getRaisonSociale() : null)
                 .conventionId(d.getConvention() != null ? d.getConvention().getId() : null)
+                .marcheId(d.getMarche() != null ? d.getMarche().getId() : null)
                 .marcheIdTrace(d.getMarcheIdTrace())
+                .marcheReactivable(d.getStatut() == StatutDemande.ANNULEE
+                        ? isMarcheLibrePourDemande(d)
+                        : null)
                 .modeleFiscal(toModeleFiscalDto(d.getModeleFiscal()))
                 .dqe(toDqeDto(d.getDqe()))
                 .marche(toMarcheDto(d.getMarche()))

@@ -152,6 +152,14 @@ class RejetWorkflowsIT {
         assertThat(createdCert.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         Long certId = ((Number) createdCert.getBody().get("id")).longValue();
 
+        LoginResult dgdTake = login("dgd", "123456");
+        assertThat(restTemplate.exchange(
+                baseUrl() + "/api/certificats-credit/" + certId + "/prendre-en-charge",
+                HttpMethod.POST,
+                bearer(dgdTake.token()),
+                Map.class
+        ).getStatusCode()).isEqualTo(HttpStatus.OK);
+
         LoginResult dgtcp = login("dgtcp", "123456");
         Map<String, Object> montants = new LinkedHashMap<>();
         montants.put("montantCordon", new BigDecimal("3500000"));

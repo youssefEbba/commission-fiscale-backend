@@ -13,7 +13,7 @@ import java.util.Set;
 /**
  * Workflow Certificat de Crédit — mise en place.
  *
- * EN_CONTROLE ──(3 visas DGI+DGD+DGTCP)──► EN_VALIDATION_PRESIDENT ──► VALIDE_PRESIDENT
+ * BROUILLON ──► ENVOYEE ──(prise en charge acteur)──► EN_CONTROLE ──(3 visas DGI+DGD+DGTCP)──► EN_VALIDATION_PRESIDENT ──► VALIDE_PRESIDENT
  *     │  ▲                                          │                          │
  *     ▼  │                                          │                          │
  * INCOMPLETE ──► A_RECONTROLER                      │                          │
@@ -26,6 +26,8 @@ import java.util.Set;
 public class CertificatCreditWorkflow {
 
     private static final Map<StatutCertificat, Set<StatutCertificat>> TRANSITIONS = Map.ofEntries(
+            Map.entry(BROUILLON,                EnumSet.of(ENVOYEE, ANNULE)),
+            Map.entry(ENVOYEE,                  EnumSet.of(EN_CONTROLE, ANNULE)),
             Map.entry(EN_CONTROLE,              EnumSet.of(INCOMPLETE, EN_VALIDATION_PRESIDENT, ANNULE)),
             Map.entry(INCOMPLETE,               EnumSet.of(A_RECONTROLER, ANNULE)),
             Map.entry(A_RECONTROLER,            EnumSet.of(EN_CONTROLE, ANNULE)),

@@ -19,6 +19,7 @@ import java.util.Set;
 public class UtilisationCreditWorkflow {
 
     private static final Map<StatutUtilisation, Set<StatutUtilisation>> TRANSITIONS = Map.ofEntries(
+            Map.entry(BROUILLON, EnumSet.of(DEMANDEE)),
             Map.entry(DEMANDEE, EnumSet.of(INCOMPLETE, EN_VERIFICATION, REJETEE)),
             Map.entry(INCOMPLETE, EnumSet.of(A_RECONTROLER, REJETEE)),
             Map.entry(A_RECONTROLER, EnumSet.of(EN_VERIFICATION, REJETEE)),

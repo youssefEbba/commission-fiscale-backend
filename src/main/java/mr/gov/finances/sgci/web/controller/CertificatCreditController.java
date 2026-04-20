@@ -64,8 +64,48 @@ public class CertificatCreditController {
         return service.create(request);
     }
 
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('mise_en_place.submit')")
+    public CertificatCreditDto updateBrouillon(
+            @PathVariable Long id,
+            @Valid @RequestBody CreateCertificatCreditRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.updateBrouillon(id, request, user);
+    }
+
+    @PostMapping("/{id}/soumettre")
+    @PreAuthorize("hasAuthority('mise_en_place.submit')")
+    public CertificatCreditDto soumettreBrouillon(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.soumettreBrouillon(id, user);
+    }
+
+    /**
+     * Prise en charge par un acteur DGI / DGD / DGTCP : passage {@code ENVOYEE} → {@code EN_CONTROLE}.
+     * Alternative à {@code PATCH /{id}/statut?statut=EN_CONTROLE} pour les profils ayant uniquement les permissions de file.
+     */
+    @PostMapping("/{id}/prendre-en-charge")
+    @PreAuthorize("hasAnyAuthority('mise_en_place.dgi.queue.view', 'mise_en_place.dgd.queue.view', 'mise_en_place.dgtcp.queue.view')")
+    public CertificatCreditDto prendreEnCharge(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.prendreEnCharge(id, user);
+    }
+
+    /** Suppression définitive d'un brouillon uniquement. Les certificats déjà en circuit s'annulent via le statut ANNULE. */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAuthority('mise_en_place.submit')")
+    public void deleteBrouillon(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
+        service.deleteBrouillon(id, user);
+    }
+
     @PatchMapping("/{id}/statut")
-    @PreAuthorize("hasAnyAuthority('mise_en_place.submit', 'mise_en_place.dgtcp.open_credit', 'mise_en_place.dgtcp.allocate', 'mise_en_place.dgtcp.certificate.generate', 'mise_en_place.dgtcp.certificate.send', 'mise_en_place.president.validate', 'mise_en_place.president.document.generate', 'mise_en_place.president.reject', 'mise_en_place.annuler')")
+    @PreAuthorize("hasAnyAuthority('mise_en_place.submit', 'mise_en_place.dgi.queue.view', 'mise_en_place.dgd.queue.view', 'mise_en_place.dgtcp.queue.view', 'mise_en_place.dgtcp.open_credit', 'mise_en_place.dgtcp.allocate', 'mise_en_place.dgtcp.certificate.generate', 'mise_en_place.dgtcp.certificate.send', 'mise_en_place.president.validate', 'mise_en_place.president.document.generate', 'mise_en_place.president.reject', 'mise_en_place.annuler')")
     public CertificatCreditDto updateStatut(
             @PathVariable Long id,
             @RequestParam StatutCertificat statut,

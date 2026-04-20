@@ -64,6 +64,33 @@ public class UtilisationCreditController {
         return service.create(request, user);
     }
 
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('utilisation.douane.submit', 'utilisation.interieur.submit')")
+    public UtilisationCreditDto update(
+            @PathVariable Long id,
+            @Valid @RequestBody CreateUtilisationCreditRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.update(id, request, user);
+    }
+
+    @PostMapping("/{id}/soumettre")
+    @PreAuthorize("hasAnyAuthority('utilisation.douane.submit', 'utilisation.interieur.submit')")
+    public UtilisationCreditDto soumettreBrouillon(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.soumettreBrouillon(id, user);
+    }
+
+    /** Suppression définitive d'un brouillon uniquement. */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAnyAuthority('utilisation.douane.submit', 'utilisation.interieur.submit')")
+    public void deleteBrouillon(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
+        service.deleteBrouillon(id, user);
+    }
+
     @PatchMapping("/{id}/statut")
     @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.verify', 'utilisation.douane.dgd.quittance.visa', 'utilisation.douane.dgd.reject', 'utilisation.douane.dgtcp.impute', 'utilisation.douane.dgtcp.solde.update', 'utilisation.interieur.dgtcp.verify', 'utilisation.interieur.dgtcp.validate', 'utilisation.interieur.dgtcp.solde.update', 'utilisation.interieur.dgtcp.reject')")
     public UtilisationCreditDto updateStatut(

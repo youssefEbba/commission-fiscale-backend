@@ -17,6 +17,7 @@ import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.TransfertCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.CreateTransfertCreditRequest;
 import mr.gov.finances.sgci.web.dto.TransfertCreditDto;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,7 @@ public class TransfertCreditService {
     private final DocumentRequirementValidator requirementValidator;
     private final AuditService auditService;
     private final NotificationService notificationService;
+    private final EffectiveIdentityService effectiveIdentityService;
 
     @Transactional(readOnly = true)
     public List<TransfertCreditDto> findAll(AuthenticatedUser user) {
@@ -49,10 +51,11 @@ public class TransfertCreditService {
         if (user.getRole() == Role.ENTREPRISE) {
             mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
                     .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-            if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+            Long entId = effectiveIdentityService.resolveEntrepriseId(user, u);
+            if (entId == null) {
                 return List.of();
             }
-            return repository.findByCertificatCreditEntrepriseId(u.getEntreprise().getId())
+            return repository.findByCertificatCreditEntrepriseId(entId)
                     .stream().map(this::toDto).collect(Collectors.toList());
         }
         return repository.findAll().stream().map(this::toDto).collect(Collectors.toList());
@@ -65,7 +68,7 @@ public class TransfertCreditService {
         if (user != null && user.getRole() == Role.ENTREPRISE) {
             mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
                     .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-            Long entId = u.getEntreprise() != null ? u.getEntreprise().getId() : null;
+            Long entId = effectiveIdentityService.resolveEntrepriseId(user, u);
             Long sourceEntId = t.getCertificatCredit() != null && t.getCertificatCredit().getEntreprise() != null
                     ? t.getCertificatCredit().getEntreprise().getId()
                     : null;
@@ -98,7 +101,7 @@ public class TransfertCreditService {
         }
         mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        Long entId = u.getEntreprise() != null ? u.getEntreprise().getId() : null;
+        Long entId = effectiveIdentityService.resolveEntrepriseId(user, u);
         Long titId = cert.getEntreprise() != null ? cert.getEntreprise().getId() : null;
         if (entId == null || titId == null || !entId.equals(titId)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
@@ -125,11 +128,12 @@ public class TransfertCreditService {
 
         mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+        Long myEnt = effectiveIdentityService.resolveEntrepriseId(user, u);
+        if (myEnt == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
         }
         if (source.getEntreprise() == null || source.getEntreprise().getId() == null
-                || !source.getEntreprise().getId().equals(u.getEntreprise().getId())) {
+                || !source.getEntreprise().getId().equals(myEnt)) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: certificat source ne correspond pas à l'entreprise");
         }
 
@@ -240,7 +244,7 @@ public class TransfertCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Montant de transfert invalide");
         }
 
-        // Transfert interne: solde Douane -> solde Intérieur (TVA)
+        // Transfert : solde « cordon douanier » (crédit extérieur) -> solde TVA intérieure (même enveloppe globale, autre bucket).
         BigDecimal soldeDouane = source.getSoldeCordon() != null ? source.getSoldeCordon() : BigDecimal.ZERO;
         if (soldeDouane.compareTo(montant) < 0) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,

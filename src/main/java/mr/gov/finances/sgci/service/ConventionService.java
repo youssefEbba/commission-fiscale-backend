@@ -13,7 +13,9 @@ import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutConvention;
 import mr.gov.finances.sgci.domain.enums.TypeDocumentConvention;
+import mr.gov.finances.sgci.domain.entity.Bailleur;
 import mr.gov.finances.sgci.repository.AutoriteContractanteRepository;
+import mr.gov.finances.sgci.repository.BailleurRepository;
 import mr.gov.finances.sgci.repository.ConventionRepository;
 import mr.gov.finances.sgci.repository.DocumentConventionRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
@@ -39,6 +41,7 @@ import java.util.stream.Stream;
 public class ConventionService {
 
     private final ConventionRepository conventionRepository;
+    private final BailleurRepository bailleurRepository;
     private final AutoriteContractanteRepository autoriteRepository;
     private final UtilisateurRepository utilisateurRepository;
     private final DocumentConventionRepository documentConventionRepository;
@@ -106,6 +109,19 @@ public class ConventionService {
         return conventionRepository.findByStatut(statut);
     }
 
+    @Transactional(readOnly = true)
+    public List<ConventionDto> findByBailleurId(Long bailleurId, AuthenticatedUser user) {
+        if (bailleurId == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "bailleurId obligatoire");
+        }
+        bailleurRepository.findById(bailleurId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Bailleur non trouvé: " + bailleurId));
+        return conventionRepository.findByBailleurId(bailleurId).stream()
+                .filter(c -> canAccessConvention(c.getId(), user))
+                .map(this::toDto)
+                .collect(Collectors.toList());
+    }
+
     private boolean canAccessConvention(Long conventionId, AuthenticatedUser user) {
         if (conventionId == null) {
             return false;
@@ -135,12 +151,12 @@ public class ConventionService {
         AutoriteContractante creeParAc = creator != null && creator.getAutoriteContractante() != null
                 ? creator.getAutoriteContractante()
                 : autorite;
+        Bailleur bailleur = resolveBailleur(request.getBailleurId());
         Convention convention = Convention.builder()
                 .reference(request.getReference())
                 .intitule(request.getIntitule())
                 .projectReference(request.getProjectReference())
-                .bailleur(request.getBailleur())
-                .bailleurDetails(request.getBailleurDetails())
+                .bailleur(bailleur)
                 .dateSignature(request.getDateSignature())
                 .dateFin(request.getDateFin())
                 .montantDevise(request.getMontantDevise())
@@ -245,6 +261,14 @@ public class ConventionService {
         return result;
     }
 
+    private Bailleur resolveBailleur(Long bailleurId) {
+        if (bailleurId == null) {
+            return null;
+        }
+        return bailleurRepository.findById(bailleurId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Bailleur non trouvé: " + bailleurId));
+    }
+
     private AutoriteContractante resolveAutorite(Long autoriteContractanteId, Long userId) {
         if (autoriteContractanteId != null) {
             return autoriteRepository.findById(autoriteContractanteId)
@@ -267,8 +291,9 @@ public class ConventionService {
                 .reference(convention.getReference())
                 .projectReference(convention.getProjectReference())
                 .intitule(convention.getIntitule())
-                .bailleur(convention.getBailleur())
-                .bailleurDetails(convention.getBailleurDetails())
+                .bailleurId(convention.getBailleur() != null ? convention.getBailleur().getId() : null)
+                .bailleurNom(convention.getBailleur() != null ? convention.getBailleur().getNom() : null)
+                .bailleurDetails(convention.getBailleur() != null ? convention.getBailleur().getDetails() : null)
                 .dateSignature(convention.getDateSignature())
                 .dateFin(convention.getDateFin())
                 .montantDevise(convention.getMontantDevise())

@@ -28,9 +28,15 @@ public class CertificatCredit {
     private Instant dateEmission;
     private Instant dateValidite;
 
+    /**
+     * Enveloppe « crédit cordon / extérieur » (récap. fiscal : ligne e = b + d, imputations douane).
+     */
     @Column(precision = 19, scale = 4)
     private BigDecimal montantCordon;
 
+    /**
+     * Enveloppe « crédit TVA intérieure » (récap. fiscal : ligne h = g − d, décomptes / achats locaux).
+     */
     @Column(precision = 19, scale = 4)
     private BigDecimal montantTVAInterieure;
 
@@ -39,6 +45,37 @@ public class CertificatCredit {
 
     @Column(precision = 19, scale = 4)
     private BigDecimal soldeTVA;
+
+    /** Récap. : (a) valeur en douane des fournitures importées. */
+    @Column(precision = 19, scale = 4)
+    private BigDecimal valeurDouaneFournitures;
+
+    /** Récap. : (b) droits et taxes douaniers (hors ventilation TVA import). */
+    @Column(precision = 19, scale = 4)
+    private BigDecimal droitsEtTaxesDouaneHorsTva;
+
+    /**
+     * Récap. : (d) TVA à l’import — montant **accordé initialement** (figé à la saisie DGTCP / création).
+     * Sert aux contrôles de cohérence avec (b), (g) et aux champs dérivés en lecture.
+     */
+    @Column(precision = 19, scale = 4)
+    private BigDecimal tvaImportationDouaneAccordee;
+
+    /**
+     * Restant de la ligne (d) après chaque liquidation douanière : la TVA d’importation réelle imputée
+     * est retranchée de ce solde lors de la liquidation douanière (endpoint dédié côté service utilisations).
+     * À l’ouverture / après saisie des montants, égal à {@link #tvaImportationDouaneAccordee}.
+     */
+    @Column(precision = 19, scale = 4)
+    private BigDecimal tvaImportationDouane;
+
+    /** Récap. : (f) montant du marché / offre HT (travaux). */
+    @Column(precision = 19, scale = 4)
+    private BigDecimal montantMarcheHt;
+
+    /** Récap. : (g) TVA collectée sur travaux (ex. 16 % × f). */
+    @Column(precision = 19, scale = 4)
+    private BigDecimal tvaCollecteeTravaux;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

@@ -28,4 +28,7 @@ public final class ApiErrorCode {
 
     /** Marché déjà lié à une demande de correction non annulée. */
     public static final String MARCHE_DEMANDE_ACTIVE = "MARCHE_DEMANDE_ACTIVE";
+
+    /** Modification interdite (workflow déjà engagé ou statut incompatible). */
+    public static final String DEMANDE_NON_EDITABLE = "DEMANDE_NON_EDITABLE";
 }

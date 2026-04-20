@@ -25,6 +25,9 @@ public interface DemandeCorrectionRepository extends JpaRepository<DemandeCorrec
 
     List<DemandeCorrection> findByAutoriteContractanteIdOrderByDateDepotDescIdDesc(Long autoriteContractanteId);
 
+    List<DemandeCorrection> findByAutoriteContractanteIdAndStatutOrderByDateDepotDescIdDesc(
+            Long autoriteContractanteId, StatutDemande statut);
+
     List<DemandeCorrection> findByEntrepriseIdOrderByDateDepotDescIdDesc(Long entrepriseId);
 
     List<DemandeCorrection> findAllByOrderByDateDepotDescIdDesc();

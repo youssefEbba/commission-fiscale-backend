@@ -15,6 +15,8 @@ public interface ConventionRepository extends JpaRepository<Convention, Long> {
     Optional<Convention> findByReference(String reference);
     List<Convention> findByStatut(StatutConvention statut);
 
+    List<Convention> findByBailleurId(Long bailleurId);
+
     List<Convention> findAllByAutoriteContractanteId(Long autoriteContractanteId);
 
     List<Convention> findAllByAutoriteContractanteIdAndStatut(Long autoriteContractanteId, StatutConvention statut);
@@ -30,6 +32,7 @@ public interface ConventionRepository extends JpaRepository<Convention, Long> {
 
     @Query("SELECT c FROM Convention c WHERE LOWER(c.reference) LIKE LOWER(CONCAT('%', :q, '%')) "
             + "OR LOWER(c.intitule) LIKE LOWER(CONCAT('%', :q, '%')) "
-            + "OR (c.projectReference IS NOT NULL AND LOWER(c.projectReference) LIKE LOWER(CONCAT('%', :q, '%')))")
+            + "OR (c.projectReference IS NOT NULL AND LOWER(c.projectReference) LIKE LOWER(CONCAT('%', :q, '%'))) "
+            + "OR (c.bailleur IS NOT NULL AND LOWER(c.bailleur.nom) LIKE LOWER(CONCAT('%', :q, '%')))")
     List<Convention> searchByReferenceIntituleOrProject(@Param("q") String q);
 }

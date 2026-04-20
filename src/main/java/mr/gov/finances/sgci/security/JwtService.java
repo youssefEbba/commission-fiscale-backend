@@ -20,6 +20,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class JwtService {
 
+    private static final String CLAIM_IMPERSONATING = "impersonating";
+    private static final String CLAIM_ACTING_ENTREPRISE_ID = "actingEntrepriseId";
+    private static final String CLAIM_ACTING_AC_ID = "actingAutoriteContractanteId";
+
     private final JwtProperties jwtProperties;
 
     private SecretKey getSigningKey() {
@@ -28,17 +32,33 @@ public class JwtService {
     }
 
     public String generateToken(String username, Role role, Long userId, Collection<String> permissions) {
+        return generateToken(username, role, userId, permissions, false, null, null, jwtProperties.getExpirationMs());
+    }
+
+    /**
+     * @param expirationMs durée de validité du jeton (ex. impersonation : {@link JwtProperties#getRelaisExpirationMs()}).
+     */
+    public String generateToken(String username, Role role, Long userId, Collection<String> permissions,
+                              boolean impersonating, Long actingEntrepriseId, Long actingAutoriteContractanteId,
+                              long expirationMs) {
         Date now = new Date();
-        Date expiry = new Date(now.getTime() + jwtProperties.getExpirationMs());
-        return Jwts.builder()
+        Date expiry = new Date(now.getTime() + expirationMs);
+        var builder = Jwts.builder()
                 .subject(username)
                 .claim("role", role.name())
                 .claim("userId", userId)
                 .claim("permissions", permissions != null ? List.copyOf(permissions) : List.of())
+                .claim(CLAIM_IMPERSONATING, impersonating)
                 .issuedAt(now)
                 .expiration(expiry)
-                .signWith(getSigningKey())
-                .compact();
+                .signWith(getSigningKey());
+        if (actingEntrepriseId != null) {
+            builder.claim(CLAIM_ACTING_ENTREPRISE_ID, actingEntrepriseId);
+        }
+        if (actingAutoriteContractanteId != null) {
+            builder.claim(CLAIM_ACTING_AC_ID, actingAutoriteContractanteId);
+        }
+        return builder.compact();
     }
 
     public String extractUsername(String token) {
@@ -53,6 +73,21 @@ public class JwtService {
     public Role extractRole(String token) {
         String role = getClaims(token).get("role", String.class);
         return role != null ? Role.valueOf(role) : null;
+    }
+
+    public boolean extractImpersonating(String token) {
+        Boolean v = getClaims(token).get(CLAIM_IMPERSONATING, Boolean.class);
+        return Boolean.TRUE.equals(v);
+    }
+
+    public Long extractActingEntrepriseId(String token) {
+        Number n = getClaims(token).get(CLAIM_ACTING_ENTREPRISE_ID, Number.class);
+        return n != null ? n.longValue() : null;
+    }
+
+    public Long extractActingAutoriteContractanteId(String token) {
+        Number n = getClaims(token).get(CLAIM_ACTING_AC_ID, Number.class);
+        return n != null ? n.longValue() : null;
     }
 
     @SuppressWarnings("unchecked")

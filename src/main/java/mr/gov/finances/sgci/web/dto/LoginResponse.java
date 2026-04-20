@@ -23,4 +23,8 @@ public class LoginResponse {
     private Long autoriteContractanteId;
     private Long entrepriseId;
     private List<String> permissions;
+    /** Présent si le JWT est issu d’une impersonation commission relais. */
+    private Boolean impersonating;
+    private Long actingEntrepriseId;
+    private Long actingAutoriteContractanteId;
 }

@@ -93,7 +93,8 @@ public class DemandeCorrection {
     @OneToOne(mappedBy = "demandeCorrection", cascade = CascadeType.ALL, orphanRemoval = true)
     private FeuilleEvaluation feuilleEvaluation;
 
-    @OneToOne(mappedBy = "demandeCorrection", cascade = CascadeType.ALL, orphanRemoval = true)
+    /** Inverse côté {@link Marche#demandeCorrection} — pas d'orphanRemoval ici sinon annulation = suppression du marché. */
+    @OneToOne(mappedBy = "demandeCorrection")
     private Marche marche;
 
     @OneToMany(mappedBy = "demandeCorrection", cascade = CascadeType.ALL, orphanRemoval = true)

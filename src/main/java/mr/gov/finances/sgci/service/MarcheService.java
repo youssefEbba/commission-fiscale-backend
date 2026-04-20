@@ -74,11 +74,10 @@ public class MarcheService {
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
-        if (u.getAutoriteContractante() == null) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
-        }
-
         if (u.getRole() == Role.AUTORITE_CONTRACTANTE) {
+            if (u.getAutoriteContractante() == null) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
+            }
             return marcheRepository.findAllByConventionAutoriteContractanteId(u.getAutoriteContractante().getId())
                     .stream()
                     .map(this::toDto)
@@ -86,6 +85,9 @@ public class MarcheService {
         }
 
         if (u.getRole() == Role.AUTORITE_UPM || u.getRole() == Role.AUTORITE_UEP) {
+            if (u.getAutoriteContractante() == null) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
+            }
             return marcheRepository.findAllByConventionAutoriteContractanteIdAndDelegueId(
                             u.getAutoriteContractante().getId(), u.getId())
                     .stream()

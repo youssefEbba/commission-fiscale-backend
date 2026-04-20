@@ -40,8 +40,20 @@ public class DemandeCorrectionDto {
     private Long entrepriseId;
     private String entrepriseRaisonSociale;
     private Long conventionId;
+    /**
+     * Id du marché lié à la demande (attribution / adjudication), comme {@code entrepriseId} / {@code conventionId}.
+     * Redondant avec {@link #marche}{@code .id} lorsque le marché est chargé — pratique pour les wizards sans lecture de l’objet imbriqué.
+     */
+    private Long marcheId;
     /** Marché détaché après annulation — id conservé pour la traçabilité. */
     private Long marcheIdTrace;
+
+    /**
+     * Si {@code statut == ANNULEE} : {@code true} si la réactivation (→ RECUE) est possible au regard du marché
+     * tracé ({@link #marcheIdTrace}) — libre ou déjà lié à cette demande ; {@code false} si un autre dossier
+     * occupe ce marché. {@code null} si non applicable (autre statut).
+     */
+    private Boolean marcheReactivable;
     private ModeleFiscalDto modeleFiscal;
     private DqeDto dqe;
     private MarcheDto marche;

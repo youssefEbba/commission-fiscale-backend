@@ -22,8 +22,8 @@ public class CreateConventionRequest {
     @NotBlank(message = "L'intitulé est obligatoire")
     private String intitule;
 
-    private String bailleur;
-    private String bailleurDetails;
+    /** Référence vers un bailleur enregistré ({@code GET /api/bailleurs}). Optionnel. */
+    private Long bailleurId;
     private LocalDate dateSignature;
     private LocalDate dateFin;
     private BigDecimal montantDevise;

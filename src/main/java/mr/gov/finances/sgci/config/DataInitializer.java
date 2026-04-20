@@ -3,6 +3,8 @@ package mr.gov.finances.sgci.config;
 
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
+import mr.gov.finances.sgci.domain.entity.Bailleur;
+import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.Convention;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.Dqe;
@@ -16,11 +18,14 @@ import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutMarche;
+import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutConvention;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.domain.enums.TypeFichierAutorise;
 import mr.gov.finances.sgci.repository.AutoriteContractanteRepository;
+import mr.gov.finances.sgci.repository.BailleurRepository;
+import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.ConventionRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.DocumentRequirementRepository;
@@ -50,7 +55,9 @@ public class DataInitializer implements CommandLineRunner {
     private final UtilisateurRepository utilisateurRepository;
     private final AutoriteContractanteRepository autoriteContractanteRepository;
     private final ConventionRepository conventionRepository;
+    private final BailleurRepository bailleurRepository;
     private final DemandeCorrectionRepository demandeCorrectionRepository;
+    private final CertificatCreditRepository certificatCreditRepository;
     private final EntrepriseRepository entrepriseRepository;
     private final MarcheRepository marcheRepository;
     private final DocumentRequirementRepository documentRequirementRepository;
@@ -79,6 +86,9 @@ public class DataInitializer implements CommandLineRunner {
         seedDefaultUsers();
         if (Boolean.TRUE.equals(environment.getProperty("app.seed.demande-correction.enabled", Boolean.class, Boolean.TRUE))) {
             seedDemandeCorrectionAdopteeDemo();
+        }
+        if (Boolean.TRUE.equals(environment.getProperty("app.seed.certificat-ouvert.enabled", Boolean.class, Boolean.FALSE))) {
+            seedCertificatOuvertDemo();
         }
     }
 
@@ -290,6 +300,63 @@ public class DataInitializer implements CommandLineRunner {
         demandeCorrectionRepository.save(demande);
     }
 
+    private static final String DEMO_CERTIFICAT_OUVERT_NUMERO = "CI-DEMO-OUVERT";
+
+    /**
+     * Certificat de crédit en statut {@link StatutCertificat#OUVERT} lié à la demande de démo {@link #DEMO_CORRECTION_NUMERO}.
+     * Idempotent : ne crée rien si le numéro existe déjà ou si un certificat non annulé existe déjà pour cette demande.
+     * <p>
+     * Les jeux complets certificat + utilisations pour les tests d’intégration restent dans {@link TestWorkflowDataSeed} (profil {@code test}).
+     */
+    private void seedCertificatOuvertDemo() {
+        if (certificatCreditRepository.existsByNumero(DEMO_CERTIFICAT_OUVERT_NUMERO)) {
+            return;
+        }
+        DemandeCorrection demande = demandeCorrectionRepository.findByNumero(DEMO_CORRECTION_NUMERO).orElse(null);
+        if (demande == null || demande.getId() == null) {
+            return;
+        }
+        if (certificatCreditRepository.countByDemandeCorrectionIdAndStatutNot(demande.getId(), StatutCertificat.ANNULE) > 0) {
+            return;
+        }
+        Entreprise entreprise = entrepriseRepository.findByNif("NIF_DEFAULT").orElse(null);
+        if (entreprise == null) {
+            return;
+        }
+
+        /*
+         * Récapitulatif fiscal complet (lignes a–g) aligné sur docs/CERTIFICAT_RECAP_REFERENTIEL_METIER.md :
+         * e = b + d (crédit extérieur), h = g − d (crédit intérieur), total e + h = 4_242_105.
+         */
+        BigDecimal valeurDouaneFournitures = BigDecimal.valueOf(9_746_681L);     // (a)
+        BigDecimal droitsEtTaxesDouaneHorsTva = BigDecimal.valueOf(2_241_737L);  // (b)
+        BigDecimal tvaImportationDouane = BigDecimal.valueOf(1_918_147L);       // (d)
+        BigDecimal montantMarcheHt = BigDecimal.valueOf(12_502_300L);            // (f)
+        BigDecimal tvaCollecteeTravaux = BigDecimal.valueOf(2_000_368L);         // (g)
+        BigDecimal montantCordon = droitsEtTaxesDouaneHorsTva.add(tvaImportationDouane);           // (e)
+        BigDecimal montantTVAInterieure = tvaCollecteeTravaux.subtract(tvaImportationDouane);     // (h)
+
+        CertificatCredit certificat = CertificatCredit.builder()
+                .numero(DEMO_CERTIFICAT_OUVERT_NUMERO)
+                .dateEmission(Instant.now())
+                .dateValidite(Instant.now().plusSeconds(365L * 24 * 3600))
+                .valeurDouaneFournitures(valeurDouaneFournitures)
+                .droitsEtTaxesDouaneHorsTva(droitsEtTaxesDouaneHorsTva)
+                .tvaImportationDouaneAccordee(tvaImportationDouane)
+                .tvaImportationDouane(tvaImportationDouane)
+                .montantMarcheHt(montantMarcheHt)
+                .tvaCollecteeTravaux(tvaCollecteeTravaux)
+                .montantCordon(montantCordon)
+                .montantTVAInterieure(montantTVAInterieure)
+                .soldeCordon(montantCordon)
+                .soldeTVA(montantTVAInterieure)
+                .statut(StatutCertificat.OUVERT)
+                .entreprise(entreprise)
+                .demandeCorrection(demande)
+                .build();
+        certificatCreditRepository.save(certificat);
+    }
+
     private void seedDefaultUsers() {
         AutoriteContractante autoriteContractante = createAutoriteContractanteIfMissing(
                 "Ministère des Finances – Direction du Crédit d'impôt (autorité contractante pilote)",
@@ -322,6 +389,7 @@ public class DataInitializer implements CommandLineRunner {
         createUserIfMissing("ac", Role.AUTORITE_CONTRACTANTE, "Autorité Contractante", autoriteContractante);
         createUserIfMissing("entreprise", Role.ENTREPRISE, "Entreprise", entreprise);
         createUserIfMissing("test", Role.ENTREPRISE, "Entreprise test", entreprise2);
+        createUserIfMissing("commission_relais", Role.COMMISSION_RELAIS, "Support Commission (relais)");
     }
 
     private void createUserIfMissing(String username, Role role, String nomComplet) {
@@ -398,9 +466,10 @@ public class DataInitializer implements CommandLineRunner {
                         .build()));
     }
 
-    private void createConventionIfMissing(String reference, String intitule, String bailleur,
+    private void createConventionIfMissing(String reference, String intitule, String bailleurNom,
                                           AutoriteContractante autoriteContractante) {
         if (conventionRepository.findByReference(reference).isEmpty()) {
+            Bailleur bailleur = createBailleurIfMissing(bailleurNom);
             conventionRepository.save(Convention.builder()
                     .reference(reference)
                     .intitule(intitule)
@@ -409,6 +478,13 @@ public class DataInitializer implements CommandLineRunner {
                     .statut(StatutConvention.EN_ATTENTE)
                     .build());
         }
+    }
+
+    private Bailleur createBailleurIfMissing(String nom) {
+        return bailleurRepository.findByNom(nom)
+                .orElseGet(() -> bailleurRepository.save(Bailleur.builder()
+                        .nom(nom)
+                        .build()));
     }
 
     private void seedPermissions() {
@@ -591,6 +667,7 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("entreprise.update", "Modifier une entreprise");
         createPermission("entreprise.delete", "Supprimer une entreprise");
         createPermission("marche.manage", "Gérer les marchés");
+        createPermission("marche.view", "Consulter les marchés (lecture)");
 
         createPermission("bailleur.list", "Consulter la liste des bailleurs");
         createPermission("bailleur.create", "Créer un bailleur");
@@ -604,6 +681,12 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("delegue.disable", "Activer/désactiver un délégué");
 
         createPermission("reporting.view", "Consulter les tableaux de bord et statistiques agrégées");
+
+        createPermission("commission.relais.list.entreprises", "Commission relais : lister les entreprises (choix d’impersonation)");
+        createPermission("commission.relais.list.autorites", "Commission relais : lister les autorités contractantes");
+        createPermission("commission.relais.impersonate.entreprise", "Commission relais : impersonation entreprise");
+        createPermission("commission.relais.impersonate.autorite", "Commission relais : impersonation autorité contractante");
+        createPermission("commission.relais.release", "Commission relais : quitter l’impersonation");
     }
 
     private void seedRolePermissions() {
@@ -758,6 +841,8 @@ public class DataInitializer implements CommandLineRunner {
 
         assign(Role.DGD,
                 "document.requirements.view",
+                "convention.view.all",
+                "marche.view",
                 "correction.dgd.queue.view",
                 "correction.offer.view",
                 "correction.offer.upload",
@@ -782,6 +867,7 @@ public class DataInitializer implements CommandLineRunner {
 
         assign(Role.DGI,
                 "document.requirements.view",
+                "marche.view",
                 "correction.dgi.queue.view",
                 "correction.dgi.visa",
                 "correction.dgi.reject",
@@ -825,6 +911,7 @@ public class DataInitializer implements CommandLineRunner {
                 "convention.view.all",
                 "convention.validate",
                 "convention.reject",
+                "marche.view",
                 "projet.validate",
                 "projet.reject",
                 "projet.view",
@@ -838,6 +925,8 @@ public class DataInitializer implements CommandLineRunner {
         assignAllPermissions(Role.PRESIDENT);
 
         assign(Role.DGTCP,
+                "convention.view.all",
+                "marche.view",
                 "correction.dgtcp.queue.view",
                 "correction.dgtcp.review",
                 "correction.dgtcp.finalize",
@@ -881,6 +970,15 @@ public class DataInitializer implements CommandLineRunner {
                 "reporting.view"
         );
 
+        assign(Role.COMMISSION_RELAIS,
+                "commission.relais.list.entreprises",
+                "commission.relais.list.autorites",
+                "commission.relais.impersonate.entreprise",
+                "commission.relais.impersonate.autorite",
+                "commission.relais.release",
+                "document.requirements.view"
+        );
+
     assign(Role.ADMIN_SI,
         "document.requirements.view",
         "mise_en_place.annuler",
@@ -888,6 +986,7 @@ public class DataInitializer implements CommandLineRunner {
             "projet.validate",
             "projet.reject",
             "convention.view.all",
+            "marche.view",
             "convention.validate",
             "convention.reject",
             "correction.view.audit",

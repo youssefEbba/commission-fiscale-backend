@@ -20,7 +20,9 @@ public class ConventionDto {
     private String reference;
     private String projectReference;
     private String intitule;
-    private String bailleur;
+    private Long bailleurId;
+    private String bailleurNom;
+    /** Copie lecture seule de {@code Bailleur.details} (aucune colonne dupliquée sur la convention). */
     private String bailleurDetails;
     private LocalDate dateSignature;
     private LocalDate dateFin;

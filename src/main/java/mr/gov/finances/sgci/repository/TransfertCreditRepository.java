@@ -18,4 +18,6 @@ public interface TransfertCreditRepository extends JpaRepository<TransfertCredit
     List<TransfertCredit> findByCertificatCreditEntrepriseId(Long entrepriseId);
 
     List<TransfertCredit> findByStatut(StatutTransfert statut);
+
+    boolean existsByCertificatCreditIdAndStatut(Long certificatCreditId, StatutTransfert statut);
 }

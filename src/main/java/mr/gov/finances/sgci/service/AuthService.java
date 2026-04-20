@@ -64,6 +64,7 @@ public class AuthService {
                 .autoriteContractanteId(u.getAutoriteContractante() != null ? u.getAutoriteContractante().getId() : null)
                 .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null)
                 .permissions(permissionService.findPermissionCodesByRole(u.getRole()).stream().toList())
+                .impersonating(false)
                 .build();
     }
 
@@ -137,6 +138,7 @@ public class AuthService {
                 .autoriteContractanteId(u.getAutoriteContractante() != null ? u.getAutoriteContractante().getId() : null)
                 .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null)
                 .permissions(permissionService.findPermissionCodesByRole(u.getRole()).stream().toList())
+                .impersonating(false)
                 .build();
     }
 

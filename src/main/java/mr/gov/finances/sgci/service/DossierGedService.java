@@ -9,6 +9,7 @@ import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.*;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.DocumentDto;
 import mr.gov.finances.sgci.web.dto.DossierEtapeGed;
 import mr.gov.finances.sgci.web.dto.DossierGedDto;
@@ -49,9 +50,33 @@ public class DossierGedService {
     private final ReferentielProjetRepository referentielProjetRepository;
 
     private final UtilisateurRepository utilisateurRepository;
+    private final EffectiveIdentityService effectiveIdentityService;
 
     private static String generateReference() {
         return "DOSS-" + Instant.now().getEpochSecond() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    }
+
+    /**
+     * Supprime le dossier GED lié à une demande (ex. suppression d'un brouillon), sans toucher à la demande elle-même avant appelant.
+     */
+    @Transactional
+    public void deleteDossierForDemandeCorrectionIfPresent(Long demandeCorrectionId) {
+        if (demandeCorrectionId == null) {
+            return;
+        }
+        dossierRepository.findByDemandeCorrectionId(demandeCorrectionId).ifPresent(dossierRepository::delete);
+    }
+
+    /** Détache un certificat du dossier GED (avant suppression du certificat brouillon). */
+    @Transactional
+    public void clearCertificatFromDossierIfPresent(Long certificatCreditId) {
+        if (certificatCreditId == null) {
+            return;
+        }
+        dossierRepository.findByCertificatCreditId(certificatCreditId).ifPresent(d -> {
+            d.setCertificatCredit(null);
+            dossierRepository.save(d);
+        });
     }
 
     @Transactional
@@ -113,13 +138,14 @@ public class DossierGedService {
         }
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        Role role = u.getRole();
+        Role role = user.getRole();
 
         if (role == Role.AUTORITE_CONTRACTANTE) {
-            if (u.getAutoriteContractante() == null) {
+            Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, u);
+            if (acId == null) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
             }
-            return dossierRepository.findAllByAutoriteContractanteId(u.getAutoriteContractante().getId());
+            return dossierRepository.findAllByAutoriteContractanteId(acId);
         }
 
         if (role == Role.AUTORITE_UPM || role == Role.AUTORITE_UEP) {
@@ -127,10 +153,11 @@ public class DossierGedService {
         }
 
         if (role == Role.ENTREPRISE) {
-            if (u.getEntreprise() == null) {
+            Long entId = effectiveIdentityService.resolveEntrepriseId(user, u);
+            if (entId == null) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
             }
-            return dossierRepository.findByEntrepriseId(u.getEntreprise().getId());
+            return dossierRepository.findByEntrepriseId(entId);
         }
 
         return dossierRepository.findAll();
@@ -144,12 +171,12 @@ public class DossierGedService {
             return true;
         }
         Utilisateur u = utilisateurRepository.findById(user.getUserId()).orElse(null);
-        if (u == null || u.getRole() == null) {
+        if (u == null || user.getRole() == null) {
             return false;
         }
 
-        if (u.getRole() == Role.ENTREPRISE) {
-            Long userEntrepriseId = u.getEntreprise() != null ? u.getEntreprise().getId() : null;
+        if (user.getRole() == Role.ENTREPRISE) {
+            Long userEntrepriseId = effectiveIdentityService.resolveEntrepriseId(user, u);
             Long dossierEntrepriseId = dossier.getEntreprise() != null ? dossier.getEntreprise().getId() : null;
             return userEntrepriseId != null && userEntrepriseId.equals(dossierEntrepriseId);
         }

@@ -10,6 +10,7 @@ import mr.gov.finances.sgci.service.DocumentService;
 import mr.gov.finances.sgci.service.ReclamationDemandeCorrectionService;
 import mr.gov.finances.sgci.web.dto.ReclamationDemandeCorrectionDto;
 import mr.gov.finances.sgci.web.dto.CreateDemandeCorrectionRequest;
+import mr.gov.finances.sgci.web.dto.UpdateDemandeCorrectionRequest;
 import mr.gov.finances.sgci.web.dto.DemandeCorrectionDto;
 import mr.gov.finances.sgci.web.dto.DocumentDto;
 
@@ -47,8 +48,11 @@ public class DemandeCorrectionController {
 
     @GetMapping("/by-autorite/{autoriteId}")
     @PreAuthorize("hasAnyAuthority('demande_correction.list', 'correction.dgd.queue.view', 'correction.dgb.queue.view', 'correction.visa.history.view', 'correction.view.audit')")
-    public List<DemandeCorrectionDto> getByAutorite(@PathVariable Long autoriteId) {
-        return service.findByAutoriteContractante(autoriteId);
+    public List<DemandeCorrectionDto> getByAutorite(
+            @PathVariable Long autoriteId,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.findByAutoriteContractante(autoriteId, user);
     }
 
     @GetMapping("/by-entreprise/{entrepriseId}")
@@ -68,8 +72,11 @@ public class DemandeCorrectionController {
 
     @GetMapping("/by-statut")
     @PreAuthorize("hasAnyAuthority('demande_correction.list', 'correction.dgd.queue.view', 'correction.dgtcp.queue.view', 'correction.dgi.queue.view', 'correction.dgb.queue.view', 'correction.president.queue.view', 'correction.view.audit', 'correction.entreprise.queue.view')")
-    public List<DemandeCorrectionDto> getByStatut(@RequestParam StatutDemande statut) {
-        return service.findByStatut(statut);
+    public List<DemandeCorrectionDto> getByStatut(
+            @RequestParam StatutDemande statut,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.findByStatut(statut, user);
     }
 
     @PostMapping
@@ -80,6 +87,33 @@ public class DemandeCorrectionController {
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return service.create(request, user);
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('correction.submit')")
+    public DemandeCorrectionDto update(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateDemandeCorrectionRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.update(id, request, user);
+    }
+
+    @PostMapping("/{id}/soumettre")
+    @PreAuthorize("hasAuthority('correction.submit')")
+    public DemandeCorrectionDto soumettreBrouillon(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.soumettreBrouillon(id, user);
+    }
+
+    /** Suppression définitive d'un brouillon uniquement. Les demandes déjà soumises s'annulent via le statut ANNULEE. */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAuthority('correction.submit')")
+    public void deleteBrouillon(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
+        service.deleteBrouillon(id, user);
     }
 
     @PatchMapping("/{id}/statut")

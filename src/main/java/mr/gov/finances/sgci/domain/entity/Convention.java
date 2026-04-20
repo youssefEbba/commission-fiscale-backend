@@ -33,10 +33,10 @@ public class Convention {
     @Column(nullable = false)
     private String intitule;
 
-    private String bailleur;
-
-    @Column(length = 1000)
-    private String bailleurDetails;
+    /** Un bailleur référencé ; plusieurs conventions peuvent partager le même bailleur. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bailleur_id")
+    private Bailleur bailleur;
 
     private LocalDate dateSignature;
     private LocalDate dateFin;

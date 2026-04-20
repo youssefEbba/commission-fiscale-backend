@@ -19,6 +19,7 @@ import java.util.Set;
 public class DemandeCorrectionWorkflow {
 
     private static final Map<StatutDemande, Set<StatutDemande>> TRANSITIONS = Map.ofEntries(
+            Map.entry(BROUILLON, EnumSet.of(RECUE, ANNULEE)),
             Map.entry(RECUE, EnumSet.of(RECEVABLE, INCOMPLETE, REJETEE, EN_EVALUATION, ANNULEE)),
             Map.entry(INCOMPLETE, EnumSet.of(RECEVABLE, REJETEE, ANNULEE)),
             Map.entry(RECEVABLE, EnumSet.of(EN_EVALUATION)),

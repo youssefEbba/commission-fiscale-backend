@@ -18,13 +18,18 @@ import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.domain.enums.TypeAchat;
+import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
+import mr.gov.finances.sgci.repository.TransfertCreditRepository;
+import mr.gov.finances.sgci.repository.DecisionUtilisationCreditRepository;
+import mr.gov.finances.sgci.repository.DocumentUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.EntrepriseRepository;
 import mr.gov.finances.sgci.repository.TvaDeductibleStockRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.ApurerTVAInterieureRequest;
 import mr.gov.finances.sgci.web.dto.CreateUtilisationCreditRequest;
 import mr.gov.finances.sgci.web.dto.LiquiderUtilisationDouaneRequest;
@@ -37,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +57,8 @@ public class UtilisationCreditService {
     private final CertificatCreditRepository certificatRepository;
     private final EntrepriseRepository entrepriseRepository;
     private final UtilisateurRepository utilisateurRepository;
+    private final DocumentUtilisationCreditRepository documentUtilisationCreditRepository;
+    private final DecisionUtilisationCreditRepository decisionUtilisationCreditRepository;
     private final SousTraitanceService sousTraitanceService;
     private final UtilisationCreditWorkflow workflow;
     private final AuditService auditService;
@@ -58,6 +66,8 @@ public class UtilisationCreditService {
     private final DocumentUtilisationCreditService documentService;
     private final DocumentRequirementValidator requirementValidator;
     private final TvaDeductibleStockRepository tvaStockRepository;
+    private final TransfertCreditRepository transfertCreditRepository;
+    private final EffectiveIdentityService effectiveIdentityService;
 
     @Transactional(readOnly = true)
     public List<UtilisationCreditDto> findAll() {
@@ -101,24 +111,27 @@ public class UtilisationCreditService {
         }
         Utilisateur u = utilisateurRepository.findById(auth.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        Role r = u.getRole();
+        Role r = auth.getRole();
         if (r == Role.SOUS_TRAITANT) {
-            if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+            Long entId = effectiveIdentityService.resolveEntrepriseId(auth, u);
+            if (entId == null) {
                 return List.of();
             }
-            return repository.findByEntrepriseId(u.getEntreprise().getId());
+            return repository.findByEntrepriseId(entId);
         }
         if (r == Role.ENTREPRISE) {
-            if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+            Long entId = effectiveIdentityService.resolveEntrepriseId(auth, u);
+            if (entId == null) {
                 return List.of();
             }
-            return repository.findByCertificatCredit_Entreprise_Id(u.getEntreprise().getId());
+            return repository.findByCertificatCredit_Entreprise_Id(entId);
         }
         if (r == Role.AUTORITE_CONTRACTANTE) {
-            if (u.getAutoriteContractante() == null || u.getAutoriteContractante().getId() == null) {
+            Long acId = effectiveIdentityService.resolveAutoriteContractanteId(auth, u);
+            if (acId == null) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
             }
-            return repository.findAllByAutoriteContractanteId(u.getAutoriteContractante().getId());
+            return repository.findAllByAutoriteContractanteId(acId);
         }
         if (r == Role.AUTORITE_UPM || r == Role.AUTORITE_UEP) {
             return repository.findAllByDelegueId(u.getId());
@@ -150,18 +163,18 @@ public class UtilisationCreditService {
     private void assertCanViewUtilisation(AuthenticatedUser auth, UtilisationCredit u) {
         Utilisateur logged = utilisateurRepository.findById(auth.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        Role r = logged.getRole();
+        Role r = auth.getRole();
         if (r == Role.AUTORITE_CONTRACTANTE || r == Role.AUTORITE_UPM || r == Role.AUTORITE_UEP) {
-            assertAcOrDelegueCanAccessCertificat(logged, u.getCertificatCredit());
+            assertAcOrDelegueCanAccessCertificat(auth, logged, u.getCertificatCredit());
             return;
         }
         if (r != Role.ENTREPRISE && r != Role.SOUS_TRAITANT) {
             return;
         }
-        if (logged.getEntreprise() == null || logged.getEntreprise().getId() == null) {
+        Long eid = effectiveIdentityService.resolveEntrepriseId(auth, logged);
+        if (eid == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
         }
-        Long eid = logged.getEntreprise().getId();
         CertificatCredit cert = u.getCertificatCredit();
         Long titId = cert != null && cert.getEntreprise() != null ? cert.getEntreprise().getId() : null;
         if (r == Role.SOUS_TRAITANT) {
@@ -182,18 +195,18 @@ public class UtilisationCreditService {
     private void assertCanAccessCertificatUtilisations(AuthenticatedUser auth, CertificatCredit cert) {
         Utilisateur logged = utilisateurRepository.findById(auth.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        Role r = logged.getRole();
+        Role r = auth.getRole();
         if (r == Role.AUTORITE_CONTRACTANTE || r == Role.AUTORITE_UPM || r == Role.AUTORITE_UEP) {
-            assertAcOrDelegueCanAccessCertificat(logged, cert);
+            assertAcOrDelegueCanAccessCertificat(auth, logged, cert);
             return;
         }
         if (r != Role.ENTREPRISE && r != Role.SOUS_TRAITANT) {
             return;
         }
-        if (logged.getEntreprise() == null || logged.getEntreprise().getId() == null) {
+        Long eid = effectiveIdentityService.resolveEntrepriseId(auth, logged);
+        if (eid == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
         }
-        Long eid = logged.getEntreprise().getId();
         Long titId = cert.getEntreprise() != null ? cert.getEntreprise().getId() : null;
         if (r == Role.ENTREPRISE && titId != null && titId.equals(eid)) {
             return;
@@ -205,15 +218,15 @@ public class UtilisationCreditService {
         throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
     }
 
-    private void assertAcOrDelegueCanAccessCertificat(Utilisateur logged, CertificatCredit cert) {
+    private void assertAcOrDelegueCanAccessCertificat(AuthenticatedUser auth, Utilisateur logged, CertificatCredit cert) {
         if (cert == null || cert.getId() == null) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat invalide");
         }
-        if (logged.getRole() == Role.AUTORITE_CONTRACTANTE) {
-            if (logged.getAutoriteContractante() == null || logged.getAutoriteContractante().getId() == null) {
+        if (auth.getRole() == Role.AUTORITE_CONTRACTANTE) {
+            Long acId = effectiveIdentityService.resolveAutoriteContractanteId(auth, logged);
+            if (acId == null) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
             }
-            Long acId = logged.getAutoriteContractante().getId();
             boolean ok = certificatRepository.findById(cert.getId())
                     .map(c -> c.getDemandeCorrection() != null
                             && c.getDemandeCorrection().getAutoriteContractante() != null
@@ -224,7 +237,7 @@ public class UtilisationCreditService {
             }
             return;
         }
-        if (logged.getRole() == Role.AUTORITE_UPM || logged.getRole() == Role.AUTORITE_UEP) {
+        if (auth.getRole() == Role.AUTORITE_UPM || auth.getRole() == Role.AUTORITE_UEP) {
             if (!certificatRepository.existsAccessByDelegue(logged.getId(), cert.getId())) {
                 throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
             }
@@ -263,9 +276,10 @@ public class UtilisationCreditService {
 
     @Transactional
     public UtilisationCreditDto create(CreateUtilisationCreditRequest request, AuthenticatedUser user) {
+        boolean brouillon = Boolean.TRUE.equals(request.getBrouillon());
         CertificatCredit certificat = certificatRepository.findById(request.getCertificatCreditId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé"));
-        if (certificat.getStatut() != StatutCertificat.OUVERT) {
+        if (!brouillon && certificat.getStatut() != StatutCertificat.OUVERT) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le crédit doit être OUVERT pour créer une utilisation");
         }
         Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
@@ -276,23 +290,27 @@ public class UtilisationCreditService {
             Utilisateur u = utilisateurRepository.findById(user.getUserId())
                     .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
-            if (u.getRole() == Role.ENTREPRISE || u.getRole() == Role.SOUS_TRAITANT) {
-                if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+            if (user.getRole() == Role.ENTREPRISE || user.getRole() == Role.SOUS_TRAITANT) {
+                Long userEntrepriseId = effectiveIdentityService.resolveEntrepriseId(user, u);
+                if (userEntrepriseId == null) {
                     throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
                 }
-                if (!u.getEntreprise().getId().equals(entreprise.getId())) {
+                if (!userEntrepriseId.equals(entreprise.getId())) {
                     throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: entreprise requête invalide");
                 }
                 if (certificat.getEntreprise() == null || certificat.getEntreprise().getId() == null) {
                     throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat sans entreprise");
                 }
-                Long userEntrepriseId = u.getEntreprise().getId();
                 Long certificatEntrepriseId = certificat.getEntreprise().getId();
                 if (!certificatEntrepriseId.equals(userEntrepriseId)) {
                     // Entreprise sous-traitante: doit être autorisée sur le certificat
                     sousTraitanceService.assertSousTraitantEntrepriseAuthorizedOnCertificat(certificat.getId(), userEntrepriseId);
                 }
             }
+        }
+
+        if (request.getType() == TypeUtilisation.DOUANIER) {
+            assertPasTransfertExecutePourUtilisationsDouanieres(certificat.getId());
         }
 
         UtilisationCredit entity;
@@ -330,7 +348,170 @@ public class UtilisationCreditService {
         entity = repository.save(entity);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.CREATE, "UtilisationCredit", String.valueOf(entity.getId()), result);
+        if (!brouillon) {
+            notifyActorsOnCreation(entity);
+        }
+        return result;
+    }
+
+    /**
+     * Suppression définitive d'un brouillon uniquement. Les utilisations soumises ne se suppriment pas ainsi.
+     */
+    @Transactional
+    public void deleteBrouillon(Long id, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
+        assertCanViewUtilisation(user, entity);
+        assertDeposantPeutModifierUtilisation(user, entity);
+        if (entity.getStatut() != StatutUtilisation.BROUILLON) {
+            throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Suppression réservée aux brouillons (statut actuel: " + entity.getStatut() + ")");
+        }
+        documentUtilisationCreditRepository.findByUtilisationCreditId(id).forEach(documentUtilisationCreditRepository::delete);
+        decisionUtilisationCreditRepository.findByUtilisationCreditId(id).forEach(decisionUtilisationCreditRepository::delete);
+        auditService.log(AuditAction.DELETE, "UtilisationCredit", String.valueOf(id), null);
+        repository.delete(entity);
+    }
+
+    private static final Set<StatutUtilisation> STATUTS_UTILISATION_EDITABLE = EnumSet.of(
+            StatutUtilisation.BROUILLON, StatutUtilisation.DEMANDEE);
+
+    private void assertUtilisationContentEditable(UtilisationCredit entity) {
+        if (entity == null || !STATUTS_UTILISATION_EDITABLE.contains(entity.getStatut())) {
+            throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE,
+                    "Modification impossible : statut incompatible ou traitement déjà engagé");
+        }
+    }
+
+    private void assertDeposantPeutModifierUtilisation(AuthenticatedUser auth, UtilisationCredit entity) {
+        if (auth == null || auth.getUserId() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Authentification requise");
+        }
+        Utilisateur u = utilisateurRepository.findById(auth.getUserId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        if (auth.getRole() != Role.ENTREPRISE && auth.getRole() != Role.SOUS_TRAITANT) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seuls le titulaire ou le sous-traitant peuvent modifier cette demande");
+        }
+        Long myEnt = effectiveIdentityService.resolveEntrepriseId(auth, u);
+        if (myEnt == null || entity.getEntreprise() == null
+                || !myEnt.equals(entity.getEntreprise().getId())) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Entreprise non autorisée");
+        }
+    }
+
+    @Transactional
+    public UtilisationCreditDto soumettreBrouillon(Long id, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
+        assertCanViewUtilisation(user, entity);
+        assertDeposantPeutModifierUtilisation(user, entity);
+        if (entity.getStatut() != StatutUtilisation.BROUILLON) {
+            throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Soumission réservée aux brouillons (statut: " + entity.getStatut() + ")");
+        }
+        CertificatCredit certificat = entity.getCertificatCredit();
+        if (certificat == null || certificat.getStatut() != StatutCertificat.OUVERT) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Le certificat doit être OUVERT pour soumettre l'utilisation");
+        }
+        if (entity.getType() == TypeUtilisation.DOUANIER) {
+            assertPasTransfertExecutePourUtilisationsDouanieres(certificat.getId());
+        }
+        workflow.validateTransition(StatutUtilisation.BROUILLON, StatutUtilisation.DEMANDEE);
+        entity.setStatut(StatutUtilisation.DEMANDEE);
+        entity = repository.save(entity);
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
         notifyActorsOnCreation(entity);
+        return result;
+    }
+
+    /**
+     * Après validation DGTCP / Président, un transfert exécuté ({@link StatutTransfert#TRANSFERE}) vide le mécanisme
+     * cordon → intérieur : plus de nouvelles demandes d'utilisation <strong>douanière</strong> sur ce certificat.
+     */
+    private void assertPasTransfertExecutePourUtilisationsDouanieres(Long certificatCreditId) {
+        if (certificatCreditId == null) {
+            return;
+        }
+        if (transfertCreditRepository.existsByCertificatCreditIdAndStatut(certificatCreditId, StatutTransfert.TRANSFERE)) {
+            throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Un transfert de crédit a été exécuté sur ce certificat : les demandes d'utilisation douanière ne sont plus possibles.");
+        }
+    }
+
+    @Transactional
+    public UtilisationCreditDto update(Long id, CreateUtilisationCreditRequest request, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
+        assertCanViewUtilisation(user, entity);
+        assertDeposantPeutModifierUtilisation(user, entity);
+        assertUtilisationContentEditable(entity);
+        if (!entity.getType().equals(request.getType())) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le type d'utilisation ne peut pas être modifié");
+        }
+
+        CertificatCredit certificat = certificatRepository.findById(request.getCertificatCreditId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé"));
+        if (entity.getStatut() != StatutUtilisation.BROUILLON && certificat.getStatut() != StatutCertificat.OUVERT) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le crédit doit être OUVERT");
+        }
+        Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée"));
+
+        if (user != null && user.getRole() != null) {
+            Utilisateur u = utilisateurRepository.findById(user.getUserId())
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+            if (user.getRole() == Role.ENTREPRISE || user.getRole() == Role.SOUS_TRAITANT) {
+                Long userEntrepriseId = effectiveIdentityService.resolveEntrepriseId(user, u);
+                if (userEntrepriseId == null) {
+                    throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
+                }
+                if (!userEntrepriseId.equals(entreprise.getId())) {
+                    throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: entreprise requête invalide");
+                }
+                if (certificat.getEntreprise() == null || certificat.getEntreprise().getId() == null) {
+                    throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat sans entreprise");
+                }
+                Long certificatEntrepriseId = certificat.getEntreprise().getId();
+                if (!certificatEntrepriseId.equals(userEntrepriseId)) {
+                    sousTraitanceService.assertSousTraitantEntrepriseAuthorizedOnCertificat(certificat.getId(), userEntrepriseId);
+                }
+            }
+        }
+
+        entity.setCertificatCredit(certificat);
+        entity.setEntreprise(entreprise);
+        entity.setMontant(request.getMontant());
+
+        if (entity instanceof UtilisationDouaniere d) {
+            assertPasTransfertExecutePourUtilisationsDouanieres(certificat.getId());
+            d.setNumeroDeclaration(request.getNumeroDeclaration());
+            d.setNumeroBulletin(request.getNumeroBulletin());
+            d.setDateDeclaration(request.getDateDeclaration());
+            d.setMontantDroits(request.getMontantDroits());
+            d.setMontantTVA(request.getMontantTVA());
+            d.setEnregistreeSYDONIA(request.getEnregistreeSYDONIA());
+            if (d.getMontant() == null) {
+                BigDecimal droits = d.getMontantDroits() != null ? d.getMontantDroits() : BigDecimal.ZERO;
+                BigDecimal tva = d.getMontantTVA() != null ? d.getMontantTVA() : BigDecimal.ZERO;
+                BigDecimal total = droits.add(tva);
+                d.setMontant(total.compareTo(BigDecimal.ZERO) > 0 ? total : null);
+            }
+        } else if (entity instanceof UtilisationTVAInterieure t) {
+            t.setTypeAchat(resolveTypeAchat(request));
+            t.setNumeroFacture(request.getNumeroFacture());
+            t.setDateFacture(request.getDateFacture());
+            t.setMontantTVA(request.getMontantTVAInterieure());
+            t.setNumeroDecompte(request.getNumeroDecompte());
+            if (t.getMontant() == null) {
+                t.setMontant(t.getMontantTVA());
+            }
+        }
+
+        entity = repository.save(entity);
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
         return result;
     }
 
@@ -523,7 +704,7 @@ public class UtilisationCreditService {
     private void mapBase(UtilisationCredit u, CreateUtilisationCreditRequest r, CertificatCredit c, Entreprise e) {
         u.setDateDemande(Instant.now());
         u.setMontant(r.getMontant());
-        u.setStatut(StatutUtilisation.DEMANDEE);
+        u.setStatut(Boolean.TRUE.equals(r.getBrouillon()) ? StatutUtilisation.BROUILLON : StatutUtilisation.DEMANDEE);
         u.setCertificatCredit(c);
         u.setEntreprise(e);
     }
@@ -552,7 +733,24 @@ public class UtilisationCreditService {
         d.setMontantTVA(tva);
         d.setMontant(total);
 
-        CertificatCredit certificat = d.getCertificatCredit();
+        CertificatCredit certificat = certificatRepository.findById(d.getCertificatCredit().getId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé"));
+        BigDecimal tvaImport = tva;
+        if (tvaImport.compareTo(BigDecimal.ZERO) > 0) {
+            if (certificat.getTvaImportationDouaneAccordee() == null && certificat.getTvaImportationDouane() != null) {
+                certificat.setTvaImportationDouaneAccordee(certificat.getTvaImportationDouane());
+            }
+            BigDecimal restantD = certificat.getTvaImportationDouane() != null ? certificat.getTvaImportationDouane() : BigDecimal.ZERO;
+            if (tvaImport.compareTo(restantD) > 0) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "TVA import liquidation dépasse le restant de TVA importation (d) disponible sur le certificat (restant="
+                                + restantD + ", demandé=" + tvaImport + ")");
+            }
+            certificat.setTvaImportationDouane(restantD.subtract(tvaImport));
+            certificatRepository.save(certificat);
+        }
+        d.setCertificatCredit(certificat);
+
         BigDecimal soldeCordonAvant = certificat.getSoldeCordon() != null ? certificat.getSoldeCordon() : BigDecimal.ZERO;
         d.setSoldeCordonAvant(soldeCordonAvant);
 
@@ -564,7 +762,6 @@ public class UtilisationCreditService {
                 ? d.getCertificatCredit().getSoldeCordon() : BigDecimal.ZERO;
         d.setSoldeCordonApres(soldeCordonApres);
 
-        BigDecimal tvaImport = d.getMontantTVA() != null ? d.getMontantTVA() : BigDecimal.ZERO;
         if (tvaImport.compareTo(BigDecimal.ZERO) > 0) {
             tvaStockRepository.save(mr.gov.finances.sgci.domain.entity.TvaDeductibleStock.builder()
                     .certificatCredit(d.getCertificatCredit())
@@ -585,6 +782,9 @@ public class UtilisationCreditService {
     @Transactional
     public UtilisationCreditDto updateStatut(Long id, StatutUtilisation statut, AuthenticatedUser user) {
         UtilisationCredit entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
+        if (entity.getStatut() == StatutUtilisation.BROUILLON && statut == StatutUtilisation.DEMANDEE) {
+            return soumettreBrouillon(id, user);
+        }
         workflow.validateTransition(entity.getStatut(), statut);
 
         assertActorCanTransition(entity, statut, user);

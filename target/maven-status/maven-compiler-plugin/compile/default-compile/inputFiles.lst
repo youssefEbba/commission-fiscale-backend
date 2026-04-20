@@ -13,6 +13,7 @@ C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\DqeDto.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\DocumentClotureCreditDto.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\DocumentSousTraitanceDto.java
+C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\ImpersonateEntrepriseRequest.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\repository\CertificatCreditRepository.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\security\CustomUserDetailsService.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\reporting\TimeSeriesPointDto.java
@@ -28,6 +29,7 @@ C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\repository\DocumentProjetRepository.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\enums\StatutDemande.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\CreateDemandeCorrectionRequest.java
+C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\security\EffectiveIdentityService.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\BailleurService.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\ModeleFiscalDto.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\config\TestWorkflowDataSeed.java
@@ -92,6 +94,7 @@ C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\DocumentUtilisationCreditService.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\workflow\UtilisationCreditWorkflow.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\repository\DocumentMarcheRepository.java
+C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\ImpersonateAutoriteRequest.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\DqeLigneDto.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\entity\DocumentRequirement.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\controller\DecisionCorrectionController.java
@@ -170,6 +173,7 @@ C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\repository\ConventionRepository.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\workflow\WorkflowTransitionException.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\DocumentRequirementService.java
+C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\config\ApiPathCorsFilter.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\entity\LigneImportation.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\repository\DemandeCorrectionRejetRepository.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\SyncDelegueMarchesRequest.java
@@ -194,6 +198,7 @@ C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\repository\AvenantRepository.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\DemandeCorrectionService.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\security\AuthenticatedUser.java
+C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\CommissionRelaisService.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\NotificationService.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\DecisionCertificatCreditService.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\repository\MarcheRepository.java
@@ -240,11 +245,13 @@ C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\DossierEtapeGed.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\repository\NotificationRepository.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\AuditLogDto.java
+C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\UpdateDemandeCorrectionRequest.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\EntrepriseDto.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\entity\ModeleFiscal.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\repository\DocumentRequirementRepository.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\config\WebSocketConfig.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\entity\TransfertCredit.java
+C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\config\ApiPathCorsFilterConfig.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\repository\DocumentUtilisationCreditRepository.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\UpsertDocumentRequirementRequest.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\SousTraitanceService.java
@@ -252,6 +259,7 @@ C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\DocumentTransfertCreditService.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\domain\entity\AuditLog.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\AutoriteContractanteService.java
+C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\controller\CommissionRelaisController.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\dto\DocumentConventionDto.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\web\controller\TauxChangeController.java
 C:\Users\Index Informatique\Downloads\Commission_Fiscale\back\commission-fiscale-backend\src\main\java\mr\gov\finances\sgci\service\DelegueService.java

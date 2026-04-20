@@ -76,8 +76,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 for (String permission : mergedPermissions) {
                     authorities.add(new SimpleGrantedAuthority(permission));
                 }
+                boolean impersonating = jwtService.extractImpersonating(token);
+                Long actingEnt = jwtService.extractActingEntrepriseId(token);
+                Long actingAc = jwtService.extractActingAutoriteContractanteId(token);
                 UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                        new AuthenticatedUser(userId, username, role),
+                        new AuthenticatedUser(userId, username, role, impersonating, actingEnt, actingAc),
                         null,
                         authorities
                 );

@@ -31,7 +31,7 @@ public class MarcheController {
     private final MarcheService service;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('marche.manage')")
+    @PreAuthorize("hasAnyAuthority('marche.manage', 'marche.view')")
     public List<MarcheDto> getAll(
             @RequestParam(required = false) String q,
             @AuthenticationPrincipal AuthenticatedUser user
@@ -43,7 +43,7 @@ public class MarcheController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('marche.manage')")
+    @PreAuthorize("hasAnyAuthority('marche.manage', 'marche.view')")
     public MarcheDto getById(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
         return service.findById(id, user);
     }
@@ -108,7 +108,7 @@ public class MarcheController {
     }
 
     @GetMapping("/{id}/documents")
-    @PreAuthorize("hasAuthority('marche.manage')")
+    @PreAuthorize("hasAnyAuthority('marche.manage', 'marche.view')")
     public List<DocumentMarcheDto> getDocuments(@PathVariable Long id) {
         return service.findDocuments(id);
     }

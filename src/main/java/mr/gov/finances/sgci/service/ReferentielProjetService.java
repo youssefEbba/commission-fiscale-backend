@@ -221,8 +221,10 @@ public class ReferentielProjetService {
                 .conventionId(entity.getConvention() != null ? entity.getConvention().getId() : null)
                 .conventionReference(entity.getConvention() != null ? entity.getConvention().getReference() : null)
                 .conventionIntitule(entity.getConvention() != null ? entity.getConvention().getIntitule() : null)
-                .conventionBailleur(entity.getConvention() != null ? entity.getConvention().getBailleur() : null)
-                .conventionBailleurDetails(entity.getConvention() != null ? entity.getConvention().getBailleurDetails() : null)
+                .conventionBailleur(entity.getConvention() != null && entity.getConvention().getBailleur() != null
+                        ? entity.getConvention().getBailleur().getNom() : null)
+                .conventionBailleurDetails(entity.getConvention() != null && entity.getConvention().getBailleur() != null
+                        ? entity.getConvention().getBailleur().getDetails() : null)
                 .conventionDateSignature(entity.getConvention() != null ? entity.getConvention().getDateSignature() : null)
                 .conventionDateFin(entity.getConvention() != null ? entity.getConvention().getDateFin() : null)
                 .conventionMontantDevise(entity.getConvention() != null ? entity.getConvention().getMontantDevise() : null)

@@ -19,4 +19,11 @@ public class UpdateCertificatCreditMontantsRequest {
 
     @NotNull(message = "Le montant TVA intérieure est obligatoire")
     private BigDecimal montantTVAInterieure;
+
+    /** Récap. fiscal optionnel — mêmes lignes que {@link CreateCertificatCreditRequest}. */
+    private BigDecimal valeurDouaneFournitures;
+    private BigDecimal droitsEtTaxesDouaneHorsTva;
+    private BigDecimal tvaImportationDouane;
+    private BigDecimal montantMarcheHt;
+    private BigDecimal tvaCollecteeTravaux;
 }

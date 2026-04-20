@@ -10,6 +10,7 @@ import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.reporting.CertificatFinancialTotalsDto;
 import mr.gov.finances.sgci.web.dto.reporting.NamedCountDto;
 import mr.gov.finances.sgci.web.dto.reporting.ReportingAuditStatsDto;
@@ -36,6 +37,7 @@ public class ReportingService {
     @PersistenceContext
     private EntityManager entityManager;
     private final UtilisateurRepository utilisateurRepository;
+    private final EffectiveIdentityService effectiveIdentityService;
 
     private record Scope(Instant from, Instant to, Long autoriteContractanteId, Long entrepriseId,
                          Long delegueUserId, boolean nationalView, boolean filtersApplied,
@@ -46,7 +48,7 @@ public class ReportingService {
                                           Long autoriteContractanteId, Long entrepriseId) {
         Utilisateur u = utilisateurRepository.findById(auth.getUserId())
                 .orElseThrow(() -> new IllegalStateException("Utilisateur non trouvé"));
-        Scope scope = buildScope(u, from, to, autoriteContractanteId, entrepriseId);
+        Scope scope = buildScope(auth, u, from, to, autoriteContractanteId, entrepriseId);
 
         ReportingDemandeStatsDto demandeStats = buildDemandeStats(scope);
         List<NamedCountDto> certByStatut = groupedCounts(
@@ -124,7 +126,7 @@ public class ReportingService {
                                                          Long autoriteContractanteId, Long entrepriseId) {
         Utilisateur u = utilisateurRepository.findById(auth.getUserId())
                 .orElseThrow(() -> new IllegalStateException("Utilisateur non trouvé"));
-        Scope scope = buildScope(u, from, to, autoriteContractanteId, entrepriseId);
+        Scope scope = buildScope(auth, u, from, to, autoriteContractanteId, entrepriseId);
         String hql = """
                 select extract(year from coalesce(d.dateDepot, d.dateCreation)),
                        extract(month from coalesce(d.dateDepot, d.dateCreation)),
@@ -152,11 +154,11 @@ public class ReportingService {
         return out;
     }
 
-    private Scope buildScope(Utilisateur u, Instant from, Instant to,
+    private Scope buildScope(AuthenticatedUser auth, Utilisateur u, Instant from, Instant to,
                             Long reqAc, Long reqEnt) {
         Instant t0 = to != null ? to : Instant.now();
         Instant f0 = from != null ? from : t0.minus(365, ChronoUnit.DAYS);
-        Role role = u.getRole();
+        Role role = auth.getRole();
         boolean national = role == Role.PRESIDENT || role == Role.ADMIN_SI || role == Role.DGD
                 || role == Role.DGTCP || role == Role.DGI || role == Role.DGB;
         boolean auditNational = national;
@@ -170,21 +172,19 @@ public class ReportingService {
             ent = reqEnt;
             filtersApplied = reqAc != null || reqEnt != null;
         } else if (role == Role.ENTREPRISE || role == Role.SOUS_TRAITANT) {
-            if (u.getEntreprise() != null) {
-                ent = u.getEntreprise().getId();
-            }
+            ent = effectiveIdentityService.resolveEntrepriseId(auth, u);
         } else if (role == Role.AUTORITE_CONTRACTANTE || role == Role.AUTORITE_UPM
                 || role == Role.AUTORITE_UEP) {
-            if (u.getAutoriteContractante() == null) {
+            ac = effectiveIdentityService.resolveAutoriteContractanteId(auth, u);
+            if (ac == null) {
                 throw new IllegalStateException("Autorité contractante requise pour ce rôle");
             }
-            ac = u.getAutoriteContractante().getId();
             if (role == Role.AUTORITE_UPM || role == Role.AUTORITE_UEP) {
                 delegueId = u.getId();
             }
         } else {
-            ent = u.getEntreprise() != null ? u.getEntreprise().getId() : null;
-            ac = u.getAutoriteContractante() != null ? u.getAutoriteContractante().getId() : null;
+            ent = effectiveIdentityService.resolveEntrepriseId(auth, u);
+            ac = effectiveIdentityService.resolveAutoriteContractanteId(auth, u);
         }
 
         return new Scope(f0, t0, ac, ent, delegueId, national, filtersApplied, auditNational);

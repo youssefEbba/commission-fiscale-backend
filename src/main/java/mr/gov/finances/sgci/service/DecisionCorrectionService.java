@@ -19,6 +19,7 @@ import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.web.dto.DecisionCorrectionDto;
+import mr.gov.finances.sgci.workflow.DemandeCorrectionWorkflow;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -45,6 +47,8 @@ public class DecisionCorrectionService {
     private final DemandeCorrectionRepository demandeRepository;
     private final UtilisateurRepository utilisateurRepository;
     private final NotificationService notificationService;
+    private final DemandeCorrectionWorkflow demandeCorrectionWorkflow;
+    private final DemandeCorrectionService demandeCorrectionService;
 
     @Transactional
     public DecisionCorrectionDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
@@ -115,6 +119,7 @@ public class DecisionCorrectionService {
 
         DemandeCorrection demande = demandeRepository.findById(demandeId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + demandeId));
+        StatutDemande statutAvantDecision = demande.getStatut();
 
         if (!DECISION_ALLOWED_STATUTS.contains(demande.getStatut())) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
@@ -164,9 +169,50 @@ public class DecisionCorrectionService {
         }
 
         entity = decisionRepository.save(entity);
+
+        if (decision == DecisionCorrectionType.VISA) {
+            applyStatutAutomatiqueApresVisa(demande, role, demandeId);
+        }
+
         demandeRepository.save(demande);
+
+        if (decision == DecisionCorrectionType.VISA && demande.getStatut() != statutAvantDecision) {
+            demandeCorrectionService.notifyCorrectionStatutChange(demande, demande.getStatut(), user, null, false);
+        }
+
         notifyDecision(demande, entity, user);
         return toDto(entity);
+    }
+
+    /**
+     * Transitions métier sans passer par {@code PATCH .../statut} (évite 403 pour les rôles DGD / etc.) :
+     * <ul>
+     *   <li>{@code RECUE} ou {@code RECEVABLE} + VISA (DGD/DGTCP/DGI/DGB) → {@code EN_EVALUATION}</li>
+     *   <li>Lorsque les quatre visas sont posés (DGD, DGTCP, DGI, DGB) et statut {@code EN_EVALUATION} → {@code EN_VALIDATION}</li>
+     * </ul>
+     */
+    private void applyStatutAutomatiqueApresVisa(DemandeCorrection demande, Role roleDecideur, Long demandeId) {
+        if (roleDecideur != Role.DGD && roleDecideur != Role.DGTCP && roleDecideur != Role.DGI && roleDecideur != Role.DGB) {
+            return;
+        }
+        StatutDemande s = demande.getStatut();
+        if (s == StatutDemande.RECUE) {
+            demandeCorrectionWorkflow.validateTransition(StatutDemande.RECUE, StatutDemande.EN_EVALUATION);
+            demande.setStatut(StatutDemande.EN_EVALUATION);
+            s = demande.getStatut();
+        } else if (s == StatutDemande.RECEVABLE) {
+            demandeCorrectionWorkflow.validateTransition(StatutDemande.RECEVABLE, StatutDemande.EN_EVALUATION);
+            demande.setStatut(StatutDemande.EN_EVALUATION);
+            s = demande.getStatut();
+        }
+
+        boolean quatreVisas = Stream.of(Role.DGD, Role.DGTCP, Role.DGI, Role.DGB)
+                .allMatch(r -> decisionRepository.existsByDemandeCorrectionIdAndRoleAndDecision(
+                        demandeId, r, DecisionCorrectionType.VISA));
+        if (quatreVisas && s == StatutDemande.EN_EVALUATION) {
+            demandeCorrectionWorkflow.validateTransition(StatutDemande.EN_EVALUATION, StatutDemande.EN_VALIDATION);
+            demande.setStatut(StatutDemande.EN_VALIDATION);
+        }
     }
 
     @Transactional(readOnly = true)

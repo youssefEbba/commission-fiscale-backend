@@ -11,5 +11,7 @@ public enum Role {
     AUTORITE_UPM,
     AUTORITE_UEP,
     ENTREPRISE,
-    SOUS_TRAITANT
+    SOUS_TRAITANT,
+    /** Support : agit au nom d’une entreprise ou d’une autorité contractante après impersonation (JWT enrichi). */
+    COMMISSION_RELAIS
 }

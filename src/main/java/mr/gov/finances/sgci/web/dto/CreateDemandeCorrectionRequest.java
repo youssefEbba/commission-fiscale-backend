@@ -23,9 +23,14 @@ public class CreateDemandeCorrectionRequest {
 
     private Long marcheId;
 
-    @NotNull(message = "Le modèle fiscal est obligatoire")
+    /**
+     * Si {@code true}, statut {@code BROUILLON} : pas de notification, champs fiscaux optionnels jusqu'à soumission.
+     */
+    private Boolean brouillon;
+
+    /** Ignoré si {@code brouillon != true} (sinon obligatoires en service). */
     private ModeleFiscalDto modeleFiscal;
 
-    @NotNull(message = "Le DQE est obligatoire")
+    /** Ignoré si {@code brouillon != true}. */
     private DqeDto dqe;
 }

@@ -19,6 +19,7 @@ import mr.gov.finances.sgci.repository.EntrepriseRepository;
 import mr.gov.finances.sgci.repository.SousTraitanceRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.CreateSousTraitanceOnboardingRequest;
 import mr.gov.finances.sgci.web.dto.CreateSousTraitanceRequest;
 import mr.gov.finances.sgci.web.dto.EntrepriseDto;
@@ -46,6 +47,7 @@ public class SousTraitanceService {
     private final DocumentRequirementValidator requirementValidator;
     private final AuditService auditService;
     private final NotificationService notificationService;
+    private final EffectiveIdentityService effectiveIdentityService;
 
     @Transactional(readOnly = true)
     public List<SousTraitanceDto> findAll(AuthenticatedUser user, Long sousTraitantEntrepriseIdFilter) {
@@ -56,10 +58,10 @@ public class SousTraitanceService {
         if (user.getRole() == Role.ENTREPRISE) {
             Utilisateur u = utilisateurRepository.findById(user.getUserId())
                     .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-            if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+            Long entrepriseId = effectiveIdentityService.resolveEntrepriseId(user, u);
+            if (entrepriseId == null) {
                 return List.of();
             }
-            Long entrepriseId = u.getEntreprise().getId();
             List<SousTraitanceDto> list = repository.findByCertificatCreditEntrepriseIdOrSousTraitantEntrepriseId(entrepriseId, entrepriseId)
                     .stream()
                     .distinct()
@@ -92,10 +94,11 @@ public class SousTraitanceService {
         }
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+        Long titulaireEntId = effectiveIdentityService.resolveEntrepriseId(user, u);
+        if (titulaireEntId == null) {
             return List.of();
         }
-        return repository.findDistinctSousTraitantEntreprisesForTitulaire(u.getEntreprise().getId()).stream()
+        return repository.findDistinctSousTraitantEntreprisesForTitulaire(titulaireEntId).stream()
                 .map(this::entrepriseToDto)
                 .collect(Collectors.toList());
     }
@@ -131,10 +134,10 @@ public class SousTraitanceService {
         }
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        if (u.getEntreprise() == null || u.getEntreprise().getId() == null) {
+        Long myEnt = effectiveIdentityService.resolveEntrepriseId(user, u);
+        if (myEnt == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
         }
-        Long myEnt = u.getEntreprise().getId();
         Long titId = cert.getEntreprise() != null ? cert.getEntreprise().getId() : null;
         if (user.getRole() == Role.ENTREPRISE && titId != null && titId.equals(myEnt)) {
             return;
@@ -180,9 +183,10 @@ public class SousTraitanceService {
 
         Utilisateur demandeur = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        if (demandeur.getEntreprise() == null || demandeur.getEntreprise().getId() == null
+        Long demandeurEnt = effectiveIdentityService.resolveEntrepriseId(user, demandeur);
+        if (demandeurEnt == null
                 || c.getEntreprise() == null || c.getEntreprise().getId() == null
-                || !demandeur.getEntreprise().getId().equals(c.getEntreprise().getId())) {
+                || !demandeurEnt.equals(c.getEntreprise().getId())) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: certificat ne correspond pas à l'entreprise");
         }
 
@@ -237,9 +241,10 @@ public class SousTraitanceService {
 
         Utilisateur demandeur = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        if (demandeur.getEntreprise() == null || demandeur.getEntreprise().getId() == null
+        Long demandeurEnt = effectiveIdentityService.resolveEntrepriseId(user, demandeur);
+        if (demandeurEnt == null
                 || c.getEntreprise() == null || c.getEntreprise().getId() == null
-                || !demandeur.getEntreprise().getId().equals(c.getEntreprise().getId())) {
+                || !demandeurEnt.equals(c.getEntreprise().getId())) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: certificat ne correspond pas à l'entreprise");
         }
 
@@ -406,10 +411,11 @@ public class SousTraitanceService {
         }
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        if (u.getEntreprise() == null || st.getCertificatCredit() == null || st.getCertificatCredit().getEntreprise() == null) {
+        Long myEnt = effectiveIdentityService.resolveEntrepriseId(user, u);
+        if (myEnt == null || st.getCertificatCredit() == null || st.getCertificatCredit().getEntreprise() == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Données invalides");
         }
-        if (!u.getEntreprise().getId().equals(st.getCertificatCredit().getEntreprise().getId())) {
+        if (!myEnt.equals(st.getCertificatCredit().getEntreprise().getId())) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: vous n'êtes pas le titulaire de ce certificat");
         }
     }

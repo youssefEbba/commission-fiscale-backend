@@ -28,9 +28,22 @@ public class CreateCertificatCreditRequest {
 
     private BigDecimal montantTVAInterieure;
 
+    /** Récap. fiscal optionnel — voir {@link CertificatCreditDto}. */
+    private BigDecimal valeurDouaneFournitures;
+    private BigDecimal droitsEtTaxesDouaneHorsTva;
+    private BigDecimal tvaImportationDouane;
+    private BigDecimal montantMarcheHt;
+    private BigDecimal tvaCollecteeTravaux;
+
     /**
      * Si null, initialisé à montantCordon et montantTVAInterieure.
      */
     private BigDecimal soldeCordon;
     private BigDecimal soldeTVA;
+
+    /**
+     * Si {@code true}, statut initial {@code BROUILLON}. Sinon statut {@code ENVOYEE} (envoyée, en attente de prise en charge
+     * par DGI/DGD/DGTCP puis passage en {@code EN_CONTROLE}).
+     */
+    private Boolean brouillon;
 }
