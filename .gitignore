@@ -1,4 +1,4 @@
 cs-front-for-cursor/
 
 # Config locale (mot de passe MySQL, ddl create, etc.)
-src/main/resources/application-local.properties
+# src/main/resources/application-local.properties

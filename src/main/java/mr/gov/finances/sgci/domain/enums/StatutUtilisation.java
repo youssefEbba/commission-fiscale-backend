@@ -11,5 +11,10 @@ public enum StatutUtilisation {
     VALIDEE,
     LIQUIDEE,
     APUREE,
-    REJETEE
+    REJETEE,
+
+    /**
+     * Clôture administrative (ex. après transfert (d) → intérieur) : plus de suite pour cette demande.
+     */
+    CLOTUREE
 }

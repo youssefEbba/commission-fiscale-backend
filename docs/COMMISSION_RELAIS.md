@@ -8,7 +8,9 @@
   - **Mot de passe** : `123456`
   - Aucune entreprise ni autorité contractante n’est liée au compte en base : le périmètre métier vient du **JWT d’impersonation** (voir ci‑dessous).
 
-## Permissions
+## Permissions (référentiel / UI)
+
+Ces codes sont assignés au rôle `COMMISSION_RELAIS` en base pour la lisibilité (administration, future UI). **Ils ne sont pas utilisés comme garde sur les endpoints** : pendant l’impersonation le JWT ne contient que les permissions ENTREPRISE ou AUTORITE_CONTRACTANTE ; l’accès aux routes `/api/commission-relais/**` est contrôlé en **chargeant l’utilisateur par `userId` du JWT** et en exigeant `role == COMMISSION_RELAIS` en base.
 
 | Code | Description |
 |------|-------------|
@@ -22,15 +24,15 @@ Le rôle reçoit aussi `document.requirements.view` pour la cohérence avec les 
 
 ## API REST
 
-Base : `/api/commission-relais` (authentification JWT obligatoire).
+Base : `/api/commission-relais` (JWT authentifié ; compte en base = `COMMISSION_RELAIS`).
 
-| Méthode | Chemin | Permission |
-|---------|--------|------------|
-| `GET` | `/entreprises?page=&size=&q=` | `commission.relais.list.entreprises` |
-| `GET` | `/autorites-contractantes?page=&size=&q=` | `commission.relais.list.autorites` |
-| `POST` | `/impersonate/entreprise` | `commission.relais.impersonate.entreprise` |
-| `POST` | `/impersonate/autorite-contractante` | `commission.relais.impersonate.autorite` |
-| `POST` | `/release` | `commission.relais.release` |
+| Méthode | Chemin |
+|---------|--------|
+| `GET` | `/entreprises?page=&size=&q=` |
+| `GET` | `/autorites-contractantes?page=&size=&q=` |
+| `POST` | `/impersonate/entreprise` |
+| `POST` | `/impersonate/autorite-contractante` |
+| `POST` | `/release` |
 
 Corps JSON des impersonations :
 

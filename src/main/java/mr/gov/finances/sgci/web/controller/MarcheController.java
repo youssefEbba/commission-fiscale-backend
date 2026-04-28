@@ -10,6 +10,7 @@ import mr.gov.finances.sgci.service.MarcheService;
 import mr.gov.finances.sgci.web.dto.AssignMarcheDelegueRequest;
 import mr.gov.finances.sgci.web.dto.CreateMarcheRequest;
 import mr.gov.finances.sgci.web.dto.DocumentMarcheDto;
+import mr.gov.finances.sgci.web.dto.MarcheDemandeCorrectionStatusDto;
 import mr.gov.finances.sgci.web.dto.MarcheDto;
 import mr.gov.finances.sgci.web.dto.UpdateMarcheRequest;
 import mr.gov.finances.sgci.domain.enums.TypeDocumentMarche;
@@ -46,6 +47,15 @@ public class MarcheController {
     @PreAuthorize("hasAnyAuthority('marche.manage', 'marche.view')")
     public MarcheDto getById(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
         return service.findById(id, user);
+    }
+
+    @GetMapping("/{id}/demande-correction-active")
+    @PreAuthorize("hasAnyAuthority('marche.manage', 'marche.view')")
+    public MarcheDemandeCorrectionStatusDto getDemandeCorrectionActiveStatus(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.getActiveDemandeCorrectionStatus(id, user);
     }
 
     @GetMapping("/by-correction/{demandeCorrectionId}")

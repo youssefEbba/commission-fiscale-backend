@@ -29,6 +29,9 @@ public class RegisterRequest {
     private String entrepriseNif;
     private String entrepriseAdresse;
     private String entrepriseSituationFiscale;
+    private String entrepriseNomCommercial;
+    private String entrepriseActivite;
+    private String entrepriseAutre;
 
     /** Création d'une AC à l'inscription (champs envoyés par le front : acNom, acSigle, …) */
     private String acNom;

@@ -14,8 +14,8 @@ Champs utiles côté écran :
 |------------|-------------|
 | `montantCordon` | Enveloppe **crédit cordon / extérieur** (récap : **e = b + d**). |
 | `montantTVAInterieure` | Enveloppe **TVA intérieure** (récap : **h = g − d**). |
-| `soldeCordon` | Reste utilisable côté **douane / cordon**. |
-| `soldeTVA` | Reste utilisable côté **TVA intérieure** (décomptes, achats locaux). |
+| `soldeCordon` | Reste utilisable côté **douane / cordon** (imputations liquidations). |
+| `soldeTVA` | Reste utilisable côté **TVA intérieure** (décomptes, apurements, etc.). |
 
 Récapitulatif fiscal **optionnel** (saisi en création / brouillon ou par DGTCP avec les montants) :
 
@@ -24,7 +24,7 @@ Récapitulatif fiscal **optionnel** (saisi en création / brouillon ou par DGTCP
 | `valeurDouaneFournitures` | (a) |
 | `droitsEtTaxesDouaneHorsTva` | (b) |
 | `tvaImportationDouaneAccordee` | (d) **accord initial** (figé à la saisie) |
-| `tvaImportationDouane` | (d) **restant** — diminue à chaque liquidation douanière (TVA import imputée) |
+| `tvaImportationDouane` | (d) **restant** — baisse à chaque liquidation ; **0** après exécution d’un **transfert** validé |
 | `montantMarcheHt` | (f) |
 | `tvaCollecteeTravaux` | (g) |
 
@@ -61,20 +61,30 @@ Pour les brouillons, édition, soumission et **suppression définitive** : voir 
 
 ---
 
-## 4. Transfert cordon → intérieur
+## 4. Transfert : restant TVA douane (d) → crédit TVA intérieur
 
-Après clôture des opérations douanières, l’entreprise peut demander à **déplacer** une partie du **solde cordon** vers le **solde TVA intérieure** (même certificat).
+Après **clôture des opérations douanières** (déclarative côté demande : `operationsDouaneCloturees: true`), l’**entreprise** initie le transfert. À la **validation** DGTCP / Président, le back :
+
+1. **Ajoute** la totalité de **`tvaImportationDouane`** (restant (d)) à **`soldeTVA`**
+2. Remet **`tvaImportationDouane`** à **0** (définitif pour le certificat après transfert exécuté)
+3. **Ne modifie pas** le **stock FIFO** (`TvaDeductibleStock`) — il continue de servir l’**apurement** TVA intérieur comme avant
+4. Passe toutes les **utilisations** de type **douanier** encore « ouvertes » au statut **`CLOTUREE`** (sauf déjà `LIQUIDEE` / `REJETEE`)
+5. Enregistre le **montant exécuté** sur l’entité transfert = restant (d) au moment de la validation
+
+L’**ancien** mécanisme « débiter `soldeCordon` d’un montant saisi et créditer `soldeTVA` du même montant » **n’est plus** utilisé : le transfert vise le **(d) restant**, pas le `soldeCordon`.
 
 | Action | Méthode | Corps / remarque |
-|--------|---------|-------------------|
-| Créer la demande | `POST /api/transferts-credit` | `{ "certificatCreditId", "montant", "operationsDouaneCloturees": true }` — permission `transfert.submit` |
-| Valider (exécution du transfert) | `POST /api/transferts-credit/{id}/valider` | DGTCP / Président — débite `soldeCordon`, crédite `soldeTVA` du même montant |
+|--------|---------|------------------|
+| Créer la demande | `POST /api/transferts-credit` | `certificatCreditId` (obligatoire), `operationsDouaneCloturees: true` recommandé / exigé à la validation. **`montant` optionnel** : indication UI ; à la validation le montant réel = **(d) restant** sur le certificat. |
+| Valider (exécution) | `POST /api/transferts-credit/{id}/valider` | DGTCP / Président — effets ci-dessus sur le certificat + clôture utilisations douanières. |
 | Rejeter | `POST /api/transferts-credit/{id}/rejeter` | |
 | Voir la demande liée au certificat | `GET /api/transferts-credit/by-certificat/{certificatCreditId}` | 404 si aucune demande |
 
-Prérequis métier côté back : certificat **OUVERT**, documents requis du processus transfert, `operationsDouaneCloturees` à **true**, montant ≤ `soldeCordon`.
+Prérequis côté back : certificat **OUVERT**, documents requis du processus **transfert**, `operationsDouaneCloturees` = **true**.
 
-**Après exécution d’un transfert** (`StatutTransfert.TRANSFERE` suite à validation DGTCP / Président) : **plus aucune demande d’utilisation douanière** (y compris brouillon) ne peut être créée ou soumise sur ce certificat — réponse **409** / `BUSINESS_RULE_VIOLATION`. Les utilisations **TVA intérieure** restent possibles selon les règles habituelles.
+**Après exécution** (`StatutTransfert.TRANSFERE`) : **plus** de **nouvelles** demandes d’utilisation **douanière** (y compris brouillon) sur ce certificat — **409** / `BUSINESS_RULE_VIOLATION` si tentative. Les utilisations **TVA intérieure** restent possibles. Les utilisations **douanières** déjà clôturées en **`CLOTUREE`** ne sont plus modifiables selon le workflow habituel (statut terminal).
+
+**Front — affichage utilisation douanier** : prévoir le libellé / style pour le statut **`CLOTUREE`** (ex. « Clôturée (transfert) »), distinct de `REJETEE` et `LIQUIDEE`.
 
 ---
 
@@ -82,7 +92,7 @@ Prérequis métier côté back : certificat **OUVERT**, documents requis du proc
 
 | Code API (`ErrorResponse.code`) | Contexte |
 |----------------------------------|----------|
-| `BUSINESS_RULE_VIOLATION` | Récap incohérent avec les montants, transfert impossible, etc. |
+| `BUSINESS_RULE_VIOLATION` | Récap incohérent, transfert impossible (ex. opérations douane non clôturées), etc. |
 | `RESOURCE_NOT_FOUND` | Ressource absente |
 | `ACCESS_DENIED` / `ROLE_FORBIDDEN` | Permissions |
 

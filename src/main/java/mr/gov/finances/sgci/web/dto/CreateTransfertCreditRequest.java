@@ -15,7 +15,9 @@ public class CreateTransfertCreditRequest {
     @NotNull
     private Long certificatCreditId;
 
-    @NotNull
+    /**
+     * Indicatif à la demande. À la validation, le montant exécuté = tout le restant (d) sur le certificat.
+     */
     private BigDecimal montant;
 
     private Boolean operationsDouaneCloturees;

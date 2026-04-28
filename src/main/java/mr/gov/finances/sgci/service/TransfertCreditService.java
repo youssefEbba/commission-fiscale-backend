@@ -6,16 +6,21 @@ import mr.gov.finances.sgci.web.exception.ApiException;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.TransfertCredit;
+import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
+import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
+import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.TransfertCreditRepository;
+import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
+import mr.gov.finances.sgci.workflow.UtilisationCreditWorkflow;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.CreateTransfertCreditRequest;
@@ -27,6 +32,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -42,6 +48,8 @@ public class TransfertCreditService {
     private final AuditService auditService;
     private final NotificationService notificationService;
     private final EffectiveIdentityService effectiveIdentityService;
+    private final UtilisationCreditRepository utilisationCreditRepository;
+    private final UtilisationCreditWorkflow utilisationCreditWorkflow;
 
     @Transactional(readOnly = true)
     public List<TransfertCreditDto> findAll(AuthenticatedUser user) {
@@ -137,8 +145,10 @@ public class TransfertCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: certificat source ne correspond pas à l'entreprise");
         }
 
-        BigDecimal montant = request.getMontant() != null ? request.getMontant() : BigDecimal.ZERO;
-        if (montant.compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal montantIndicatif = request.getMontant() != null
+                ? request.getMontant()
+                : (source.getTvaImportationDouane() != null ? source.getTvaImportationDouane() : BigDecimal.ZERO);
+        if (montantIndicatif.compareTo(BigDecimal.ZERO) < 0) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Montant de transfert invalide");
         }
 
@@ -156,7 +166,7 @@ public class TransfertCreditService {
             if (prev == StatutTransfert.REJETE) {
                 documentService.deactivateAllForTransfert(ex.getId());
                 ex.setDateDemande(Instant.now());
-                ex.setMontant(montant);
+                ex.setMontant(montantIndicatif);
                 ex.setOperationsDouaneCloturees(Boolean.TRUE.equals(request.getOperationsDouaneCloturees()));
                 ex.setStatut(StatutTransfert.DEMANDE);
                 ex = repository.save(ex);
@@ -181,7 +191,7 @@ public class TransfertCreditService {
         TransfertCredit entity = TransfertCredit.builder()
                 .dateDemande(Instant.now())
                 .certificatCredit(source)
-                .montant(montant)
+                .montant(montantIndicatif)
                 .operationsDouaneCloturees(Boolean.TRUE.equals(request.getOperationsDouaneCloturees()))
                 .statut(StatutTransfert.DEMANDE)
                 .build();
@@ -231,31 +241,23 @@ public class TransfertCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Transfert impossible: opérations douane non clôturées");
         }
 
-        CertificatCredit source = transfert.getCertificatCredit();
-        if (source == null || source.getId() == null) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat source manquant");
-        }
+        CertificatCredit source = certificatRepository.findById(transfert.getCertificatCredit().getId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat source non trouvé"));
         if (source.getStatut() != StatutCertificat.OUVERT) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat source doit être OUVERT");
         }
 
-        BigDecimal montant = transfert.getMontant() != null ? transfert.getMontant() : BigDecimal.ZERO;
-        if (montant.compareTo(BigDecimal.ZERO) <= 0) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Montant de transfert invalide");
-        }
-
-        // Transfert : solde « cordon douanier » (crédit extérieur) -> solde TVA intérieure (même enveloppe globale, autre bucket).
-        BigDecimal soldeDouane = source.getSoldeCordon() != null ? source.getSoldeCordon() : BigDecimal.ZERO;
-        if (soldeDouane.compareTo(montant) < 0) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                    "Solde douane insuffisant pour transfert (solde=" + soldeDouane + ", montant=" + montant + ")");
-        }
+        // Transfert du restant (d) — TVA à l'import — vers le solde TVA intérieure (soldeTVA). Le stock FIFO n'est pas modifié.
+        BigDecimal dReste = source.getTvaImportationDouane() != null ? source.getTvaImportationDouane() : BigDecimal.ZERO;
         BigDecimal soldeInterieur = source.getSoldeTVA() != null ? source.getSoldeTVA() : BigDecimal.ZERO;
 
-        source.setSoldeCordon(soldeDouane.subtract(montant));
-        source.setSoldeTVA(soldeInterieur.add(montant));
+        source.setSoldeTVA(soldeInterieur.add(dReste));
+        source.setTvaImportationDouane(BigDecimal.ZERO);
 
         certificatRepository.save(source);
+
+        transfert.setMontant(dReste);
+        cloturerUtilisationsDouanieresOuvertes(source.getId());
 
         transfert.setStatut(StatutTransfert.TRANSFERE);
         transfert = repository.save(transfert);
@@ -263,6 +265,26 @@ public class TransfertCreditService {
         TransfertCreditDto result = toDto(transfert);
         auditService.log(AuditAction.UPDATE, "TransfertCredit", String.valueOf(transfert.getId()), result);
         return result;
+    }
+
+    /**
+     * Passe en {@link StatutUtilisation#CLOTUREE} les utilisations douanières non terminées (hors LIQUIDEE / REJETEE).
+     */
+    private void cloturerUtilisationsDouanieresOuvertes(Long certificatCreditId) {
+        for (UtilisationCredit u : utilisationCreditRepository.findByCertificatCreditId(certificatCreditId)) {
+            if (u.getType() != TypeUtilisation.DOUANIER) {
+                continue;
+            }
+            StatutUtilisation s = u.getStatut();
+            if (s == StatutUtilisation.LIQUIDEE || s == StatutUtilisation.REJETEE || s == StatutUtilisation.CLOTUREE) {
+                continue;
+            }
+            utilisationCreditWorkflow.validateTransition(s, StatutUtilisation.CLOTUREE);
+            u.setStatut(StatutUtilisation.CLOTUREE);
+            utilisationCreditRepository.save(u);
+            auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(u.getId()),
+                    Map.of("action", "cloture_suite_transfert_credit", "certificatCreditId", certificatCreditId));
+        }
     }
 
     @Transactional

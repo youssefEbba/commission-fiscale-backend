@@ -11,6 +11,7 @@ import mr.gov.finances.sgci.domain.entity.Marche;
 import mr.gov.finances.sgci.domain.entity.MarcheDelegue;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.domain.enums.StatutMarche;
 import mr.gov.finances.sgci.domain.enums.TypeDocumentMarche;
 import mr.gov.finances.sgci.repository.ConventionRepository;
@@ -22,6 +23,7 @@ import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.web.dto.CreateMarcheRequest;
 import mr.gov.finances.sgci.web.dto.DocumentMarcheDto;
+import mr.gov.finances.sgci.web.dto.MarcheDemandeCorrectionStatusDto;
 import mr.gov.finances.sgci.web.dto.MarcheDto;
 import mr.gov.finances.sgci.web.dto.UpdateMarcheRequest;
 import org.springframework.stereotype.Service;
@@ -63,6 +65,22 @@ public class MarcheService {
                 .filter(m -> canAccessMarche(m, user))
                 .map(this::toDto)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé pour la correction: " + demandeCorrectionId));
+    }
+
+    @Transactional(readOnly = true)
+    public MarcheDemandeCorrectionStatusDto getActiveDemandeCorrectionStatus(Long marcheId, AuthenticatedUser user) {
+        Marche marche = marcheRepository.findById(marcheId)
+                .filter(m -> canAccessMarche(m, user))
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
+
+        DemandeCorrection demande = marche.getDemandeCorrection();
+        boolean active = demande != null && demande.getStatut() != StatutDemande.ANNULEE;
+        return MarcheDemandeCorrectionStatusDto.builder()
+                .marcheId(marche.getId())
+                .hasActiveDemandeCorrection(active)
+                .demandeCorrectionId(demande != null ? demande.getId() : null)
+                .demandeCorrectionStatut(demande != null ? demande.getStatut() : null)
+                .build();
     }
 
     @Transactional(readOnly = true)

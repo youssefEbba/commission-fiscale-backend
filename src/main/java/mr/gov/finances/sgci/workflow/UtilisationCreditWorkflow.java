@@ -19,16 +19,17 @@ import java.util.Set;
 public class UtilisationCreditWorkflow {
 
     private static final Map<StatutUtilisation, Set<StatutUtilisation>> TRANSITIONS = Map.ofEntries(
-            Map.entry(BROUILLON, EnumSet.of(DEMANDEE)),
-            Map.entry(DEMANDEE, EnumSet.of(INCOMPLETE, EN_VERIFICATION, REJETEE)),
-            Map.entry(INCOMPLETE, EnumSet.of(A_RECONTROLER, REJETEE)),
-            Map.entry(A_RECONTROLER, EnumSet.of(EN_VERIFICATION, REJETEE)),
-            Map.entry(EN_VERIFICATION, EnumSet.of(INCOMPLETE, VISE, VALIDEE, REJETEE)),
-            Map.entry(VISE, EnumSet.of(INCOMPLETE, VALIDEE, LIQUIDEE, REJETEE)),
-            Map.entry(VALIDEE, EnumSet.of(LIQUIDEE, APUREE, REJETEE)),
+            Map.entry(BROUILLON, EnumSet.of(DEMANDEE, CLOTUREE)),
+            Map.entry(DEMANDEE, EnumSet.of(INCOMPLETE, EN_VERIFICATION, REJETEE, CLOTUREE)),
+            Map.entry(INCOMPLETE, EnumSet.of(A_RECONTROLER, REJETEE, CLOTUREE)),
+            Map.entry(A_RECONTROLER, EnumSet.of(EN_VERIFICATION, REJETEE, CLOTUREE)),
+            Map.entry(EN_VERIFICATION, EnumSet.of(INCOMPLETE, VISE, VALIDEE, REJETEE, CLOTUREE)),
+            Map.entry(VISE, EnumSet.of(INCOMPLETE, VALIDEE, LIQUIDEE, REJETEE, CLOTUREE)),
+            Map.entry(VALIDEE, EnumSet.of(LIQUIDEE, APUREE, REJETEE, CLOTUREE)),
             Map.entry(LIQUIDEE, EnumSet.noneOf(StatutUtilisation.class)),
             Map.entry(APUREE, EnumSet.noneOf(StatutUtilisation.class)),
-            Map.entry(REJETEE, EnumSet.noneOf(StatutUtilisation.class))
+            Map.entry(REJETEE, EnumSet.noneOf(StatutUtilisation.class)),
+            Map.entry(CLOTUREE, EnumSet.noneOf(StatutUtilisation.class))
     );
 
     public void validateTransition(StatutUtilisation from, StatutUtilisation to) {

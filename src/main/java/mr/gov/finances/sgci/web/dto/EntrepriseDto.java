@@ -15,6 +15,9 @@ public class EntrepriseDto {
     private Long id;
     @NotBlank(message = "La raison sociale est obligatoire")
     private String raisonSociale;
+    private String nomCommercial;
+    private String activite;
+    private String autre;
     private String nif;
     private String adresse;
     private String situationFiscale;

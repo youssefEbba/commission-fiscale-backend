@@ -14,7 +14,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,6 +22,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * Contrôle d’accès : {@link mr.gov.finances.sgci.service.CommissionRelaisService} vérifie que le compte en base
+ * ({@code userId} du JWT) a le rôle {@link mr.gov.finances.sgci.domain.enums.Role#COMMISSION_RELAIS}.
+ * Aucun {@code @PreAuthorize} sur les permissions du JWT : en impersonation le jeton ne porte que les droits
+ * ENTREPRISE / AUTORITE_CONTRACTANTE.
+ */
 @RestController
 @RequestMapping("/api/commission-relais")
 @RequiredArgsConstructor
@@ -31,7 +36,6 @@ public class CommissionRelaisController {
     private final CommissionRelaisService commissionRelaisService;
 
     @GetMapping("/entreprises")
-    @PreAuthorize("hasAuthority('commission.relais.list.entreprises')")
     public ResponseEntity<Page<EntrepriseDto>> listEntreprises(
             @AuthenticationPrincipal AuthenticatedUser user,
             @PageableDefault(size = 20) Pageable pageable,
@@ -41,7 +45,6 @@ public class CommissionRelaisController {
     }
 
     @GetMapping("/autorites-contractantes")
-    @PreAuthorize("hasAuthority('commission.relais.list.autorites')")
     public ResponseEntity<Page<AutoriteContractanteDto>> listAutorites(
             @AuthenticationPrincipal AuthenticatedUser user,
             @PageableDefault(size = 20) Pageable pageable,
@@ -51,7 +54,6 @@ public class CommissionRelaisController {
     }
 
     @PostMapping("/impersonate/entreprise")
-    @PreAuthorize("hasAuthority('commission.relais.impersonate.entreprise')")
     public ResponseEntity<LoginResponse> impersonateEntreprise(
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody ImpersonateEntrepriseRequest request
@@ -60,7 +62,6 @@ public class CommissionRelaisController {
     }
 
     @PostMapping("/impersonate/autorite-contractante")
-    @PreAuthorize("hasAuthority('commission.relais.impersonate.autorite')")
     public ResponseEntity<LoginResponse> impersonateAutorite(
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody ImpersonateAutoriteRequest request
@@ -69,7 +70,6 @@ public class CommissionRelaisController {
     }
 
     @PostMapping("/release")
-    @PreAuthorize("hasAuthority('commission.relais.release')")
     public ResponseEntity<LoginResponse> release(@AuthenticationPrincipal AuthenticatedUser user) {
         return ResponseEntity.ok(commissionRelaisService.release(user));
     }

@@ -19,6 +19,12 @@ public class CreateSousTraitanceOnboardingRequest {
     @NotBlank(message = "La raison sociale de l'entreprise sous-traitante est obligatoire")
     private String sousTraitantEntrepriseRaisonSociale;
 
+    private String sousTraitantEntrepriseNomCommercial;
+
+    private String sousTraitantEntrepriseActivite;
+
+    private String sousTraitantEntrepriseAutre;
+
     private String sousTraitantEntrepriseNif;
 
     private String sousTraitantEntrepriseAdresse;

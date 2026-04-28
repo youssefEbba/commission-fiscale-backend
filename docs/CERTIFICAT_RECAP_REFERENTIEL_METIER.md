@@ -39,7 +39,7 @@ Le certificat repose sur **deux blocs** construits à partir de l’**offre fisc
 ## 2. Interprétation métier (comportement dans le temps)
 
 - **Crédit intérieur initial (h)** : calculé dès la création à partir de **(g)** et **(d)** ; c’est la TVA nette théorique de l’ensemble du marché dans le référentiel « accord ».
-- **(d) — TVA déductible sur cordon** : connue à la création ; lors du **transfert**, une partie du **reste** de ce volet (selon règles métier et stock) peut **migrer** du cordon vers le volet TVA intérieure. Côté SGCI, le transfert implémenté déplace un **montant** du **solde cordon** vers le **solde TVA** sur le **même certificat** (voir `TransfertCreditService`).
+- **(d) — TVA déductible sur cordon** : connue à la création ; lors du **transfert** validé, le **restant (d)** (`tvaImportationDouane`) est **versé** sur le **solde TVA intérieure** (`soldeTVA`) sur le **même certificat** ; le stock **FIFO** n’est pas modifié par le transfert (voir `TransfertCreditService`, `docs/FRONT_CERTIFICAT_RECAP_TRANSFERT.md`).
 - **(e) — crédit extérieur** : couvre **droits + TVA import** au sens du plafond **b + d** ; le **solde cordon** courant diminue avec les **liquidations douanières** réelles.
 - **Stock FIFO TVA déductible** : la consommation progressive de **(d)** par importation est modélisée par des **lignes de stock** `TvaDeductibleStock` (FIFO par date), consultables via l’API du certificat (voir contrôleur certificat / utilisations).
 
@@ -110,9 +110,10 @@ Voir aussi `docs/FRONT_CERTIFICAT_RECAP_TRANSFERT.md` et `docs/MISE_EN_PLACE_MON
 | Besoin | SGCI (`TransfertCredit`) |
 |--------|---------------------------|
 | Date demande | `dateDemande` |
-| Montant | `montant` |
+| Montant exécuté | `montant` (= restant **(d)** à la validation) |
 | Clôture douane (déclaratif) | `operationsDouaneCloturees` |
 | Statut du dossier transfert | `statut` (`StatutTransfert`) |
+| Après exécution | `tvaImportationDouane` → **0** ; `soldeTVA` += ce montant ; utilisations **douanières** ouvertes → `CLOTUREE` |
 | Solde cordon au moment T, acteur validateur détaillé, observations | **Limité** : validation côté service, **pas** tous les champs d’audit listés |
 
 ### Clôture globale

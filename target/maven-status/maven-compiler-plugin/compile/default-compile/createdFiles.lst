@@ -5,6 +5,7 @@ mr\gov\finances\sgci\domain\entity\Avenant$AvenantBuilder.class
 mr\gov\finances\sgci\web\dto\CreateDelegueRequest$CreateDelegueRequestBuilder.class
 mr\gov\finances\sgci\domain\entity\ReferentielProjet$ReferentielProjetBuilder.class
 mr\gov\finances\sgci\domain\entity\Notification$NotificationBuilder.class
+mr\gov\finances\sgci\web\dto\MarcheDemandeCorrectionStatusDto.class
 mr\gov\finances\sgci\domain\entity\DossierGed$DossierGedBuilder.class
 mr\gov\finances\sgci\domain\entity\RolePermission.class
 mr\gov\finances\sgci\repository\MarcheDelegueRepository.class
@@ -202,6 +203,7 @@ mr\gov\finances\sgci\web\controller\LocalFileController.class
 mr\gov\finances\sgci\domain\entity\LettreCorrection.class
 mr\gov\finances\sgci\domain\entity\DocumentUtilisationCredit$DocumentUtilisationCreditBuilder.class
 mr\gov\finances\sgci\web\dto\UpdateDelegueRequest.class
+mr\gov\finances\sgci\web\dto\MarcheDemandeCorrectionStatusDto$MarcheDemandeCorrectionStatusDtoBuilder.class
 mr\gov\finances\sgci\web\filter\RequestLoggingFilter.class
 mr\gov\finances\sgci\config\WebFilterConfig.class
 mr\gov\finances\sgci\domain\entity\TvaDeductibleStock.class

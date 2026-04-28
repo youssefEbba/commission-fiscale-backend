@@ -85,6 +85,9 @@ public class AuthService {
         } else if (request.getEntrepriseRaisonSociale() != null) {
             entreprise = Entreprise.builder()
                     .raisonSociale(request.getEntrepriseRaisonSociale())
+                    .nomCommercial(request.getEntrepriseNomCommercial())
+                    .activite(request.getEntrepriseActivite())
+                    .autre(request.getEntrepriseAutre())
                     .nif(request.getEntrepriseNif())
                     .adresse(request.getEntrepriseAdresse())
                     .situationFiscale(request.getEntrepriseSituationFiscale())

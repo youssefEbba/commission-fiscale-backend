@@ -39,6 +39,9 @@ public class EntrepriseService {
         }
         Entreprise entity = Entreprise.builder()
                 .raisonSociale(dto.getRaisonSociale())
+                .nomCommercial(dto.getNomCommercial())
+                .activite(dto.getActivite())
+                .autre(dto.getAutre())
                 .nif(dto.getNif())
                 .adresse(dto.getAdresse())
                 .situationFiscale(dto.getSituationFiscale())
@@ -53,6 +56,9 @@ public class EntrepriseService {
     public EntrepriseDto update(Long id, EntrepriseDto dto) {
         Entreprise entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée: " + id));
         entity.setRaisonSociale(dto.getRaisonSociale());
+        entity.setNomCommercial(dto.getNomCommercial());
+        entity.setActivite(dto.getActivite());
+        entity.setAutre(dto.getAutre());
         entity.setNif(dto.getNif());
         entity.setAdresse(dto.getAdresse());
         entity.setSituationFiscale(dto.getSituationFiscale());
@@ -75,6 +81,9 @@ public class EntrepriseService {
         return EntrepriseDto.builder()
                 .id(e.getId())
                 .raisonSociale(e.getRaisonSociale())
+                .nomCommercial(e.getNomCommercial())
+                .activite(e.getActivite())
+                .autre(e.getAutre())
                 .nif(e.getNif())
                 .adresse(e.getAdresse())
                 .situationFiscale(e.getSituationFiscale())

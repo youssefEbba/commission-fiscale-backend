@@ -22,6 +22,16 @@ public class Entreprise {
     @Column(nullable = false)
     private String raisonSociale;
 
+    /** Dénomination usuelle (enseigne) distincte de la raison sociale. */
+    private String nomCommercial;
+
+    /** Secteur ou nature d’activité. */
+    private String activite;
+
+    /** Informations complémentaires libres. */
+    @Column(length = 2000)
+    private String autre;
+
     @Column(unique = true)
     private String nif;
 
