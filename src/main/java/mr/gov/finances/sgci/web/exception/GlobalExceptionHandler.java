@@ -2,14 +2,19 @@ package mr.gov.finances.sgci.web.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 
 import mr.gov.finances.sgci.workflow.WorkflowTransitionException;
 
@@ -33,6 +38,51 @@ public class GlobalExceptionHandler {
                 HttpStatus.PAYLOAD_TOO_LARGE.value(),
                 ApiErrorCode.FILE_TOO_LARGE,
                 "Fichier trop volumineux",
+                null));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE.value(),
+                ApiErrorCode.VALIDATION_FAILED,
+                "Type de contenu non supporté. Attendu: " + ex.getSupportedMediaTypes(),
+                null));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ApiErrorCode.VALIDATION_FAILED,
+                "Corps de requête illisible ou format JSON invalide",
+                null));
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingParam(MissingServletRequestParameterException ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ApiErrorCode.VALIDATION_FAILED,
+                "Paramètre obligatoire manquant: " + ex.getParameterName(),
+                null));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ApiErrorCode.VALIDATION_FAILED,
+                "Valeur invalide pour le paramètre '" + ex.getName() + "': " + ex.getValue(),
+                null));
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ErrorResponse> handleMultipart(MultipartException ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ApiErrorCode.VALIDATION_FAILED,
+                "Erreur de traitement du fichier uploadé: " + ex.getMessage(),
                 null));
     }
 

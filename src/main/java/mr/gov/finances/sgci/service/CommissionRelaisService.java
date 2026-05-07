@@ -87,7 +87,7 @@ public class CommissionRelaisService {
         Utilisateur relais = requireCommissionRelaisAccount(auth.getUserId());
         AutoriteContractante ac = autoriteContractanteRepository.findById(request.getAutoriteContractanteId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante introuvable"));
-        List<String> perms = new ArrayList<>(permissionService.findPermissionCodesByRole(Role.AUTORITE_CONTRACTANTE));
+        List<String> perms = new ArrayList<>(permissionService.findPermissionCodesUnionAutoriteContractanteProfiles());
         String token = jwtService.generateToken(
                 relais.getUsername(),
                 Role.AUTORITE_CONTRACTANTE,

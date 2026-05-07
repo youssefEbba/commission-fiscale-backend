@@ -78,6 +78,12 @@ public class TransfertCreditController {
         return service.rejectByDgtcp(id, user);
     }
 
+    @PostMapping("/{id}/annuler")
+    @PreAuthorize("hasAuthority('transfert.annuler')")
+    public TransfertCreditDto annuler(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.annuler(id, user);
+    }
+
     @GetMapping("/{id}/documents")
     @PreAuthorize("hasAnyAuthority('transfert.solde.view', 'transfert.dgtcp.queue.view', "
             + "'transfert.president.validate', 'transfert.president.reject', 'archivage.view')")
@@ -91,8 +97,10 @@ public class TransfertCreditController {
     public DocumentTransfertCreditDto uploadDocument(
             @PathVariable Long id,
             @RequestParam TypeDocument type,
-            @RequestParam("file") MultipartFile file
+            @RequestParam(value = "message", required = false) String message,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return documentService.upload(id, type, file);
+        return documentService.upload(id, type, message, file, user);
     }
 }

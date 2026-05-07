@@ -20,7 +20,7 @@ public class Document {
     private Long id;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 64)
     private TypeDocument type;
 
     @Column(nullable = false)

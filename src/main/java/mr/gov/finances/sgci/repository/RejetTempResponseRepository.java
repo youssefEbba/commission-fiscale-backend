@@ -10,4 +10,6 @@ import java.util.List;
 public interface RejetTempResponseRepository extends JpaRepository<RejetTempResponse, Long> {
 
     List<RejetTempResponse> findByDecisionUtilisationCredit_IdOrderByCreatedAtAsc(Long decisionUtilisationCreditId);
+
+    List<RejetTempResponse> findByDecisionTransfertCredit_IdOrderByCreatedAtAsc(Long decisionTransfertCreditId);
 }

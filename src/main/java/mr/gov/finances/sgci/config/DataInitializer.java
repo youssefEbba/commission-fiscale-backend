@@ -13,6 +13,7 @@ import mr.gov.finances.sgci.domain.entity.Entreprise;
 import mr.gov.finances.sgci.domain.entity.Marche;
 import mr.gov.finances.sgci.domain.entity.ModeleFiscal;
 import mr.gov.finances.sgci.domain.entity.Permission;
+import mr.gov.finances.sgci.domain.entity.ReferentielTaxe;
 import mr.gov.finances.sgci.domain.entity.RolePermission;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
@@ -32,6 +33,7 @@ import mr.gov.finances.sgci.repository.DocumentRequirementRepository;
 import mr.gov.finances.sgci.repository.EntrepriseRepository;
 import mr.gov.finances.sgci.repository.MarcheRepository;
 import mr.gov.finances.sgci.repository.PermissionRepository;
+import mr.gov.finances.sgci.repository.ReferentielTaxeRepository;
 import mr.gov.finances.sgci.repository.RolePermissionRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.service.DossierGedService;
@@ -45,6 +47,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.EnumSet;
+import java.util.Optional;
 import java.time.Instant;
 
 @Component
@@ -62,6 +65,7 @@ public class DataInitializer implements CommandLineRunner {
     private final MarcheRepository marcheRepository;
     private final DocumentRequirementRepository documentRequirementRepository;
     private final PermissionRepository permissionRepository;
+    private final ReferentielTaxeRepository referentielTaxeRepository;
     private final RolePermissionRepository rolePermissionRepository;
     private final PasswordEncoder passwordEncoder;
     private final DossierGedService dossierGedService;
@@ -84,8 +88,13 @@ public class DataInitializer implements CommandLineRunner {
         seedRolePermissions();
         seedDocumentRequirements();
         seedDefaultUsers();
+        seedReferentielTaxes();
         if (Boolean.TRUE.equals(environment.getProperty("app.seed.demande-correction.enabled", Boolean.class, Boolean.TRUE))) {
             seedDemandeCorrectionAdopteeDemo();
+        }
+        if (Boolean.TRUE.equals(environment.getProperty("app.seed.utilisation-credit-demo.enabled", Boolean.class, Boolean.TRUE))
+                && Boolean.TRUE.equals(environment.getProperty("app.seed.demande-correction.enabled", Boolean.class, Boolean.TRUE))) {
+            seedUtilisationCreditDemoScenarios();
         }
         if (Boolean.TRUE.equals(environment.getProperty("app.seed.certificat-ouvert.enabled", Boolean.class, Boolean.FALSE))) {
             seedCertificatOuvertDemo();
@@ -348,13 +357,263 @@ public class DataInitializer implements CommandLineRunner {
                 .tvaCollecteeTravaux(tvaCollecteeTravaux)
                 .montantCordon(montantCordon)
                 .montantTVAInterieure(montantTVAInterieure)
-                .soldeCordon(montantCordon)
+                .soldeCordon(droitsEtTaxesDouaneHorsTva)
                 .soldeTVA(montantTVAInterieure)
                 .statut(StatutCertificat.OUVERT)
                 .entreprise(entreprise)
                 .demandeCorrection(demande)
                 .build();
         certificatCreditRepository.save(certificat);
+    }
+
+    /*
+     * Jeux « petits montants » pour tester les utilisations de crédit à la main (sans créer d’utilisations ici).
+     *
+     * Entreprise : NIF_DEFAULT / user entreprise.
+     *
+     * Scénario A — CI-DEMO-SCEN-A (DC-DEMO-SCEN-A, marché MP-DEMO-SCEN-A)
+     *   Récap : (a)=30, (b)=12, (d)=8  → (e)=20 = montantCordon = soldeCordon initial
+     *          (f)=50, (g)=18, (d)=8    → (h)=10 = montantTVAInterieure = soldeTVA initial
+     *   Piste de test : 3 à 5 utilisations DOUANIER (ex. liquidations 4+2, 3+1, 2+2 TVA… en restant ≤ cordon et ≤ restant (d)),
+     *   puis utilisations TVA intérieure / apurement ; finir par clôture du certificat (sans transfert obligatoire).
+     *
+     * Scénario B — CI-DEMO-SCEN-B (DC-DEMO-SCEN-B, marché MP-DEMO-SCEN-B)
+     *   Récap : (a)=20, (b)=10, (d)=10 → (e)=20 cordon ; (f)=30, (g)=16 → (h)=6 intérieur
+     *   Piste de test : quelques importations (diminuent soldeCordon et tvaImportationDouane), puis demande de TRANSFERT
+     *   (verse le restant (d) dans le stock TVA déductible, clôture les dossiers douaniers ouverts), puis clôture globale.
+     *
+     * Désactiver : app.seed.utilisation-credit-demo.enabled=false
+     */
+    private static final String DEMO_UC_SCEN_A_DC = "DC-DEMO-SCEN-A";
+    private static final String DEMO_UC_SCEN_A_MP = "MP-DEMO-SCEN-A";
+    private static final String DEMO_UC_SCEN_A_CI = "CI-DEMO-SCEN-A";
+    private static final String DEMO_UC_SCEN_B_DC = "DC-DEMO-SCEN-B";
+    private static final String DEMO_UC_SCEN_B_MP = "MP-DEMO-SCEN-B";
+    private static final String DEMO_UC_SCEN_B_CI = "CI-DEMO-SCEN-B";
+    private static final String DEMO_UC_SCEN_C_DC = "DC-DEMO-SCEN-C";
+    private static final String DEMO_UC_SCEN_C_MP = "MP-DEMO-SCEN-C";
+    private static final String DEMO_UC_SCEN_C_CI = "CI-DEMO-SCEN-C";
+    private static final String DEMO_UC_SCEN_D_DC = "DC-DEMO-SCEN-D";
+    private static final String DEMO_UC_SCEN_D_MP = "MP-DEMO-SCEN-D";
+    private static final String DEMO_UC_SCEN_D_CI = "CI-DEMO-SCEN-D";
+
+    private void seedUtilisationCreditDemoScenarios() {
+        AutoriteContractante autoriteContractante;
+        Entreprise entreprise;
+        Convention convention;
+        try {
+            autoriteContractante = autoriteContractanteRepository.findByCode("AC_DEFAULT")
+                    .orElseThrow(() -> new IllegalStateException("AC_DEFAULT manquante"));
+            entreprise = entrepriseRepository.findByNif("NIF_DEFAULT")
+                    .orElseThrow(() -> new IllegalStateException("Entreprise NIF_DEFAULT manquante"));
+            convention = conventionRepository.findByReference("CONV-DEFAULT")
+                    .orElseThrow(() -> new IllegalStateException("Convention CONV-DEFAULT manquante"));
+        } catch (IllegalStateException e) {
+            return;
+        }
+
+        DemandeCorrection dA = upsertAdopteeDemandeAvecMarche(DEMO_UC_SCEN_A_DC, DEMO_UC_SCEN_A_MP, autoriteContractante, entreprise, convention);
+        DemandeCorrection dB = upsertAdopteeDemandeAvecMarche(DEMO_UC_SCEN_B_DC, DEMO_UC_SCEN_B_MP, autoriteContractante, entreprise, convention);
+        DemandeCorrection dC = upsertAdopteeDemandeAvecMarche(DEMO_UC_SCEN_C_DC, DEMO_UC_SCEN_C_MP, autoriteContractante, entreprise, convention);
+        DemandeCorrection dD = upsertAdopteeDemandeAvecMarche(DEMO_UC_SCEN_D_DC, DEMO_UC_SCEN_D_MP, autoriteContractante, entreprise, convention);
+
+        if (dA != null && dA.getId() != null) {
+            createPetitCertificatOuvertSiAbsent(DEMO_UC_SCEN_A_CI, dA, entreprise,
+                    BigDecimal.valueOf(30), BigDecimal.valueOf(12), BigDecimal.valueOf(8),
+                    BigDecimal.valueOf(50), BigDecimal.valueOf(18));
+        }
+        if (dB != null && dB.getId() != null) {
+            createPetitCertificatOuvertSiAbsent(DEMO_UC_SCEN_B_CI, dB, entreprise,
+                    BigDecimal.valueOf(20), BigDecimal.valueOf(10), BigDecimal.valueOf(10),
+                    BigDecimal.valueOf(30), BigDecimal.valueOf(16));
+        }
+        if (dC != null && dC.getId() != null) {
+            // Scénario C — solde entièrement épuisé → éligible à la clôture immédiatement
+            // (a)=15, (b)=6, (d)=4 → (e)=10 ; (f)=25, (g)=8, (d)=4 → (h)=4
+            createCertificatSoldeZeroSiAbsent(DEMO_UC_SCEN_C_CI, dC, entreprise,
+                    BigDecimal.valueOf(15), BigDecimal.valueOf(6), BigDecimal.valueOf(4),
+                    BigDecimal.valueOf(25), BigDecimal.valueOf(8));
+        }
+        if (dD != null && dD.getId() != null) {
+            // Scénario D — certificat neuf, aucune utilisation créée, non éligible à la clôture
+            // (a)=25, (b)=8, (d)=5 → (e)=13 ; (f)=40, (g)=14, (d)=5 → (h)=9
+            createPetitCertificatOuvertSiAbsent(DEMO_UC_SCEN_D_CI, dD, entreprise,
+                    BigDecimal.valueOf(25), BigDecimal.valueOf(8), BigDecimal.valueOf(5),
+                    BigDecimal.valueOf(40), BigDecimal.valueOf(14));
+        }
+    }
+
+    /** Crée demande + marché ADOPTEE si le numéro de demande n’existe pas ; sinon retourne la demande existante. */
+    private DemandeCorrection upsertAdopteeDemandeAvecMarche(
+            String numeroDemande,
+            String numeroMarche,
+            AutoriteContractante autoriteContractante,
+            Entreprise entreprise,
+            Convention convention) {
+        Optional<DemandeCorrection> existing = demandeCorrectionRepository.findByNumero(numeroDemande);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        Marche marche = Marche.builder()
+                .numeroMarche(numeroMarche)
+                .dateSignature(LocalDate.now())
+                .montantContratHt(BigDecimal.valueOf(100))
+                .statut(StatutMarche.EN_COURS)
+                .convention(convention)
+                .build();
+        marche = marcheRepository.save(marche);
+
+        DemandeCorrection demande = DemandeCorrection.builder()
+                .numero(numeroDemande)
+                .dateDepot(Instant.now())
+                .statut(StatutDemande.ADOPTEE)
+                .autoriteContractante(autoriteContractante)
+                .entreprise(entreprise)
+                .convention(convention)
+                .build();
+        demande.setValidationDgd(true);
+        demande.setValidationDgdDate(Instant.now());
+        demande.setValidationDgdUserId(utilisateurRepository.findByUsername("dgd").map(Utilisateur::getId).orElse(null));
+        demande.setValidationDgtcp(true);
+        demande.setValidationDgtcpDate(Instant.now());
+        demande.setValidationDgtcpUserId(utilisateurRepository.findByUsername("dgtcp").map(Utilisateur::getId).orElse(null));
+        demande.setValidationDgi(true);
+        demande.setValidationDgiDate(Instant.now());
+        demande.setValidationDgiUserId(utilisateurRepository.findByUsername("dgi").map(Utilisateur::getId).orElse(null));
+        demande.setValidationDgb(true);
+        demande.setValidationDgbDate(Instant.now());
+        demande.setValidationDgbUserId(utilisateurRepository.findByUsername("dgb").map(Utilisateur::getId).orElse(null));
+
+        ModeleFiscal modeleFiscal = ModeleFiscal.builder().demandeCorrection(demande).build();
+        Dqe dqe = Dqe.builder().demandeCorrection(demande).build();
+        demande.setModeleFiscal(modeleFiscal);
+        demande.setDqe(dqe);
+        demande = demandeCorrectionRepository.save(demande);
+        dossierGedService.ensureCreatedForDemandeCorrection(demande.getId());
+        marche.setDemandeCorrection(demande);
+        marche = marcheRepository.save(marche);
+        demande.setMarche(marche);
+        demandeCorrectionRepository.save(demande);
+        return demande;
+    }
+
+    private void createPetitCertificatOuvertSiAbsent(
+            String numeroCertificat,
+            DemandeCorrection demande,
+            Entreprise entreprise,
+            BigDecimal valeurDouaneFournitures,
+            BigDecimal droitsEtTaxesDouaneHorsTva,
+            BigDecimal tvaImportationDouane,
+            BigDecimal montantMarcheHt,
+            BigDecimal tvaCollecteeTravaux) {
+        if (certificatCreditRepository.existsByNumero(numeroCertificat)) {
+            return;
+        }
+        if (demande == null || demande.getId() == null) {
+            return;
+        }
+        if (certificatCreditRepository.countByDemandeCorrectionIdAndStatutNot(demande.getId(), StatutCertificat.ANNULE) > 0) {
+            return;
+        }
+        BigDecimal montantCordon = droitsEtTaxesDouaneHorsTva.add(tvaImportationDouane);
+        BigDecimal montantTVAInterieure = tvaCollecteeTravaux.subtract(tvaImportationDouane);
+
+        CertificatCredit certificat = CertificatCredit.builder()
+                .numero(numeroCertificat)
+                .dateEmission(Instant.now())
+                .dateValidite(Instant.now().plusSeconds(365L * 24 * 3600))
+                .valeurDouaneFournitures(valeurDouaneFournitures)
+                .droitsEtTaxesDouaneHorsTva(droitsEtTaxesDouaneHorsTva)
+                .tvaImportationDouaneAccordee(tvaImportationDouane)
+                .tvaImportationDouane(tvaImportationDouane)
+                .montantMarcheHt(montantMarcheHt)
+                .tvaCollecteeTravaux(tvaCollecteeTravaux)
+                .montantCordon(montantCordon)
+                .montantTVAInterieure(montantTVAInterieure)
+                .soldeCordon(droitsEtTaxesDouaneHorsTva)
+                .soldeTVA(montantTVAInterieure)
+                .statut(StatutCertificat.OUVERT)
+                .entreprise(entreprise)
+                .demandeCorrection(demande)
+                .build();
+        certificatCreditRepository.save(certificat);
+    }
+
+    /**
+     * Crée un certificat OUVERT dont les soldes (cordon droits, TVA importation, TVA intérieure) sont
+     * tous à zéro — simule un certificat entièrement consommé, éligible immédiatement à la clôture.
+     */
+    private void createCertificatSoldeZeroSiAbsent(
+            String numeroCertificat,
+            DemandeCorrection demande,
+            Entreprise entreprise,
+            BigDecimal valeurDouaneFournitures,
+            BigDecimal droitsEtTaxesDouaneHorsTva,
+            BigDecimal tvaImportationDouane,
+            BigDecimal montantMarcheHt,
+            BigDecimal tvaCollecteeTravaux) {
+        if (certificatCreditRepository.existsByNumero(numeroCertificat)) {
+            return;
+        }
+        if (demande == null || demande.getId() == null) {
+            return;
+        }
+        if (certificatCreditRepository.countByDemandeCorrectionIdAndStatutNot(demande.getId(), StatutCertificat.ANNULE) > 0) {
+            return;
+        }
+        BigDecimal montantCordon = droitsEtTaxesDouaneHorsTva.add(tvaImportationDouane);
+        BigDecimal montantTVAInterieure = tvaCollecteeTravaux.subtract(tvaImportationDouane);
+
+        CertificatCredit certificat = CertificatCredit.builder()
+                .numero(numeroCertificat)
+                .dateEmission(Instant.now())
+                .dateValidite(Instant.now().plusSeconds(365L * 24 * 3600))
+                .valeurDouaneFournitures(valeurDouaneFournitures)
+                .droitsEtTaxesDouaneHorsTva(droitsEtTaxesDouaneHorsTva)
+                .tvaImportationDouaneAccordee(tvaImportationDouane)
+                .tvaImportationDouane(BigDecimal.ZERO)
+                .montantMarcheHt(montantMarcheHt)
+                .tvaCollecteeTravaux(tvaCollecteeTravaux)
+                .montantCordon(montantCordon)
+                .montantTVAInterieure(montantTVAInterieure)
+                .soldeCordon(BigDecimal.ZERO)
+                .soldeTVA(BigDecimal.ZERO)
+                .statut(StatutCertificat.OUVERT)
+                .entreprise(entreprise)
+                .demandeCorrection(demande)
+                .build();
+        certificatCreditRepository.save(certificat);
+    }
+
+    /**
+     * Seed du référentiel des taxes douanières courantes en Mauritanie.
+     * Idempotent : utilise le code taxe comme clé d'unicité.
+     */
+    private void seedReferentielTaxes() {
+        seedTaxe("DD",    "Droits de douane",                              null,    1);
+        seedTaxe("TVA",   "TVA à l'importation",                           null,    2);
+        seedTaxe("RS",    "Redevance statistique",                         null,    3);
+        seedTaxe("PSC",   "Prélèvement de solidarité communautaire (PSC)", null,    4);
+        seedTaxe("IMF",   "Impôt minimum forfaitaire (IMF)",               null,    5);
+        seedTaxe("PC",    "Prélèvement communautaire (PC)",                null,    6);
+        seedTaxe("TSI",   "Taxe sur les systèmes d'information (TSI)",     null,    7);
+        seedTaxe("TIMBRE","Droit de timbre douanier",                      null,    8);
+        seedTaxe("CAOM",  "Contribution aux activités opérationnelles MENA (CAOM)", null, 9);
+        seedTaxe("PREF",  "Prélèvement redevance fiscale",                 null,    10);
+    }
+
+    private void seedTaxe(String code, String denomination, BigDecimal valeur, int ordre) {
+        if (!referentielTaxeRepository.existsByCodeTaxe(code)) {
+            referentielTaxeRepository.save(ReferentielTaxe.builder()
+                    .codeTaxe(code)
+                    .denominationTaxe(denomination)
+                    .valeurTaxe(valeur)
+                    .ordreAffichage(ordre)
+                    .active(Boolean.TRUE)
+                    .dateCreation(Instant.now())
+                    .build());
+        }
     }
 
     private void seedDefaultUsers() {
@@ -586,6 +845,10 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("utilisation.douane.dgtcp.queue.view", "Consulter les demandes validées DGD");
         createPermission("utilisation.douane.dgtcp.impute", "Imputer les droits et taxes");
         createPermission("utilisation.douane.dgtcp.solde.update", "Mettre à jour le solde Douane");
+        createPermission("utilisation.douane.entreprise.cheque", "Saisir le chèque certifié (après visa DGD)");
+        createPermission("utilisation.douane.dgtcp.envoyer.tresor", "Envoyer la demande au Trésor");
+        createPermission("utilisation.douane.dgtcp.quittances", "Saisir les quittances Trésor");
+        createPermission("utilisation.douane.entreprise.reception", "Accuser réception du certificat d'utilisation");
         createPermission("utilisation.douane.dgtcp.history.view", "Consulter l'historique des liquidations");
 
         createPermission("utilisation.interieur.submit", "Soumettre une demande d'utilisation Intérieur");
@@ -630,6 +893,8 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("transfert.dgtcp.update", "Mettre à jour les composantes");
         createPermission("transfert.president.validate", "Valider le transfert de solde");
         createPermission("transfert.president.reject", "Rejeter le transfert");
+        createPermission("transfert.annuler", "Annuler une demande de transfert avant exécution par DGTCP / Président");
+        createPermission("transfert.entreprise.rejet.repondre", "Répondre à un rejet temporaire sur une demande de transfert");
 
         createPermission("sous_traitance.submit", "Soumettre une demande de sous-traitance");
         createPermission("sous_traitance.solde.view", "Consulter ses demandes / autorisations de sous-traitance");
@@ -646,6 +911,8 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("cloture.president.validate", "Valider la clôture/annulation");
         createPermission("cloture.president.reject", "Rejeter la clôture/annulation");
         createPermission("archivage.view", "Accéder aux archives complètes");
+
+        createPermission("referentiel.taxe.manage", "Gérer le référentiel des taxes douanières (CRUD)");
 
         createPermission("user.create", "Créer un compte utilisateur");
         createPermission("user.update", "Modifier un compte utilisateur");
@@ -805,6 +1072,8 @@ public class DataInitializer implements CommandLineRunner {
                 "utilisation.douane.document.upload",
                 "utilisation.douane.solde.view",
                 "utilisation.douane.history.view",
+                "utilisation.douane.entreprise.cheque",
+                "utilisation.douane.entreprise.reception",
                 "utilisation.interieur.submit",
                 "utilisation.interieur.document.upload",
                 "utilisation.interieur.solde.view",
@@ -816,6 +1085,8 @@ public class DataInitializer implements CommandLineRunner {
                 "transfert.submit",
                 "transfert.amount.set",
                 "transfert.solde.view",
+                "transfert.annuler",
+                "transfert.entreprise.rejet.repondre",
                 "sous_traitance.submit",
                 "sous_traitance.solde.view",
                 "sous_traitant.list",
@@ -828,6 +1099,8 @@ public class DataInitializer implements CommandLineRunner {
                 "utilisation.douane.document.upload",
                 "utilisation.douane.solde.view",
                 "utilisation.douane.history.view",
+                "utilisation.douane.entreprise.cheque",
+                "utilisation.douane.entreprise.reception",
                 "utilisation.interieur.submit",
                 "utilisation.interieur.document.upload",
                 "utilisation.interieur.solde.view",
@@ -951,6 +1224,8 @@ public class DataInitializer implements CommandLineRunner {
                 "utilisation.douane.dgtcp.solde.update",
                 "utilisation.douane.dgtcp.history.view",
                 "utilisation.douane.dgtcp.resolve",
+                "utilisation.douane.dgtcp.envoyer.tresor",
+                "utilisation.douane.dgtcp.quittances",
                 "utilisation.interieur.dgtcp.queue.view",
                 "utilisation.interieur.dgtcp.verify",
                 "utilisation.interieur.dgtcp.validate",
@@ -967,7 +1242,9 @@ public class DataInitializer implements CommandLineRunner {
                 "sous_traitance.dgtcp.queue.view",
                 "sous_traitance.dgtcp.update",
                 "entreprise.list",
-                "reporting.view"
+                "reporting.view",
+                "cloture.queue.view",
+                "cloture.prepare"
         );
 
         assign(Role.COMMISSION_RELAIS,
@@ -976,7 +1253,9 @@ public class DataInitializer implements CommandLineRunner {
                 "commission.relais.impersonate.entreprise",
                 "commission.relais.impersonate.autorite",
                 "commission.relais.release",
-                "document.requirements.view"
+                "document.requirements.view",
+                "utilisation.douane.entreprise.cheque",
+                "utilisation.douane.entreprise.reception"
         );
 
     assign(Role.ADMIN_SI,
@@ -991,6 +1270,7 @@ public class DataInitializer implements CommandLineRunner {
             "convention.reject",
             "correction.view.audit",
             "archivage.view",
+            "referentiel.taxe.manage",
             "user.create",
             "user.update",
             "user.disable",

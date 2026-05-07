@@ -47,4 +47,8 @@ public class RejetTempResponse {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "decision_correction_id")
     private DecisionCorrection decisionCorrection;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "decision_transfert_credit_id")
+    private DecisionTransfertCredit decisionTransfertCredit;
 }

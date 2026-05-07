@@ -1,5 +1,7 @@
 package mr.gov.finances.sgci.service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -40,6 +42,20 @@ public class PermissionService {
                 .map(RolePermission::getPermission)
                 .distinct()
                 .toList();
+    }
+
+    /**
+     * Union des permissions {@link Role#AUTORITE_CONTRACTANTE}, {@link Role#AUTORITE_UPM} et
+     * {@link Role#AUTORITE_UEP} — utilisé pour l’impersonation « autorité » par la commission relais
+     * afin d’aligner le jeton sur les capacités réelles des profils AC (souvent UPM ou UEP en production).
+     */
+    @Transactional(readOnly = true)
+    public List<String> findPermissionCodesUnionAutoriteContractanteProfiles() {
+        LinkedHashSet<String> codes = new LinkedHashSet<>();
+        codes.addAll(findPermissionCodesByRole(Role.AUTORITE_CONTRACTANTE));
+        codes.addAll(findPermissionCodesByRole(Role.AUTORITE_UPM));
+        codes.addAll(findPermissionCodesByRole(Role.AUTORITE_UEP));
+        return new ArrayList<>(codes);
     }
 
     @Transactional

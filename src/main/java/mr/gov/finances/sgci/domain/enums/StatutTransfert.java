@@ -15,8 +15,20 @@ public enum StatutTransfert {
      * le transfert vers {@link #TRANSFERE}). Conservée pour compatibilité base de données.
      */
     VALIDE,
+    /**
+     * DGTCP / Président : pièces ou compléments demandés (rejet temporaire) — l’entreprise peut déposer
+     * des documents et répondre tant que le rejet n’est pas résolu.
+     */
+    INCOMPLETE,
+    /**
+     * Tous les rejets temporaires ouverts ont été résolus par l’administration ; le dossier est prêt pour
+     * une nouvelle instruction (validation ou nouveau rejet temporaire).
+     */
+    A_RECONTROLER,
     /** Transfert douane → intérieur effectué sur le certificat. */
     TRANSFERE,
-    /** Demande refusée par DGTCP ou le Président. */
-    REJETE
+    /** Demande refusée définitivement par DGTCP ou le Président. */
+    REJETE,
+    /** Demande retirée par l’entreprise avant exécution du transfert. */
+    ANNULEE
 }

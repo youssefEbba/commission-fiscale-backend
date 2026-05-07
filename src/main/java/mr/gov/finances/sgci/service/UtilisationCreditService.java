@@ -6,10 +6,13 @@ import mr.gov.finances.sgci.web.exception.ApiException;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
+import mr.gov.finances.sgci.domain.entity.LigneBulletinLiquidation;
+import mr.gov.finances.sgci.domain.entity.QuittanceTresor;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationDouaniere;
 import mr.gov.finances.sgci.domain.entity.UtilisationTVAInterieure;
+import mr.gov.finances.sgci.domain.enums.AffectationTaxe;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
@@ -21,6 +24,8 @@ import mr.gov.finances.sgci.domain.enums.TypeAchat;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
+import mr.gov.finances.sgci.repository.LigneBulletinLiquidationRepository;
+import mr.gov.finances.sgci.repository.QuittanceTresorRepository;
 import mr.gov.finances.sgci.repository.TransfertCreditRepository;
 import mr.gov.finances.sgci.repository.DecisionUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.DocumentUtilisationCreditRepository;
@@ -32,14 +37,22 @@ import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.ApurerTVAInterieureRequest;
 import mr.gov.finances.sgci.web.dto.CreateUtilisationCreditRequest;
+import mr.gov.finances.sgci.web.dto.LigneBulletinDto;
 import mr.gov.finances.sgci.web.dto.LiquiderUtilisationDouaneRequest;
+import mr.gov.finances.sgci.web.dto.QuittanceTresorDto;
+import mr.gov.finances.sgci.web.dto.SaisirChequeRequest;
+import mr.gov.finances.sgci.web.dto.SaisirQuittancesRequest;
 import mr.gov.finances.sgci.web.dto.TvaDeductibleStockDto;
 import mr.gov.finances.sgci.web.dto.UtilisationCreditDto;
 import mr.gov.finances.sgci.workflow.UtilisationCreditWorkflow;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.EnumSet;
@@ -59,12 +72,16 @@ public class UtilisationCreditService {
     private final UtilisateurRepository utilisateurRepository;
     private final DocumentUtilisationCreditRepository documentUtilisationCreditRepository;
     private final DecisionUtilisationCreditRepository decisionUtilisationCreditRepository;
+    private final LigneBulletinLiquidationRepository ligneBulletinRepository;
+    private final QuittanceTresorRepository quittanceTresorRepository;
     private final SousTraitanceService sousTraitanceService;
     private final UtilisationCreditWorkflow workflow;
     private final AuditService auditService;
     private final NotificationService notificationService;
     private final DocumentUtilisationCreditService documentService;
     private final DocumentRequirementValidator requirementValidator;
+    private final MinioService minioService;
+    private final ObjectMapper objectMapper;
     private final TvaDeductibleStockRepository tvaStockRepository;
     private final TransfertCreditRepository transfertCreditRepository;
     private final EffectiveIdentityService effectiveIdentityService;
@@ -320,17 +337,20 @@ public class UtilisationCreditService {
             d.setNumeroDeclaration(request.getNumeroDeclaration());
             d.setNumeroBulletin(request.getNumeroBulletin());
             d.setDateDeclaration(request.getDateDeclaration());
-            d.setMontantDroits(request.getMontantDroits());
-            d.setMontantTVA(request.getMontantTVA());
             d.setEnregistreeSYDONIA(request.getEnregistreeSYDONIA());
 
-            if (d.getMontant() == null) {
-                BigDecimal droits = d.getMontantDroits() != null ? d.getMontantDroits() : BigDecimal.ZERO;
-                BigDecimal tva = d.getMontantTVA() != null ? d.getMontantTVA() : BigDecimal.ZERO;
-                BigDecimal total = droits.add(tva);
+            // Compute montant from lines total so the record has a value before liquidation
+            if (d.getMontant() == null && request.getLignes() != null) {
+                BigDecimal total = request.getLignes().stream()
+                        .map(l -> l.getValeurTaxe() != null ? l.getValeurTaxe() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
                 d.setMontant(total.compareTo(BigDecimal.ZERO) > 0 ? total : null);
             }
-            entity = d;
+
+            // Save first to get the id, then attach lines
+            entity = repository.save(d);
+            attachLignes((UtilisationDouaniere) entity, request.getLignes());
+            // entity already saved; no second save needed
         } else {
             UtilisationTVAInterieure t = new UtilisationTVAInterieure();
             mapBase(t, request, certificat, entreprise);
@@ -343,9 +363,8 @@ public class UtilisationCreditService {
             if (t.getMontant() == null) {
                 t.setMontant(t.getMontantTVA());
             }
-            entity = t;
+            entity = repository.save(t);
         }
-        entity = repository.save(entity);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.CREATE, "UtilisationCredit", String.valueOf(entity.getId()), result);
         if (!brouillon) {
@@ -489,14 +508,20 @@ public class UtilisationCreditService {
             d.setNumeroDeclaration(request.getNumeroDeclaration());
             d.setNumeroBulletin(request.getNumeroBulletin());
             d.setDateDeclaration(request.getDateDeclaration());
-            d.setMontantDroits(request.getMontantDroits());
-            d.setMontantTVA(request.getMontantTVA());
             d.setEnregistreeSYDONIA(request.getEnregistreeSYDONIA());
-            if (d.getMontant() == null) {
-                BigDecimal droits = d.getMontantDroits() != null ? d.getMontantDroits() : BigDecimal.ZERO;
-                BigDecimal tva = d.getMontantTVA() != null ? d.getMontantTVA() : BigDecimal.ZERO;
-                BigDecimal total = droits.add(tva);
-                d.setMontant(total.compareTo(BigDecimal.ZERO) > 0 ? total : null);
+
+            // Replace lines
+            if (request.getLignes() != null) {
+                d.getLignes().clear();
+                repository.save(d); // flush orphan removal before re-attaching
+                attachLignes(d, request.getLignes());
+                // Recompute montant from lines total
+                if (d.getMontant() == null) {
+                    BigDecimal total = request.getLignes().stream()
+                            .map(l -> l.getValeurTaxe() != null ? l.getValeurTaxe() : BigDecimal.ZERO)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    d.setMontant(total.compareTo(BigDecimal.ZERO) > 0 ? total : null);
+                }
             }
         } else if (entity instanceof UtilisationTVAInterieure t) {
             t.setTypeAchat(resolveTypeAchat(request));
@@ -701,6 +726,23 @@ public class UtilisationCreditService {
         return TypeAchat.ACHAT_LOCAL;
     }
 
+    /** Persists the list of bulletin lines for a douanière utilisation. */
+    private void attachLignes(UtilisationDouaniere d, List<CreateUtilisationCreditRequest.LigneBulletinRequest> ligneRequests) {
+        if (ligneRequests == null || ligneRequests.isEmpty()) {
+            return;
+        }
+        List<LigneBulletinLiquidation> lignes = ligneRequests.stream()
+                .map(r -> LigneBulletinLiquidation.builder()
+                        .codeTaxe(r.getCodeTaxe())
+                        .denominationTaxe(r.getDenominationTaxe())
+                        .typeLigne(r.getTypeLigne())
+                        .valeurTaxe(r.getValeurTaxe())
+                        .utilisationDouaniere(d)
+                        .build())
+                .collect(Collectors.toList());
+        ligneBulletinRepository.saveAll(lignes);
+    }
+
     private void mapBase(UtilisationCredit u, CreateUtilisationCreditRequest r, CertificatCredit c, Entreprise e) {
         u.setDateDemande(Instant.now());
         u.setMontant(r.getMontant());
@@ -709,65 +751,413 @@ public class UtilisationCreditService {
         u.setEntreprise(e);
     }
 
+    /**
+     * Étape DGD : annotation des lignes du bulletin (AU_CI / A_PAYER) + visa.
+     * <p>
+     * Le DGD choisit, pour chaque ligne du bulletin, si la taxe est prise en charge
+     * par le crédit d'impôt (AU_CI) ou payée comptant (A_PAYER), peut corriger les
+     * valeurs, et upload un bulletin annoté. Appelable aussi depuis EN_CONTROLE_DGD
+     * pour re-annotation. Aucune opération financière à cette étape.
+     * Statut résultant : {@link StatutUtilisation#EN_CONTROLE_DGD}.
+     */
     @Transactional
-    public UtilisationCreditDto liquiderDouane(Long id, LiquiderUtilisationDouaneRequest request, AuthenticatedUser user) {
-        UtilisationCredit entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
+    public UtilisationCreditDto visaDgd(Long id, String decisionsJson, MultipartFile file, AuthenticatedUser user) throws IOException {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
         if (!(entity instanceof UtilisationDouaniere d)) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type Douane");
+        }
+
+        workflow.validateTransition(entity.getStatut(), StatutUtilisation.EN_CONTROLE_DGD);
+        assertActorCanTransition(entity, StatutUtilisation.EN_CONTROLE_DGD, user);
+
+        List<LiquiderUtilisationDouaneRequest.DecisionLigneRequest> decisions;
+        try {
+            decisions = objectMapper.readValue(decisionsJson,
+                    new TypeReference<List<LiquiderUtilisationDouaneRequest.DecisionLigneRequest>>() {});
+        } catch (Exception e) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Format JSON invalide pour le champ 'decisions': " + e.getMessage());
+        }
+
+        if (decisions == null || decisions.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "La liste des décisions par ligne est obligatoire");
+        }
+
+        // Construire maps : décision et valeur corrigée par ligneId
+        Map<Long, AffectationTaxe> decisionMap = new java.util.HashMap<>();
+        Map<Long, BigDecimal> valeurMap = new java.util.HashMap<>();
+        for (LiquiderUtilisationDouaneRequest.DecisionLigneRequest dec : decisions) {
+            if (dec.getLigneId() == null || dec.getAffectation() == null) {
+                throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Chaque décision doit avoir un ligneId et une affectation");
+            }
+            decisionMap.put(dec.getLigneId(), dec.getAffectation());
+            if (dec.getValeurTaxe() != null) {
+                valeurMap.put(dec.getLigneId(), dec.getValeurTaxe());
+            }
+        }
+
+        List<LigneBulletinLiquidation> lignes = ligneBulletinRepository
+                .findByUtilisationDouaniere_IdOrderByTypeLigneAscIdAsc(d.getId());
+        if (lignes.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune ligne de bulletin trouvée pour cette demande");
+        }
+
+        BigDecimal totalPrisEnCharge = BigDecimal.ZERO;
+        BigDecimal totalAPayer = BigDecimal.ZERO;
+        BigDecimal tvaAuCI = BigDecimal.ZERO;
+
+        for (LigneBulletinLiquidation ligne : lignes) {
+            // Appliquer la valeur corrigée par le DGD si présente
+            if (valeurMap.containsKey(ligne.getId())) {
+                ligne.setValeurTaxe(valeurMap.get(ligne.getId()));
+            }
+            BigDecimal val = ligne.getValeurTaxe() != null ? ligne.getValeurTaxe() : BigDecimal.ZERO;
+            AffectationTaxe aff = decisionMap.get(ligne.getId());
+            if (aff == null) {
+                if (val.compareTo(BigDecimal.ZERO) == 0) {
+                    aff = AffectationTaxe.A_PAYER;
+                } else {
+                    throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                            "Décision manquante pour la ligne id=" + ligne.getId() + " (" + ligne.getCodeTaxe() + ")");
+                }
+            }
+            ligne.setAffectation(aff);
+            if (aff == AffectationTaxe.AU_CI) {
+                totalPrisEnCharge = totalPrisEnCharge.add(val);
+                if ("TVA".equalsIgnoreCase(ligne.getCodeTaxe())) {
+                    tvaAuCI = tvaAuCI.add(val);
+                }
+            } else {
+                totalAPayer = totalAPayer.add(val);
+            }
+        }
+        ligneBulletinRepository.saveAll(lignes);
+
+        if (totalPrisEnCharge.compareTo(BigDecimal.ZERO) <= 0) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Le montant total pris en charge par le CI doit être > 0");
+        }
+
+        // Upload du bulletin annoté dans le GED si fourni
+        if (file != null && !file.isEmpty()) {
+            // Désactiver l'ancien bulletin annoté s'il existe
+            documentUtilisationCreditRepository
+                    .findByUtilisationCreditIdAndTypeAndActifTrue(id, TypeDocument.BULLETIN_ANNOTE)
+                    .ifPresent(prev -> {
+                        prev.setActif(false);
+                        documentUtilisationCreditRepository.save(prev);
+                    });
+            String fileUrl = minioService.uploadFile(file);
+            mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit doc =
+                    mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit.builder()
+                            .type(TypeDocument.BULLETIN_ANNOTE)
+                            .nomFichier(file.getOriginalFilename() != null ? file.getOriginalFilename() : file.getName())
+                            .chemin(fileUrl)
+                            .dateUpload(Instant.now())
+                            .taille(file.getSize())
+                            .version(1)
+                            .actif(true)
+                            .utilisationCredit(entity)
+                            .build();
+            documentUtilisationCreditRepository.save(doc);
+        }
+
+        d.setTotalPrisEnCharge(totalPrisEnCharge);
+        d.setTotalAPayer(totalAPayer);
+        d.setMontantTVA(tvaAuCI);
+        d.setMontantDroits(totalPrisEnCharge.subtract(tvaAuCI));
+        d.setMontant(totalPrisEnCharge);
+        d.setStatut(StatutUtilisation.EN_CONTROLE_DGD);
+
+        entity = repository.save(d);
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
+        notifyUtilisation(entity, StatutUtilisation.EN_CONTROLE_DGD);
+        return result;
+    }
+
+    /**
+     * Étape Entreprise : saisie du chèque certifié fourni à la douane après visa DGD.
+     * Le fichier justificatif (scan du chèque) est obligatoire et enregistré dans le GED.
+     * Statut résultant : {@link StatutUtilisation#CHEQUE_SAISI}.
+     */
+    @Transactional
+    public UtilisationCreditDto saisirCheque(Long id, SaisirChequeRequest request, MultipartFile file, AuthenticatedUser user) throws IOException {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation non trouvée: " + id));
+        if (!(entity instanceof UtilisationDouaniere d)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type Douane");
+        }
+
+        workflow.validateTransition(entity.getStatut(), StatutUtilisation.CHEQUE_SAISI);
+        Role role = user != null ? user.getRole() : null;
+        if (role != Role.ENTREPRISE && role != Role.COMMISSION_RELAIS) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise peut saisir le chèque certifié");
+        }
+
+        if (file == null || file.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Le justificatif du chèque certifié est obligatoire");
+        }
+
+        d.setBanqueNom(request.getBanqueNom());
+        d.setNumeroCheque(request.getNumeroCheque());
+        d.setMontantCheque(request.getMontantCheque());
+        d.setDateCheque(request.getDateCheque() != null ? request.getDateCheque() : Instant.now());
+        d.setStatut(StatutUtilisation.CHEQUE_SAISI);
+
+        entity = repository.save(d);
+
+        // Désactiver l'éventuel document précédent du même type
+        documentUtilisationCreditRepository
+                .findByUtilisationCreditIdAndTypeAndActifTrue(id, TypeDocument.CHEQUE_CERTIFIE)
+                .ifPresent(prev -> {
+                    prev.setActif(false);
+                    documentUtilisationCreditRepository.save(prev);
+                });
+
+        // Enregistrer le nouveau document dans le GED
+        String fileUrl = minioService.uploadFile(file);
+        mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit doc =
+                mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit.builder()
+                        .type(TypeDocument.CHEQUE_CERTIFIE)
+                        .nomFichier(file.getOriginalFilename() != null ? file.getOriginalFilename() : file.getName())
+                        .chemin(fileUrl)
+                        .dateUpload(Instant.now())
+                        .taille(file.getSize())
+                        .version(1)
+                        .actif(true)
+                        .utilisationCredit(entity)
+                        .build();
+        documentUtilisationCreditRepository.save(doc);
+
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
+        notifyUtilisation(entity, StatutUtilisation.CHEQUE_SAISI);
+        return result;
+    }
+
+    /**
+     * Étape DGTCP : validation du chèque reçu et envoi au Trésor.
+     * Statut résultant : {@link StatutUtilisation#ENVOYEE_AU_TRESOR}.
+     */
+    @Transactional
+    public UtilisationCreditDto envoyerAuTresor(Long id, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation non trouvée: " + id));
+        if (!(entity instanceof UtilisationDouaniere d)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type Douane");
+        }
+
+        workflow.validateTransition(entity.getStatut(), StatutUtilisation.ENVOYEE_AU_TRESOR);
+        if (user == null || user.getRole() != Role.DGTCP) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut envoyer au Trésor");
+        }
+        if (d.getNumeroCheque() == null || d.getNumeroCheque().isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le chèque certifié doit être saisi avant envoi au Trésor");
+        }
+
+        d.setStatut(StatutUtilisation.ENVOYEE_AU_TRESOR);
+        entity = repository.save(d);
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
+        notifyUtilisation(entity, StatutUtilisation.ENVOYEE_AU_TRESOR);
+        return result;
+    }
+
+    /**
+     * Étape DGTCP : saisie des quittances Trésor + justificatifs (un fichier par quittance).
+     * <p>
+     * {@code quittancesJson} est un tableau JSON stringifié de {@link SaisirQuittancesRequest.QuittanceItem}.
+     * {@code files} est une liste optionnelle de fichiers indexés sur les quittances :
+     * {@code files.get(i)} correspond à {@code quittances.get(i)}.
+     * Si un fichier est absent ou vide pour un index donné, la quittance est enregistrée sans justificatif.
+     * </p>
+     * Statut résultant : {@link StatutUtilisation#QUITTANCES_ENREGISTREES}.
+     */
+    @Transactional
+    public UtilisationCreditDto saisirQuittances(Long id, String quittancesJson, List<MultipartFile> files, AuthenticatedUser user) throws IOException {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation non trouvée: " + id));
+        if (!(entity instanceof UtilisationDouaniere d)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type Douane");
+        }
+
+        workflow.validateTransition(entity.getStatut(), StatutUtilisation.QUITTANCES_ENREGISTREES);
+        if (user == null || user.getRole() != Role.DGTCP) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut saisir les quittances Trésor");
+        }
+
+        List<SaisirQuittancesRequest.QuittanceItem> items;
+        try {
+            items = objectMapper.readValue(quittancesJson,
+                    new TypeReference<List<SaisirQuittancesRequest.QuittanceItem>>() {});
+        } catch (Exception e) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Format JSON invalide pour le champ 'quittances': " + e.getMessage());
+        }
+
+        if (items == null || items.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Au moins une quittance est obligatoire");
+        }
+
+        // Supprimer les anciennes quittances et recréer
+        quittanceTresorRepository.deleteByUtilisationDouaniere_Id(d.getId());
+
+        for (int i = 0; i < items.size(); i++) {
+            SaisirQuittancesRequest.QuittanceItem item = items.get(i);
+
+            // Upload du justificatif si fourni pour cet index
+            String documentChemin = null;
+            String documentNomFichier = null;
+            MultipartFile file = (files != null && i < files.size()) ? files.get(i) : null;
+            if (file != null && !file.isEmpty()) {
+                documentChemin = minioService.uploadFile(file);
+                documentNomFichier = file.getOriginalFilename() != null ? file.getOriginalFilename() : file.getName();
+
+                // Enregistrer aussi dans le GED (document_utilisation_credit)
+                mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit doc =
+                        mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit.builder()
+                                .type(TypeDocument.QUITTANCE_TRESOR)
+                                .nomFichier(documentNomFichier)
+                                .chemin(documentChemin)
+                                .dateUpload(Instant.now())
+                                .taille(file.getSize())
+                                .version(1)
+                                .actif(true)
+                                .utilisationCredit(entity)
+                                .build();
+                documentUtilisationCreditRepository.save(doc);
+            }
+
+            QuittanceTresor q = QuittanceTresor.builder()
+                    .utilisationDouaniere(d)
+                    .numeroQuittance(item.getNumeroQuittance())
+                    .dateQuittance(item.getDateQuittance())
+                    .montant(item.getMontant())
+                    .referencePaiement(item.getReferencePaiement())
+                    .documentChemin(documentChemin)
+                    .documentNomFichier(documentNomFichier)
+                    .build();
+            quittanceTresorRepository.save(q);
+        }
+
+        d.setStatut(StatutUtilisation.QUITTANCES_ENREGISTREES);
+        entity = repository.save(d);
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
+        notifyUtilisation(entity, StatutUtilisation.QUITTANCES_ENREGISTREES);
+        return result;
+    }
+
+    /**
+     * Étape Entreprise : accusé de réception du certificat d'utilisation.
+     * Statut résultant : {@link StatutUtilisation#CLOTUREE}.
+     */
+    @Transactional
+    public UtilisationCreditDto cloturerReceptionEntreprise(Long id, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation non trouvée: " + id));
+
+        workflow.validateTransition(entity.getStatut(), StatutUtilisation.CLOTUREE);
+        Role role = user != null ? user.getRole() : null;
+        if (role != Role.ENTREPRISE && role != Role.COMMISSION_RELAIS) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise peut accuser réception");
+        }
+
+        entity.setStatut(StatutUtilisation.CLOTUREE);
+        entity = repository.save(entity);
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
+        notifyUtilisation(entity, StatutUtilisation.CLOTUREE);
+        return result;
+    }
+
+    /**
+     * Étape DGTCP : exécution de la liquidation financière après le visa DGD.
+     * <p>
+     * <ol>
+     *   <li>Débite le solde cordon de {@code totalPrisEnCharge - TVA_AU_CI}
+     *       (la TVA étant traitée séparément).</li>
+     *   <li>Décrémente le quota {@code tvaImportationDouane} du certificat de {@code TVA_AU_CI}.</li>
+     *   <li>Alimente le stock TVA déductible de {@code TVA_AU_CI}.</li>
+     * </ol>
+     * Statut résultant : {@link StatutUtilisation#LIQUIDEE}.
+     */
+    @Transactional
+    public UtilisationCreditDto liquiderDouane(Long id, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
+        if (!(entity instanceof UtilisationDouaniere d)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type Douane");
+        }
+        // Accepter QUITTANCES_ENREGISTREES (nouveau workflow) ou VISE (rétrocompatibilité)
+        StatutUtilisation statut = entity.getStatut();
+        if (statut != StatutUtilisation.QUITTANCES_ENREGISTREES && statut != StatutUtilisation.VISE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "La liquidation requiert le statut QUITTANCES_ENREGISTREES (ou VISE pour l'ancien workflow). Statut actuel : " + statut);
         }
 
         workflow.validateTransition(entity.getStatut(), StatutUtilisation.LIQUIDEE);
         assertActorCanTransition(entity, StatutUtilisation.LIQUIDEE, user);
 
-        BigDecimal droits = request != null && request.getMontantDroits() != null ? request.getMontantDroits() : BigDecimal.ZERO;
-        BigDecimal tva = request != null && request.getMontantTVA() != null ? request.getMontantTVA() : BigDecimal.ZERO;
-        if (droits.compareTo(BigDecimal.ZERO) < 0 || tva.compareTo(BigDecimal.ZERO) < 0) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Montants d'imputation invalides (doivent être >= 0)");
-        }
-        BigDecimal total = droits.add(tva);
-        if (total.compareTo(BigDecimal.ZERO) <= 0) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le montant total imputé doit être > 0");
+        // Les décisions DGD doivent avoir été enregistrées lors du visa
+        if (d.getTotalPrisEnCharge() == null || d.getTotalPrisEnCharge().compareTo(BigDecimal.ZERO) <= 0) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Le visa DGD (avec les décisions AU_CI / A_PAYER) doit être enregistré avant la liquidation");
         }
 
-        d.setMontantDroits(droits);
-        d.setMontantTVA(tva);
-        d.setMontant(total);
+        BigDecimal totalPrisEnCharge = d.getTotalPrisEnCharge();
+        BigDecimal tvaAuCI = d.getMontantTVA() != null ? d.getMontantTVA() : BigDecimal.ZERO;
+
+        // Montant imputé sur le solde cordon = partie hors TVA (la TVA est traitée via tvaImportationDouane)
+        BigDecimal montantCordon = totalPrisEnCharge.subtract(tvaAuCI);
 
         CertificatCredit certificat = certificatRepository.findById(d.getCertificatCredit().getId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé"));
-        BigDecimal tvaImport = tva;
-        if (tvaImport.compareTo(BigDecimal.ZERO) > 0) {
+
+        // ── Décrémenter le quota TVA importation douane ─────────────────────
+        if (tvaAuCI.compareTo(BigDecimal.ZERO) > 0) {
             if (certificat.getTvaImportationDouaneAccordee() == null && certificat.getTvaImportationDouane() != null) {
                 certificat.setTvaImportationDouaneAccordee(certificat.getTvaImportationDouane());
             }
-            BigDecimal restantD = certificat.getTvaImportationDouane() != null ? certificat.getTvaImportationDouane() : BigDecimal.ZERO;
-            if (tvaImport.compareTo(restantD) > 0) {
+            BigDecimal quotaTVA = certificat.getTvaImportationDouane() != null ? certificat.getTvaImportationDouane() : BigDecimal.ZERO;
+            if (tvaAuCI.compareTo(quotaTVA) > 0) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                        "TVA import liquidation dépasse le restant de TVA importation (d) disponible sur le certificat (restant="
-                                + restantD + ", demandé=" + tvaImport + ")");
+                        "TVA AU_CI (" + tvaAuCI + ") dépasse le quota TVA importation douane disponible (" + quotaTVA + ")");
             }
-            certificat.setTvaImportationDouane(restantD.subtract(tvaImport));
-            certificatRepository.save(certificat);
+            certificat.setTvaImportationDouane(quotaTVA.subtract(tvaAuCI));
         }
-        d.setCertificatCredit(certificat);
 
+        // ── Débiter le solde cordon (hors TVA) ──────────────────────────────
         BigDecimal soldeCordonAvant = certificat.getSoldeCordon() != null ? certificat.getSoldeCordon() : BigDecimal.ZERO;
         d.setSoldeCordonAvant(soldeCordonAvant);
 
-        d.setStatut(StatutUtilisation.LIQUIDEE);
-        d.setDateLiquidation(Instant.now());
-        debitSolde(d);
+        if (montantCordon.compareTo(BigDecimal.ZERO) > 0) {
+            if (soldeCordonAvant.compareTo(montantCordon) < 0) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Solde cordon insuffisant (disponible=" + soldeCordonAvant + ", requis=" + montantCordon + ")");
+            }
+            certificat.setSoldeCordon(soldeCordonAvant.subtract(montantCordon));
+        }
+        certificatRepository.save(certificat);
 
-        BigDecimal soldeCordonApres = d.getCertificatCredit().getSoldeCordon() != null
-                ? d.getCertificatCredit().getSoldeCordon() : BigDecimal.ZERO;
+        BigDecimal soldeCordonApres = certificat.getSoldeCordon() != null ? certificat.getSoldeCordon() : BigDecimal.ZERO;
         d.setSoldeCordonApres(soldeCordonApres);
 
-        if (tvaImport.compareTo(BigDecimal.ZERO) > 0) {
+        // montant = montant total pris en charge (droits + TVA) — affiché comme "Montant" sur l'utilisation
+        d.setMontant(totalPrisEnCharge);
+        d.setCertificatCredit(certificat);
+        d.setStatut(StatutUtilisation.LIQUIDEE);
+        d.setDateLiquidation(Instant.now());
+
+        // ── Alimenter le stock TVA déductible ───────────────────────────────
+        if (tvaAuCI.compareTo(BigDecimal.ZERO) > 0) {
             tvaStockRepository.save(mr.gov.finances.sgci.domain.entity.TvaDeductibleStock.builder()
                     .certificatCredit(d.getCertificatCredit())
                     .utilisationDouane(d)
-                    .montantInitial(tvaImport)
-                    .montantRestant(tvaImport)
+                    .montantInitial(tvaAuCI)
+                    .montantRestant(tvaAuCI)
                     .dateCreation(Instant.now())
                     .build());
         }
@@ -808,6 +1198,24 @@ public class UtilisationCreditService {
         return result;
     }
 
+    @Transactional(readOnly = true)
+    public List<QuittanceTresorDto> getQuittances(Long utilisationId, AuthenticatedUser user) {
+        findById(utilisationId, user);
+        return quittanceTresorRepository.findByUtilisationDouaniere_IdOrderByDateQuittanceAscIdAsc(utilisationId)
+                .stream()
+                .map(q -> QuittanceTresorDto.builder()
+                        .id(q.getId())
+                        .numeroQuittance(q.getNumeroQuittance())
+                        .dateQuittance(q.getDateQuittance())
+                        .montant(q.getMontant())
+                        .referencePaiement(q.getReferencePaiement())
+                        .utilisationDouaniereId(utilisationId)
+                        .documentChemin(q.getDocumentChemin())
+                        .documentNomFichier(q.getDocumentNomFichier())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
     private ProcessusDocument resolveProcessus(UtilisationCredit utilisation) {
         if (utilisation == null || utilisation.getType() == null) {
             return ProcessusDocument.UTILISATION_CI;
@@ -832,12 +1240,15 @@ public class UtilisationCreditService {
 
         // Verrouillage métier par type (TDR)
         if (utilisation.getType() == TypeUtilisation.DOUANIER) {
-            if (to != StatutUtilisation.INCOMPLETE
-                    && to != StatutUtilisation.A_RECONTROLER
-                    && to != StatutUtilisation.EN_VERIFICATION
-                    && to != StatutUtilisation.VISE
-                    && to != StatutUtilisation.LIQUIDEE
-                    && to != StatutUtilisation.REJETEE) {
+            Set<StatutUtilisation> douaneAllowed = EnumSet.of(
+                    StatutUtilisation.INCOMPLETE, StatutUtilisation.A_RECONTROLER,
+                    StatutUtilisation.EN_VERIFICATION,
+                    StatutUtilisation.VISE, StatutUtilisation.EN_CONTROLE_DGD,
+                    StatutUtilisation.CHEQUE_SAISI, StatutUtilisation.ENVOYEE_AU_TRESOR,
+                    StatutUtilisation.QUITTANCES_ENREGISTREES,
+                    StatutUtilisation.LIQUIDEE, StatutUtilisation.CLOTUREE,
+                    StatutUtilisation.REJETEE);
+            if (!douaneAllowed.contains(to)) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                         "Transition non autorisée (Douane): vers " + to);
             }
@@ -860,20 +1271,30 @@ public class UtilisationCreditService {
         }
 
         if (utilisation.getType() == TypeUtilisation.DOUANIER) {
-            if (to == StatutUtilisation.EN_VERIFICATION || to == StatutUtilisation.VISE) {
+            // Étapes DGD
+            if (to == StatutUtilisation.EN_VERIFICATION || to == StatutUtilisation.VISE
+                    || to == StatutUtilisation.EN_CONTROLE_DGD) {
                 if (role != Role.DGD) {
                     throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGD peut traiter cette étape Douane");
                 }
                 return;
             }
-
-            if (to == StatutUtilisation.LIQUIDEE) {
+            // Étapes DGTCP
+            if (to == StatutUtilisation.ENVOYEE_AU_TRESOR
+                    || to == StatutUtilisation.QUITTANCES_ENREGISTREES
+                    || to == StatutUtilisation.LIQUIDEE) {
                 if (role != Role.DGTCP) {
-                    throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut liquider l'utilisation Douane");
+                    throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut traiter cette étape Douane");
                 }
                 return;
             }
-
+            // Étape Entreprise / Commission Relais : chèque et clôture
+            if (to == StatutUtilisation.CHEQUE_SAISI || to == StatutUtilisation.CLOTUREE) {
+                if (role != Role.ENTREPRISE && role != Role.COMMISSION_RELAIS) {
+                    throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise peut effectuer cette action");
+                }
+                return;
+            }
             if (to == StatutUtilisation.REJETEE) {
                 if (role != Role.DGD && role != Role.DGTCP) {
                     throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGD ou DGTCP peut rejeter l'utilisation Douane");
@@ -939,14 +1360,46 @@ public class UtilisationCreditService {
                 .demandeurEstSousTraitant(demandeurSt);
 
         if (u instanceof UtilisationDouaniere d) {
+            List<LigneBulletinDto> lignesDto = d.getLignes() == null ? List.of() :
+                    d.getLignes().stream()
+                            .map(l -> LigneBulletinDto.builder()
+                                    .id(l.getId())
+                                    .codeTaxe(l.getCodeTaxe())
+                                    .denominationTaxe(l.getDenominationTaxe())
+                                    .typeLigne(l.getTypeLigne())
+                                    .valeurTaxe(l.getValeurTaxe())
+                                    .affectation(l.getAffectation())
+                                    .build())
+                            .collect(Collectors.toList());
+            List<QuittanceTresorDto> quittancesDto = d.getQuittances() == null ? List.of() :
+                    d.getQuittances().stream()
+                            .map(q -> QuittanceTresorDto.builder()
+                                    .id(q.getId())
+                                    .numeroQuittance(q.getNumeroQuittance())
+                                    .dateQuittance(q.getDateQuittance())
+                                    .montant(q.getMontant())
+                                    .referencePaiement(q.getReferencePaiement())
+                                    .utilisationDouaniereId(d.getId())
+                                    .documentChemin(q.getDocumentChemin())
+                                    .documentNomFichier(q.getDocumentNomFichier())
+                                    .build())
+                            .collect(Collectors.toList());
             b.numeroDeclaration(d.getNumeroDeclaration())
                     .numeroBulletin(d.getNumeroBulletin())
                     .dateDeclaration(d.getDateDeclaration())
-                    .montantDroits(d.getMontantDroits())
-                    .montantTVADouane(d.getMontantTVA())
                     .enregistreeSYDONIA(d.getEnregistreeSYDONIA())
                     .soldeCordonAvant(d.getSoldeCordonAvant())
-                    .soldeCordonApres(d.getSoldeCordonApres());
+                    .soldeCordonApres(d.getSoldeCordonApres())
+                    .lignes(lignesDto)
+                    .totalPrisEnCharge(d.getTotalPrisEnCharge())
+                    .totalAPayer(d.getTotalAPayer())
+                    .montantTVADouane(d.getMontantTVA())
+                    .montantDroits(d.getMontantDroits())
+                    .banqueNom(d.getBanqueNom())
+                    .numeroCheque(d.getNumeroCheque())
+                    .montantCheque(d.getMontantCheque())
+                    .dateCheque(d.getDateCheque())
+                    .quittances(quittancesDto);
         } else if (u instanceof UtilisationTVAInterieure t) {
             b.typeAchat(t.getTypeAchat())
                     .numeroFacture(t.getNumeroFacture())

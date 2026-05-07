@@ -7,11 +7,15 @@ import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.DocumentTransfertCredit;
 import mr.gov.finances.sgci.domain.entity.TransfertCredit;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
+import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
+import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
+import mr.gov.finances.sgci.repository.DecisionTransfertCreditRepository;
 import mr.gov.finances.sgci.repository.DocumentTransfertCreditRepository;
 import mr.gov.finances.sgci.repository.TransfertCreditRepository;
+import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.web.dto.DocumentTransfertCreditDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -28,12 +33,24 @@ public class DocumentTransfertCreditService {
 
     private final DocumentTransfertCreditRepository repository;
     private final TransfertCreditRepository transfertRepository;
+    private final DecisionTransfertCreditRepository decisionRepository;
     private final MinioService minioService;
     private final AuditService auditService;
     private final DocumentRequirementValidator requirementValidator;
+    private final RejetTempResponseService rejetTempResponseService;
+
+    private static final EnumSet<StatutTransfert> STATUTS_DEPOT =
+            EnumSet.of(StatutTransfert.DEMANDE, StatutTransfert.EN_COURS, StatutTransfert.VALIDE,
+                    StatutTransfert.INCOMPLETE, StatutTransfert.A_RECONTROLER);
 
     @Transactional
     public DocumentTransfertCreditDto upload(Long transfertCreditId, TypeDocument type, MultipartFile file) throws IOException {
+        return upload(transfertCreditId, type, null, file, null);
+    }
+
+    @Transactional
+    public DocumentTransfertCreditDto upload(Long transfertCreditId, TypeDocument type, String message, MultipartFile file,
+                                             AuthenticatedUser user) throws IOException {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
@@ -43,8 +60,21 @@ public class DocumentTransfertCreditService {
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Transfert de crédit non trouvé: " + transfertCreditId));
 
         StatutTransfert st = transfert.getStatut();
-        if (st != StatutTransfert.DEMANDE && st != StatutTransfert.EN_COURS && st != StatutTransfert.VALIDE) {
+        if (!STATUTS_DEPOT.contains(st)) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Dépôt de pièces interdit pour le statut: " + st);
+        }
+
+        boolean askedByOpenRejetTemp = decisionRepository.findByTransfertCredit_IdAndDecisionAndRejetTempStatus(
+                        transfert.getId(),
+                        DecisionCorrectionType.REJET_TEMP,
+                        RejetTempStatus.OUVERT
+                ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(type));
+
+        if (askedByOpenRejetTemp && (message == null || message.isBlank())) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le message de réponse est obligatoire");
+        }
+        if (askedByOpenRejetTemp && (user == null || user.getUserId() == null)) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Authentification requise pour joindre une pièce à un rejet temporaire");
         }
 
         int nextVersion = 1;
@@ -76,6 +106,11 @@ public class DocumentTransfertCreditService {
         }
         DocumentTransfertCreditDto result = toDto(doc);
         auditService.log(AuditAction.CREATE, "DocumentTransfertCredit", String.valueOf(doc.getId()), result);
+
+        if (askedByOpenRejetTemp) {
+            rejetTempResponseService.recordTransfertUploadResponse(transfert.getId(), type, message, doc, user);
+        }
+
         return result;
     }
 

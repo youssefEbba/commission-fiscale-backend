@@ -27,7 +27,12 @@ public class TransfertCredit {
 
     private Boolean operationsDouaneCloturees;
 
+    /**
+     * Valeurs enum les plus longues : {@code A_RECONTROLER} (14 car.). Une colonne trop courte ou un ancien
+     * {@code ENUM} MySQL sans ces valeurs provoque « Data truncated for column 'statut' » — voir script SQL fourni.
+     */
     @Enumerated(EnumType.STRING)
+    @Column(name = "statut", nullable = false, length = 32)
     @Builder.Default
     private StatutTransfert statut = StatutTransfert.DEMANDE;
 

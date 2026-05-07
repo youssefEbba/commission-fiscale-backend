@@ -26,6 +26,7 @@ public class RejetTempResponseService {
     private final DecisionCertificatCreditRepository decisionCertificatCreditRepository;
     private final DecisionUtilisationCreditRepository decisionUtilisationCreditRepository;
     private final DecisionCorrectionRepository decisionCorrectionRepository;
+    private final DecisionTransfertCreditRepository decisionTransfertCreditRepository;
 
     @Transactional
     public List<RejetTempResponseDto> addResponseToCertificatDecision(Long decisionId, String message, AuthenticatedUser user) {
@@ -73,6 +74,23 @@ public class RejetTempResponseService {
                 .createdAt(Instant.now())
                 .utilisateur(utilisateur)
                 .decisionCorrection(decision)
+                .build();
+        entity = repository.save(entity);
+        return List.of(toDto(entity));
+    }
+
+    @Transactional
+    public List<RejetTempResponseDto> addResponseToTransfertDecision(Long decisionId, String message, AuthenticatedUser user) {
+        DecisionTransfertCredit decision = decisionTransfertCreditRepository.findById(decisionId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Décision transfert non trouvée: " + decisionId));
+        assertDecisionOpenRejetTemp(decision.getDecision(), decision.getRejetTempStatus());
+        Utilisateur utilisateur = resolveUtilisateur(user);
+
+        RejetTempResponse entity = RejetTempResponse.builder()
+                .message(validateMessage(message))
+                .createdAt(Instant.now())
+                .utilisateur(utilisateur)
+                .decisionTransfertCredit(decision)
                 .build();
         entity = repository.save(entity);
         return List.of(toDto(entity));
@@ -129,6 +147,33 @@ public class RejetTempResponseService {
                 .createdAt(Instant.now())
                 .utilisateur(utilisateur)
                 .decisionUtilisationCredit(decision)
+                .build()));
+    }
+
+    @Transactional
+    public void recordTransfertUploadResponse(Long transfertCreditId, mr.gov.finances.sgci.domain.enums.TypeDocument type, String message,
+                                              DocumentTransfertCredit doc, AuthenticatedUser user) {
+        if (doc == null) {
+            return;
+        }
+        List<DecisionTransfertCredit> decisions = decisionTransfertCreditRepository
+                .findByTransfertCredit_IdAndDecisionAndRejetTempStatus(transfertCreditId, DecisionCorrectionType.REJET_TEMP, RejetTempStatus.OUVERT)
+                .stream()
+                .filter(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(type))
+                .collect(Collectors.toList());
+        if (decisions.isEmpty()) {
+            return;
+        }
+        Utilisateur utilisateur = resolveUtilisateur(user);
+        String validated = validateMessage(message);
+        decisions.forEach(decision -> repository.save(RejetTempResponse.builder()
+                .message(validated)
+                .documentUrl(doc.getChemin())
+                .documentType(type)
+                .documentVersion(doc.getVersion())
+                .createdAt(Instant.now())
+                .utilisateur(utilisateur)
+                .decisionTransfertCredit(decision)
                 .build()));
     }
 

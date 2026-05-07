@@ -67,8 +67,8 @@ Les réponses d’impersonation et de **release** reprennent la forme de `LoginR
 
 ### Après impersonation autorité contractante
 
-- `role` = `AUTORITE_CONTRACTANTE`.
-- `permissions` = jeu du rôle `AUTORITE_CONTRACTANTE`.
+- `role` = `AUTORITE_CONTRACTANTE` (même convention métier que le compte « AC principal »).
+- `permissions` = **union** des permissions des rôles `AUTORITE_CONTRACTANTE`, `AUTORITE_UPM` et `AUTORITE_UEP` en base — afin de couvrir les mêmes capacités qu’une AC réelle selon le type de compte (UPM / UEP / principal), sans deviner le sous-type à partir de l’id AC.
 - `actingAutoriteContractanteId` renseigné.
 
 ### Durée de vie

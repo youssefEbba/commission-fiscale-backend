@@ -31,6 +31,7 @@ public abstract class UtilisationCredit {
     private BigDecimal montant;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "statut", nullable = false, length = 32)
     private StatutUtilisation statut = StatutUtilisation.DEMANDEE;
 
     private Instant dateLiquidation;

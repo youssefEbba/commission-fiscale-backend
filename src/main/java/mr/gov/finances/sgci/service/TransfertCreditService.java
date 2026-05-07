@@ -12,12 +12,15 @@ import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
+import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
+import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
+import mr.gov.finances.sgci.repository.DecisionTransfertCreditRepository;
 import mr.gov.finances.sgci.repository.TransfertCreditRepository;
+import mr.gov.finances.sgci.repository.TvaDeductibleStockRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.workflow.UtilisationCreditWorkflow;
@@ -50,6 +53,8 @@ public class TransfertCreditService {
     private final EffectiveIdentityService effectiveIdentityService;
     private final UtilisationCreditRepository utilisationCreditRepository;
     private final UtilisationCreditWorkflow utilisationCreditWorkflow;
+    private final DecisionTransfertCreditRepository decisionTransfertCreditRepository;
+    private final TvaDeductibleStockRepository tvaDeductibleStockRepository;
 
     @Transactional(readOnly = true)
     public List<TransfertCreditDto> findAll(AuthenticatedUser user) {
@@ -160,10 +165,11 @@ public class TransfertCreditService {
                 throw ApiException.conflict(ApiErrorCode.CONFLICT,
                         "Un transfert a déjà été exécuté pour ce certificat; aucun second transfert n'est prévu sur le même certificat.");
             }
-            if (prev == StatutTransfert.DEMANDE || prev == StatutTransfert.EN_COURS || prev == StatutTransfert.VALIDE) {
+            if (prev == StatutTransfert.DEMANDE || prev == StatutTransfert.EN_COURS || prev == StatutTransfert.VALIDE
+                    || prev == StatutTransfert.INCOMPLETE || prev == StatutTransfert.A_RECONTROLER) {
                 throw ApiException.conflict(ApiErrorCode.CONFLICT, "Une demande de transfert est déjà en cours pour ce certificat.");
             }
-            if (prev == StatutTransfert.REJETE) {
+            if (prev == StatutTransfert.REJETE || prev == StatutTransfert.ANNULEE) {
                 documentService.deactivateAllForTransfert(ex.getId());
                 ex.setDateDemande(Instant.now());
                 ex.setMontant(montantIndicatif);
@@ -210,6 +216,42 @@ public class TransfertCreditService {
         return result;
     }
 
+    /**
+     * Retrait de la demande par l’entreprise titulaire avant exécution du transfert par DGTCP / Président.
+     */
+    @Transactional
+    public TransfertCreditDto annuler(Long id, AuthenticatedUser user) {
+        if (user == null || user.getRole() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        if (user.getRole() != Role.ENTREPRISE) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise peut annuler sa demande de transfert");
+        }
+        TransfertCredit transfert = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Transfert de crédit non trouvé: " + id));
+
+        mr.gov.finances.sgci.domain.entity.Utilisateur u = utilisateurRepository.findById(user.getUserId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        Long myEnt = effectiveIdentityService.resolveEntrepriseId(user, u);
+        Long titId = transfert.getCertificatCredit() != null && transfert.getCertificatCredit().getEntreprise() != null
+                ? transfert.getCertificatCredit().getEntreprise().getId()
+                : null;
+        if (myEnt == null || titId == null || !myEnt.equals(titId)) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Annulation interdite: demande hors périmètre");
+        }
+
+        StatutTransfert st = transfert.getStatut();
+        if (st == StatutTransfert.TRANSFERE || st == StatutTransfert.REJETE || st == StatutTransfert.ANNULEE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Annulation impossible pour le statut: " + st);
+        }
+
+        transfert.setStatut(StatutTransfert.ANNULEE);
+        transfert = repository.save(transfert);
+        TransfertCreditDto result = toDto(transfert);
+        auditService.log(AuditAction.UPDATE, "TransfertCredit", String.valueOf(transfert.getId()), result);
+        return result;
+    }
+
     private void assertDgtcpOuPresidentPourDecision(AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
@@ -226,9 +268,21 @@ public class TransfertCreditService {
         TransfertCredit transfert = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Transfert de crédit non trouvé: " + id));
 
+        if (transfert.getStatut() == StatutTransfert.ANNULEE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Demande annulée par l'entreprise");
+        }
+
         StatutTransfert st = transfert.getStatut();
-        if (st != StatutTransfert.DEMANDE && st != StatutTransfert.EN_COURS && st != StatutTransfert.VALIDE) {
+        if (st != StatutTransfert.DEMANDE && st != StatutTransfert.EN_COURS && st != StatutTransfert.VALIDE
+                && st != StatutTransfert.A_RECONTROLER) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Statut invalide pour validation: " + st);
+        }
+        if (!decisionTransfertCreditRepository
+                .findByTransfertCredit_IdAndDecisionAndRejetTempStatus(
+                        transfert.getId(), DecisionCorrectionType.REJET_TEMP, RejetTempStatus.OUVERT)
+                .isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Validation impossible: rejet(s) temporaire(s) ouvert(s) — résolvez-les via PUT .../decisions/{id}/resolve");
         }
 
         requirementValidator.assertRequiredDocumentsPresent(
@@ -247,14 +301,24 @@ public class TransfertCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat source doit être OUVERT");
         }
 
-        // Transfert du restant (d) — TVA à l'import — vers le solde TVA intérieure (soldeTVA). Le stock FIFO n'est pas modifié.
+        // Le restant du quota TVA importation douane (cordon) est transféré vers le stock TVA déductible.
+        // Ce stock sera ensuite consommé (FIFO) lors des apurements TVA intérieure de l'entreprise.
         BigDecimal dReste = source.getTvaImportationDouane() != null ? source.getTvaImportationDouane() : BigDecimal.ZERO;
-        BigDecimal soldeInterieur = source.getSoldeTVA() != null ? source.getSoldeTVA() : BigDecimal.ZERO;
 
-        source.setSoldeTVA(soldeInterieur.add(dReste));
         source.setTvaImportationDouane(BigDecimal.ZERO);
-
         certificatRepository.save(source);
+
+        if (dReste.compareTo(BigDecimal.ZERO) > 0) {
+            tvaDeductibleStockRepository.save(
+                    mr.gov.finances.sgci.domain.entity.TvaDeductibleStock.builder()
+                            .certificatCredit(source)
+                            .utilisationDouane(null)   // origine : transfert de crédit (pas une liquidation douanière)
+                            .montantInitial(dReste)
+                            .montantRestant(dReste)
+                            .dateCreation(Instant.now())
+                            .build()
+            );
+        }
 
         transfert.setMontant(dReste);
         cloturerUtilisationsDouanieresOuvertes(source.getId());
@@ -296,6 +360,9 @@ public class TransfertCreditService {
 
         if (transfert.getStatut() == StatutTransfert.TRANSFERE) {
             throw ApiException.conflict(ApiErrorCode.CONFLICT, "Transfert déjà exécuté");
+        }
+        if (transfert.getStatut() == StatutTransfert.ANNULEE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Demande annulée par l'entreprise");
         }
         if (transfert.getStatut() == StatutTransfert.REJETE) {
             return toDto(transfert);

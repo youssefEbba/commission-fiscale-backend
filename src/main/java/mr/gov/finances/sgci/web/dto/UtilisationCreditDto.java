@@ -10,6 +10,7 @@ import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -40,11 +41,33 @@ public class UtilisationCreditDto {
     private String numeroDeclaration;
     private String numeroBulletin;
     private Instant dateDeclaration;
-    private BigDecimal montantDroits;
-    private BigDecimal montantTVADouane;
     private Boolean enregistreeSYDONIA;
     private BigDecimal soldeCordonAvant;
     private BigDecimal soldeCordonApres;
+
+    /** Lignes du bulletin saisies par l'entreprise, annotées par le DGD. */
+    private List<LigneBulletinDto> lignes;
+
+    /** Chèque certifié fourni par l'entreprise (après visa DGD). */
+    private String banqueNom;
+    private String numeroCheque;
+    private BigDecimal montantCheque;
+    private Instant dateCheque;
+
+    /** Quittances Trésor enregistrées par le DGTCP. */
+    private List<QuittanceTresorDto> quittances;
+
+    /** Total pris en charge par le CI (somme des lignes AU_CI). Renseigné après liquidation. */
+    private BigDecimal totalPrisEnCharge;
+
+    /** Total à payer comptant (somme des lignes A_PAYER). Renseigné après liquidation. */
+    private BigDecimal totalAPayer;
+
+    /** Part TVA des lignes AU_CI – pour info comptable. Renseigné après liquidation. */
+    private BigDecimal montantTVADouane;
+
+    /** Part hors-TVA des lignes AU_CI – pour info comptable. Renseigné après liquidation. */
+    private BigDecimal montantDroits;
 
     /** Champs spécifiques utilisation TVA intérieure */
     private TypeAchat typeAchat;

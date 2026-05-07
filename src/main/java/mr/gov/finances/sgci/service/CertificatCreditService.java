@@ -250,7 +250,11 @@ public class CertificatCreditService {
         }
 
         String numero = "CERT-" + Instant.now().getEpochSecond() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        BigDecimal soldeCordon = request.getSoldeCordon() != null ? request.getSoldeCordon() : request.getMontantCordon();
+        // soldeCordon = droits hors TVA seulement (b), pas b+d : la TVA est suivie séparément dans tvaImportationDouane
+        BigDecimal defaultSolde = request.getDroitsEtTaxesDouaneHorsTva() != null
+                ? request.getDroitsEtTaxesDouaneHorsTva()
+                : request.getMontantCordon();
+        BigDecimal soldeCordon = request.getSoldeCordon() != null ? request.getSoldeCordon() : defaultSolde;
         BigDecimal soldeTVA = request.getSoldeTVA() != null ? request.getSoldeTVA() : request.getMontantTVAInterieure();
         StatutCertificat initialStatut = brouillon ? StatutCertificat.BROUILLON : StatutCertificat.ENVOYEE;
         CertificatCredit entity = CertificatCredit.builder()
@@ -359,7 +363,10 @@ public class CertificatCreditService {
         entity.setDateValidite(request.getDateValidite());
         entity.setMontantCordon(request.getMontantCordon());
         entity.setMontantTVAInterieure(request.getMontantTVAInterieure());
-        BigDecimal soldeCordon = request.getSoldeCordon() != null ? request.getSoldeCordon() : request.getMontantCordon();
+        BigDecimal defaultSoldeUpd = request.getDroitsEtTaxesDouaneHorsTva() != null
+                ? request.getDroitsEtTaxesDouaneHorsTva()
+                : request.getMontantCordon();
+        BigDecimal soldeCordon = request.getSoldeCordon() != null ? request.getSoldeCordon() : defaultSoldeUpd;
         BigDecimal soldeTVA = request.getSoldeTVA() != null ? request.getSoldeTVA() : request.getMontantTVAInterieure();
         entity.setSoldeCordon(soldeCordon);
         entity.setSoldeTVA(soldeTVA);
@@ -423,13 +430,24 @@ public class CertificatCreditService {
 
         if (statut == StatutCertificat.OUVERT && fromStatut != StatutCertificat.OUVERT) {
             assertMontantsRenseignes(entity);
-            BigDecimal montantCordon = entity.getMontantCordon() != null ? entity.getMontantCordon() : BigDecimal.ZERO;
+            // soldeCordon = droits hors TVA (b) seulement — la TVA est suivie séparément
+            BigDecimal droits = entity.getDroitsEtTaxesDouaneHorsTva() != null
+                    ? entity.getDroitsEtTaxesDouaneHorsTva()
+                    : (entity.getMontantCordon() != null ? entity.getMontantCordon() : BigDecimal.ZERO);
             BigDecimal montantTVA = entity.getMontantTVAInterieure() != null ? entity.getMontantTVAInterieure() : BigDecimal.ZERO;
+            BigDecimal tvaAccordee = entity.getTvaImportationDouaneAccordee() != null
+                    ? entity.getTvaImportationDouaneAccordee() : BigDecimal.ZERO;
+
             if (entity.getSoldeCordon() == null) {
-                entity.setSoldeCordon(montantCordon);
+                entity.setSoldeCordon(droits);
             }
             if (entity.getSoldeTVA() == null) {
                 entity.setSoldeTVA(montantTVA);
+            }
+            // Initialiser tvaImportationDouane si absent ou nul — c'est le quota TVA cordon disponible (d)
+            if (entity.getTvaImportationDouane() == null
+                    || entity.getTvaImportationDouane().compareTo(BigDecimal.ZERO) == 0) {
+                entity.setTvaImportationDouane(tvaAccordee);
             }
         }
 
@@ -462,11 +480,23 @@ public class CertificatCreditService {
 
         // Synchroniser les soldes tant que le crédit n'est pas ouvert (sinon incohérence avec les utilisations)
         if (entity.getStatut() != StatutCertificat.OUVERT) {
+            // soldeCordon = b (droits hors TVA), pas b+d
+            BigDecimal droitsUpd = request.getDroitsEtTaxesDouaneHorsTva() != null
+                    ? request.getDroitsEtTaxesDouaneHorsTva()
+                    : request.getMontantCordon();
             if (entity.getSoldeCordon() == null || BigDecimal.ZERO.compareTo(entity.getSoldeCordon()) == 0) {
-                entity.setSoldeCordon(request.getMontantCordon());
+                entity.setSoldeCordon(droitsUpd);
             }
             if (entity.getSoldeTVA() == null || BigDecimal.ZERO.compareTo(entity.getSoldeTVA()) == 0) {
                 entity.setSoldeTVA(request.getMontantTVAInterieure());
+            }
+            // Initialiser tvaImportationDouane si absent
+            if (entity.getTvaImportationDouane() == null
+                    || entity.getTvaImportationDouane().compareTo(BigDecimal.ZERO) == 0) {
+                BigDecimal tvaAcc = entity.getTvaImportationDouaneAccordee();
+                if (tvaAcc != null && tvaAcc.compareTo(BigDecimal.ZERO) > 0) {
+                    entity.setTvaImportationDouane(tvaAcc);
+                }
             }
         }
 
