@@ -23,7 +23,7 @@ public final class CorsAllowedOrigins {
             "http://10.16.0.5:8081",
             "http://10.106.0.2:8081",
             "http://172.18.0.1:8081",
-            "http://10.1.230.60:8081"
+            "http://10.1.230.60:8082"
     );
 
     public static boolean matchesFrontendOrigin(String originTrimmed) {
