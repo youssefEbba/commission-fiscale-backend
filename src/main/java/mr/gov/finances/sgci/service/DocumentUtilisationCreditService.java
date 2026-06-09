@@ -42,7 +42,7 @@ public class DocumentUtilisationCreditService {
     private final RejetTempResponseService rejetTempResponseService;
 
     @Transactional
-    public DocumentUtilisationCreditDto upload(Long utilisationCreditId, TypeDocument type, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
+    public DocumentUtilisationCreditDto upload(Long utilisationCreditId, String codeDocument, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
@@ -50,13 +50,13 @@ public class DocumentUtilisationCreditService {
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + utilisationCreditId));
 
         ProcessusDocument processus = resolveProcessus(utilisation);
-        requirementValidator.validateUpload(processus, type, file);
+        requirementValidator.validateUpload(processus, codeDocument, file);
 
         int nextVersion = 1;
-        DocumentUtilisationCredit previous = repository.findByUtilisationCreditIdAndTypeAndActifTrue(utilisationCreditId, type)
+        DocumentUtilisationCredit previous = repository.findByUtilisationCreditIdAndCodeDocumentAndActifTrue(utilisationCreditId, codeDocument)
                 .orElse(null);
         if (previous != null) {
-            assertReplacementAllowed(utilisation, type, user);
+            assertReplacementAllowed(utilisation, codeDocument, user);
             previous.setActif(false);
             nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
         }
@@ -65,7 +65,7 @@ public class DocumentUtilisationCreditService {
                         utilisation.getId(),
                         DecisionCorrectionType.REJET_TEMP,
                         RejetTempStatus.OUVERT
-                ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(type));
+                ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(codeDocument));
 
         if (askedByOpenRejetTemp && (message == null || message.isBlank())) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le message de réponse est obligatoire");
@@ -75,7 +75,7 @@ public class DocumentUtilisationCreditService {
         String fileUrl = minioService.uploadFile(file);
 
         DocumentUtilisationCredit doc = DocumentUtilisationCredit.builder()
-                .type(type)
+                .codeDocument(codeDocument)
                 .nomFichier(originalFilename != null ? originalFilename : file.getName())
                 .chemin(fileUrl)
                 .dateUpload(Instant.now())
@@ -89,13 +89,13 @@ public class DocumentUtilisationCreditService {
         auditService.log(AuditAction.CREATE, "DocumentUtilisationCredit", String.valueOf(doc.getId()), result);
 
         if (askedByOpenRejetTemp) {
-            rejetTempResponseService.recordUtilisationUploadResponse(utilisation.getId(), type, message, doc, user);
+            rejetTempResponseService.recordUtilisationUploadResponse(utilisation.getId(), codeDocument, message, doc, user);
         }
 
         return result;
     }
 
-    private void assertReplacementAllowed(UtilisationCredit utilisation, TypeDocument type, AuthenticatedUser user) {
+    private void assertReplacementAllowed(UtilisationCredit utilisation, String codeDocument, AuthenticatedUser user) {
         if (utilisation == null || utilisation.getId() == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Utilisation invalide");
         }
@@ -112,7 +112,7 @@ public class DocumentUtilisationCreditService {
                 .anyMatch(d -> d.getDecision() == DecisionCorrectionType.REJET_TEMP
                         && d.getRejetTempStatus() == RejetTempStatus.OUVERT
                         && d.getDocumentsDemandes() != null
-                        && d.getDocumentsDemandes().contains(type));
+                        && d.getDocumentsDemandes().contains(codeDocument));
         if (!asked) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Remplacement interdit: aucun acteur n'a demandé ce document");
         }
@@ -142,10 +142,10 @@ public class DocumentUtilisationCreditService {
     }
 
     @Transactional(readOnly = true)
-    public List<TypeDocument> findActiveDocumentTypes(Long utilisationCreditId) {
+    public List<String> findActiveDocumentTypes(Long utilisationCreditId) {
         return repository.findByUtilisationCreditIdAndActifTrue(utilisationCreditId)
                 .stream()
-                .map(DocumentUtilisationCredit::getType)
+                .map(DocumentUtilisationCredit::getCodeDocument)
                 .distinct()
                 .collect(Collectors.toList());
     }
@@ -153,7 +153,7 @@ public class DocumentUtilisationCreditService {
     private DocumentUtilisationCreditDto toDto(DocumentUtilisationCredit d) {
         return DocumentUtilisationCreditDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())

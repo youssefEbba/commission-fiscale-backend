@@ -19,5 +19,5 @@ public class DecisionCreditRequest {
 
     private String motifRejet;
 
-    private List<TypeDocument> documentsDemandes;
+    private List<String> documentsDemandes;
 }

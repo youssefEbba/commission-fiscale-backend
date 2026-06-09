@@ -5,6 +5,7 @@ import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,4 +21,6 @@ public interface TransfertCreditRepository extends JpaRepository<TransfertCredit
     List<TransfertCredit> findByStatut(StatutTransfert statut);
 
     boolean existsByCertificatCreditIdAndStatut(Long certificatCreditId, StatutTransfert statut);
+
+    boolean existsByCertificatCreditIdAndStatutIn(Long certificatCreditId, Collection<StatutTransfert> statuts);
 }

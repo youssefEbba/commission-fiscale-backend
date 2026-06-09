@@ -6,6 +6,7 @@ import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.ClotureCreditService;
 import mr.gov.finances.sgci.service.DocumentClotureCreditService;
+import mr.gov.finances.sgci.web.dto.CertificatClotureQueueItemDto;
 import mr.gov.finances.sgci.web.dto.ClotureCreditDto;
 import mr.gov.finances.sgci.web.dto.CreateClotureCreditRequest;
 import mr.gov.finances.sgci.web.dto.DocumentClotureCreditDto;
@@ -27,6 +28,16 @@ public class ClotureCreditController {
     private final ClotureCreditService service;
     private final DocumentClotureCreditService documentService;
 
+    /**
+     * File complète : tous les certificats OUVERT / MODIFIE non clôturés, avec éligibilité et motifs de blocage.
+     */
+    @GetMapping("/queue")
+    @PreAuthorize("hasAuthority('cloture.queue.view')")
+    public List<CertificatClotureQueueItemDto> clotureQueue(@AuthenticationPrincipal AuthenticatedUser user) {
+        return service.findClotureQueue(user);
+    }
+
+    /** Identifiants des seuls certificats pouvant recevoir une proposition immédiate (sous-ensemble de {@code /queue}). */
     @GetMapping("/eligible")
     @PreAuthorize("hasAuthority('cloture.queue.view')")
     public List<Long> listEligibleCertificats(@AuthenticationPrincipal AuthenticatedUser user) {
@@ -44,10 +55,10 @@ public class ClotureCreditController {
     @PreAuthorize("hasAuthority('cloture.prepare')")
     public DocumentClotureCreditDto uploadDocument(
             @PathVariable Long id,
-            @RequestParam TypeDocument type,
+            @RequestParam String codeDocument,
             @RequestParam("file") MultipartFile file
     ) throws IOException {
-        return documentService.upload(id, type, file);
+        return documentService.upload(id, codeDocument, file);
     }
 
     @PostMapping
@@ -59,9 +70,9 @@ public class ClotureCreditController {
     }
 
     @GetMapping("/propositions")
-    @PreAuthorize("hasAuthority('cloture.president.queue.view')")
-    public List<ClotureCreditDto> presidentQueue() {
-        return service.findPendingPropositions();
+    @PreAuthorize("hasAnyAuthority('cloture.president.queue.view', 'cloture.queue.view')")
+    public List<ClotureCreditDto> propositionsQueue(@AuthenticationPrincipal AuthenticatedUser user) {
+        return service.findPropositions(user);
     }
 
     @PostMapping("/{id}/valider")

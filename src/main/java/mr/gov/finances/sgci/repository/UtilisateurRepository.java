@@ -23,9 +23,16 @@ public interface UtilisateurRepository extends JpaRepository<Utilisateur, Long> 
 
     List<Utilisateur> findByRole(Role role);
 
+    /** Comptes actifs uniquement (actif null ou true). */
+    List<Utilisateur> findByRoleAndActifTrue(Role role);
+
     List<Utilisateur> findAllByOrderByIdDesc();
 
     List<Utilisateur> findByActifFalseOrderByIdDesc();
 
     boolean existsByEmailAndIdNot(String email, Long id);
+
+    List<Utilisateur> findByEmailIgnoreCaseAndActifTrue(String email);
+
+    List<Utilisateur> findByRoleInAndActifTrue(List<Role> roles);
 }

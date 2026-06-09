@@ -2,6 +2,7 @@ package mr.gov.finances.sgci.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import mr.gov.finances.sgci.domain.enums.TvaDeductibleStockSource;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -26,6 +27,14 @@ public class TvaDeductibleStock {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "utilisation_douane_id")
     private UtilisationDouaniere utilisationDouane;
+
+    /**
+     * {@link TvaDeductibleStockSource#UTILISATION_DOUANE} : liquidation d’une utilisation douanière ;
+     * {@link TvaDeductibleStockSource#TRANSFERT_CREDIT} : reliquat TVA importation après transfert.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", length = 32)
+    private TvaDeductibleStockSource source;
 
     @Column(precision = 19, scale = 4, nullable = false)
     private BigDecimal montantInitial;

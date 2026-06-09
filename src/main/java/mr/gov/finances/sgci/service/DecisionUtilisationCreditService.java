@@ -43,6 +43,8 @@ public class DecisionUtilisationCreditService {
     private final RejetTempResponseService rejetTempResponseService;
     private final RejetTempResponseRepository rejetTempResponseRepository;
 
+    private final WorkflowNotificationHelper workflowNotificationHelper;
+
     @Transactional
     public DecisionCreditDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
         if (decisionId == null) {
@@ -78,6 +80,7 @@ public class DecisionUtilisationCreditService {
                 if (utilisation != null && utilisation.getStatut() == StatutUtilisation.INCOMPLETE) {
                     utilisation.setStatut(StatutUtilisation.A_RECONTROLER);
                     utilisationRepository.save(utilisation);
+                    workflowNotificationHelper.utilisationRejetTempResolu(utilisation, user);
                 }
             }
         }
@@ -89,7 +92,7 @@ public class DecisionUtilisationCreditService {
     public DecisionCreditDto saveDecision(Long utilisationCreditId,
                                          DecisionCorrectionType decision,
                                          String motifRejet,
-                                         Set<TypeDocument> documentsDemandes,
+                                         Set<String> documentsDemandes,
                                          AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
@@ -163,6 +166,13 @@ public class DecisionUtilisationCreditService {
 
         entity = decisionRepository.save(entity);
         utilisationRepository.save(utilisation);
+
+        if (decision == DecisionCorrectionType.REJET_TEMP) {
+            workflowNotificationHelper.utilisationRejetTemp(utilisation, user, motifRejet);
+        } else if (decision == DecisionCorrectionType.VISA) {
+            workflowNotificationHelper.utilisationVisa(utilisation, user, role);
+        }
+
         return toDto(entity);
     }
 
@@ -182,19 +192,19 @@ public class DecisionUtilisationCreditService {
             Long decisionId,
             String message,
             MultipartFile file,
-            TypeDocument type,
+            String codeDocument,
             AuthenticatedUser user) throws IOException {
         if (message == null || message.isBlank()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le message de réponse est obligatoire");
         }
         if (file != null && !file.isEmpty()) {
-            if (type == null) {
+            if (codeDocument == null || codeDocument.isBlank()) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le type de document est obligatoire lors de l'envoi d'un fichier");
             }
             DecisionUtilisationCredit decision = decisionRepository.findById(decisionId)
                     .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Décision utilisation non trouvée: " + decisionId));
             Long utilId = decision.getUtilisationCredit().getId();
-            documentUtilisationCreditService.upload(utilId, type, message, file, user);
+            documentUtilisationCreditService.upload(utilId, codeDocument, message, file, user);
             return rejetTempResponseRepository.findByDecisionUtilisationCredit_IdOrderByCreatedAtAsc(decisionId).stream()
                     .map(this::toResponseDto)
                     .collect(Collectors.toList());
@@ -225,7 +235,7 @@ public class DecisionUtilisationCreditService {
                 .id(entity.getId())
                 .message(entity.getMessage())
                 .documentUrl(entity.getDocumentUrl())
-                .documentType(entity.getDocumentType())
+                .codeDocument(entity.getCodeDocument())
                 .documentVersion(entity.getDocumentVersion())
                 .createdAt(entity.getCreatedAt())
                 .utilisateurId(entity.getUtilisateur() != null ? entity.getUtilisateur().getId() : null)

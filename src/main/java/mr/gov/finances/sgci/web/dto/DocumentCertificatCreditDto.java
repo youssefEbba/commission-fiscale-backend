@@ -15,7 +15,7 @@ import java.time.Instant;
 public class DocumentCertificatCreditDto {
 
     private Long id;
-    private TypeDocument type;
+    private String codeDocument;
     private String nomFichier;
     private String chemin;
     private Instant dateUpload;

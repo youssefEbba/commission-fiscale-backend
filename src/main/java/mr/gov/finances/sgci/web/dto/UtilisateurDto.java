@@ -18,5 +18,9 @@ public class UtilisateurDto {
     private String nomComplet;
     private String email;
     private Boolean actif;
+    private Long autoriteContractanteId;
+    private String autoriteContractanteNom;
+    private Long entrepriseId;
+    private String entrepriseRaisonSociale;
 }
 

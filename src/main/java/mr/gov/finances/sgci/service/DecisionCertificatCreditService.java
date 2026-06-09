@@ -46,7 +46,7 @@ public class DecisionCertificatCreditService {
     private final CertificatCreditRepository certificatRepository;
     private final UtilisateurRepository utilisateurRepository;
     private final AuditService auditService;
-    private final NotificationService notificationService;
+    private final WorkflowNotificationHelper workflowNotificationHelper;
 
     @Transactional
     public DecisionCreditDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
@@ -82,6 +82,7 @@ public class DecisionCertificatCreditService {
                 if (certificat != null && certificat.getStatut() == StatutCertificat.INCOMPLETE) {
                     certificat.setStatut(StatutCertificat.A_RECONTROLER);
                     certificatRepository.save(certificat);
+                    workflowNotificationHelper.certificatRejetTempResolu(certificat, user);
                 }
             }
         }
@@ -93,7 +94,7 @@ public class DecisionCertificatCreditService {
     public DecisionCreditDto saveDecision(Long certificatCreditId,
                                          DecisionCorrectionType decision,
                                          String motifRejet,
-                                         Set<TypeDocument> documentsDemandes,
+                                         Set<String> documentsDemandes,
                                          AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
@@ -175,6 +176,8 @@ public class DecisionCertificatCreditService {
             tryAutoTransitionToPresident(certificat);
         }
 
+        workflowNotificationHelper.certificatDecision(certificat, decision.name(), user, motifRejet);
+
         auditService.log(AuditAction.UPDATE, "DecisionCertificatCredit",
                 String.valueOf(entity.getId()), toDto(entity));
 
@@ -202,7 +205,7 @@ public class DecisionCertificatCreditService {
             certificat.setStatut(StatutCertificat.EN_VALIDATION_PRESIDENT);
             certificatRepository.save(certificat);
 
-            notifyPresidentForValidation(certificat);
+            workflowNotificationHelper.certificatPresidentValidation(certificat);
         }
     }
 
@@ -214,21 +217,6 @@ public class DecisionCertificatCreditService {
                 || entity.getMontantTVAInterieure().compareTo(BigDecimal.ZERO) <= 0) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Les montants (cordon et TVA intérieure) doivent être strictement supérieurs à zéro");
         }
-    }
-
-    private void notifyPresidentForValidation(CertificatCredit certificat) {
-        List<Long> presidentIds = utilisateurRepository.findByRole(Role.PRESIDENT)
-                .stream().map(Utilisateur::getId).collect(Collectors.toList());
-        if (presidentIds.isEmpty()) {
-            return;
-        }
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("statut", StatutCertificat.EN_VALIDATION_PRESIDENT.name());
-        payload.put("numero", certificat.getNumero());
-        String message = "Le certificat " + certificat.getNumero()
-                + " a reçu les 3 visas (DGI, DGD, DGTCP) et attend votre validation.";
-        notificationService.notifyUsers(presidentIds, NotificationType.CERTIFICAT_STATUT_CHANGE,
-                "CertificatCredit", certificat.getId(), message, payload);
     }
 
     @Transactional(readOnly = true)
@@ -261,7 +249,7 @@ public class DecisionCertificatCreditService {
                 .id(entity.getId())
                 .message(entity.getMessage())
                 .documentUrl(entity.getDocumentUrl())
-                .documentType(entity.getDocumentType())
+                .codeDocument(entity.getCodeDocument())
                 .documentVersion(entity.getDocumentVersion())
                 .createdAt(entity.getCreatedAt())
                 .utilisateurId(entity.getUtilisateur() != null ? entity.getUtilisateur().getId() : null)

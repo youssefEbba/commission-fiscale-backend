@@ -8,7 +8,6 @@ import mr.gov.finances.sgci.domain.entity.ClotureCredit;
 import mr.gov.finances.sgci.domain.entity.DocumentClotureCredit;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.repository.ClotureCreditRepository;
 import mr.gov.finances.sgci.repository.DocumentClotureCreditRepository;
 import mr.gov.finances.sgci.web.dto.DocumentClotureCreditDto;
@@ -32,18 +31,18 @@ public class DocumentClotureCreditService {
     private final DocumentRequirementValidator requirementValidator;
 
     @Transactional
-    public DocumentClotureCreditDto upload(Long clotureCreditId, TypeDocument type, MultipartFile file) throws IOException {
+    public DocumentClotureCreditDto upload(Long clotureCreditId, String codeDocument, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
 
-        requirementValidator.validateUpload(ProcessusDocument.CLOTURE_CI, type, file);
+        requirementValidator.validateUpload(ProcessusDocument.CLOTURE_CI, codeDocument, file);
 
         ClotureCredit cloture = clotureCreditRepository.findById(clotureCreditId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Clôture crédit non trouvée: " + clotureCreditId));
 
         int nextVersion = 1;
-        DocumentClotureCredit previous = repository.findByClotureCreditIdAndTypeAndActifTrue(clotureCreditId, type)
+        DocumentClotureCredit previous = repository.findByClotureCreditIdAndCodeDocumentAndActifTrue(clotureCreditId, codeDocument)
                 .orElse(null);
         if (previous != null) {
             previous.setActif(false);
@@ -54,7 +53,7 @@ public class DocumentClotureCreditService {
         String fileUrl = minioService.uploadFile(file);
 
         DocumentClotureCredit doc = DocumentClotureCredit.builder()
-                .type(type)
+                .codeDocument(codeDocument)
                 .nomFichier(originalFilename != null ? originalFilename : file.getName())
                 .chemin(fileUrl)
                 .dateUpload(Instant.now())
@@ -81,7 +80,7 @@ public class DocumentClotureCreditService {
     private DocumentClotureCreditDto toDto(DocumentClotureCredit d) {
         return DocumentClotureCreditDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())

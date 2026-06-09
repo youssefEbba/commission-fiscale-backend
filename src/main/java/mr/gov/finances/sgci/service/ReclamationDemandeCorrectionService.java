@@ -5,10 +5,10 @@ import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.ReclamationDemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
-import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.domain.enums.StatutReclamationCorrection;
+import mr.gov.finances.sgci.domain.enums.WorkflowEventCode;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.ReclamationDemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
@@ -23,11 +23,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -44,7 +42,7 @@ public class ReclamationDemandeCorrectionService {
     private final DocumentService documentService;
     private final MinioService minioService;
     private final AuditService auditService;
-    private final NotificationService notificationService;
+    private final WorkflowNotificationHelper workflowNotificationHelper;
 
     @Transactional(readOnly = true)
     public List<ReclamationDemandeCorrectionDto> listByDemande(Long demandeId, AuthenticatedUser user) {
@@ -255,23 +253,7 @@ public class ReclamationDemandeCorrectionService {
     }
 
     private void notifyTreasuryReclamationAnnulee(DemandeCorrection demande, Long reclamationId) {
-        List<Long> cibles = Stream.concat(
-                utilisateurRepository.findByRole(Role.DGTCP).stream().map(Utilisateur::getId),
-                utilisateurRepository.findByRole(Role.PRESIDENT).stream().map(Utilisateur::getId)
-        ).distinct().collect(Collectors.toList());
-        if (cibles.isEmpty()) {
-            return;
-        }
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("demandeCorrectionId", demande.getId());
-        payload.put("reclamationId", reclamationId);
-        payload.put("reclamationStatut", StatutReclamationCorrection.ANNULEE.name());
-        if (demande.getStatut() != null) {
-            payload.put("statutDemandeInchange", demande.getStatut().name());
-        }
-        String msg = "Réclamation retirée — dossier " + demande.getNumero() + " (statut de la demande inchangé)";
-        notificationService.notifyUsers(cibles, NotificationType.CORRECTION_DECISION,
-                "ReclamationDemandeCorrection", reclamationId, msg, payload);
+        workflowNotificationHelper.correctionReclamation(demande, WorkflowEventCode.CORRECTION_RECLAMATION_ANNULEE, null);
     }
 
     private void assertCanReadDemande(Long demandeId, AuthenticatedUser user) {
@@ -311,20 +293,7 @@ public class ReclamationDemandeCorrectionService {
     }
 
     private void notifyTreasuryOnNewReclamation(DemandeCorrection demande, Long reclamationId) {
-        List<Long> cibles = Stream.concat(
-                utilisateurRepository.findByRole(Role.DGTCP).stream().map(Utilisateur::getId),
-                utilisateurRepository.findByRole(Role.PRESIDENT).stream().map(Utilisateur::getId)
-        ).distinct().collect(Collectors.toList());
-        if (cibles.isEmpty()) {
-            return;
-        }
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("demandeCorrectionId", demande.getId());
-        payload.put("reclamationId", reclamationId);
-        payload.put("numero", demande.getNumero());
-        String msg = "Nouvelle réclamation sur la demande de correction " + demande.getNumero();
-        notificationService.notifyUsers(cibles, NotificationType.CORRECTION_DECISION,
-                "ReclamationDemandeCorrection", reclamationId, msg, payload);
+        workflowNotificationHelper.correctionReclamation(demande, WorkflowEventCode.CORRECTION_RECLAMATION_DEPOSEE, null);
     }
 
     private void notifyAuteursReclamationTraitee(ReclamationDemandeCorrection rec, Long demandeId, boolean acceptee) {
@@ -332,27 +301,7 @@ public class ReclamationDemandeCorrectionService {
         if (d == null) {
             return;
         }
-        List<Long> ids = Stream.concat(
-                utilisateurRepository.findByAutoriteContractanteId(d.getAutoriteContractante().getId()).stream().map(Utilisateur::getId),
-                utilisateurRepository.findByEntrepriseId(d.getEntreprise().getId()).stream().map(Utilisateur::getId)
-        ).distinct().collect(Collectors.toList());
-        if (ids.isEmpty()) {
-            return;
-        }
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("demandeCorrectionId", demandeId);
-        payload.put("reclamationId", rec.getId());
-        payload.put("acceptee", acceptee);
-        if (acceptee) {
-            payload.put("nouveauStatutDemande", StatutDemande.RECUE.name());
-        } else if (d.getStatut() != null) {
-            payload.put("statutDemandeInchange", d.getStatut().name());
-        }
-        String msg = acceptee
-                ? "Réclamation acceptée (DGTCP) — dossier " + d.getNumero() + " renvoyé au statut REÇUE ; nouvelle lettre d'adoption et offre corrigée à déposer"
-                : "Réclamation rejetée — dossier " + d.getNumero() + " (statut de la demande inchangé)";
-        notificationService.notifyUsers(ids, NotificationType.CORRECTION_DECISION,
-                "ReclamationDemandeCorrection", rec.getId(), msg, payload);
+        workflowNotificationHelper.correctionReclamation(d, WorkflowEventCode.CORRECTION_RECLAMATION_TRAITEE, null);
     }
 
     private ReclamationDemandeCorrectionDto toDto(ReclamationDemandeCorrection e) {

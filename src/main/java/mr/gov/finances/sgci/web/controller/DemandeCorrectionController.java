@@ -141,12 +141,12 @@ public class DemandeCorrectionController {
     @PreAuthorize("hasAnyAuthority('correction.offer.upload', 'correction.complement.add')")
     public DocumentDto uploadDocument(
             @PathVariable Long id,
-            @RequestParam TypeDocument type,
+            @RequestParam String codeDocument,
             @RequestParam(required = false) String message,
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return documentService.upload(id, type, message, file, user);
+        return documentService.upload(id, codeDocument, message, file, user);
     }
 
     /** Réclamations sur une demande adoptée ou notifiée (dépôt AC / délégués / entreprise). */

@@ -81,3 +81,37 @@ Effet : si plus de rejet ouvert et certificat `INCOMPLETE` → **`A_RECONTROLER`
 - Contrôleurs listés en section 3 — `@PreAuthorize` pour l’intégration front / JWT
 
 Pour toute évolution du workflow, **le code Java fait foi** ; mettre à jour ce document en parallèle.
+
+---
+
+## 6. Comparaison avec la demande d'explication
+
+| Aspect | Rejet temporaire (`REJET_TEMP`) | Demande d'explication |
+|--------|--------------------------------|------------------------|
+| **Objectif** | Bloquer le dossier et exiger des **compléments** (documents, message) | **Discussion interne** entre membres de la commission |
+| **Visibilité** | Entreprise, AC, commission (selon domaine) | **Commission uniquement** (DGD, DGTCP, DGI, DGB, Président) — entreprise / AC : **403** |
+| **Impact statut** | Passe en `INCOMPLETE` (ou équivalent) | **Aucun** changement de statut |
+| **Blocage VISA** | Oui, tant qu'un `REJET_TEMP` **ouvert** existe pour le rôle | **Non** |
+| **API** | `POST .../{id}/decisions` avec `REJET_TEMP` | `POST /api/demandes-explication` |
+| **Entités** | `DecisionCorrection` / `DecisionCertificatCredit` / `DecisionUtilisationCredit` + `RejetTempResponse` | `DemandeExplication` + `DemandeExplicationMessage` |
+| **Clôture** | `PUT .../decisions/{decisionId}/resolve` par le **rôle émetteur** | `PUT /api/demandes-explication/{id}/fermer` par **l'auteur du fil** ou le **Président** |
+| **Cible** | Documents demandés + réponses GED / texte | **Rôle destinataire** indicatif ; tous les membres peuvent répondre |
+
+```mermaid
+flowchart LR
+  subgraph rejetTemp [Rejet temporaire]
+    RT1[Membre commission] -->|REJET_TEMP| RT2[Statut INCOMPLETE]
+    RT2 --> RT3[Entreprise / AC répond]
+    RT3 --> RT4[Resolve émetteur]
+    RT4 --> RT5[VISA possible]
+  end
+
+  subgraph explication [Demande explication]
+    EX1[Membre commission] -->|Ouvre fil| EX2[OUVERTE]
+    EX2 --> EX3[Tous membres répondent]
+    EX3 --> EX4[Fermeture auteur / Président]
+    EX4 --> EX5[Statut dossier inchangé]
+  end
+```
+
+**Ne pas réutiliser** les endpoints `.../decisions` ni les types `REJET_TEMP` pour la demande d'explication. Documentation front dédiée : [DEMANDE_EXPLICATION_FRONT.md](DEMANDE_EXPLICATION_FRONT.md).

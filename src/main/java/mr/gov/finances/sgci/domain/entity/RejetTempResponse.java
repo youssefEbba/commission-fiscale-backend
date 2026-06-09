@@ -2,7 +2,6 @@ package mr.gov.finances.sgci.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
 
 import java.time.Instant;
 
@@ -24,8 +23,8 @@ public class RejetTempResponse {
 
     private String documentUrl;
 
-    @Enumerated(EnumType.STRING)
-    private TypeDocument documentType;
+    @Column(name = "code_document", length = 64)
+    private String codeDocument;
 
     private Integer documentVersion;
 

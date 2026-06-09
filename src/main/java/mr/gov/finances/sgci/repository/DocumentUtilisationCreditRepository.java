@@ -15,5 +15,5 @@ public interface DocumentUtilisationCreditRepository extends JpaRepository<Docum
 
     List<DocumentUtilisationCredit> findByUtilisationCreditIdAndActifTrue(Long utilisationCreditId);
 
-    Optional<DocumentUtilisationCredit> findByUtilisationCreditIdAndTypeAndActifTrue(Long utilisationCreditId, TypeDocument type);
+    Optional<DocumentUtilisationCredit> findByUtilisationCreditIdAndCodeDocumentAndActifTrue(Long utilisationCreditId, String codeDocument);
 }

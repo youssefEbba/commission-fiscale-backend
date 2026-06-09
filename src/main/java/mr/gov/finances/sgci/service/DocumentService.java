@@ -12,7 +12,6 @@ import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.repository.DecisionCorrectionRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
@@ -42,25 +41,25 @@ public class DocumentService {
     private final RejetTempResponseService rejetTempResponseService;
 
     @Transactional
-    public DocumentDto upload(Long demandeCorrectionId, TypeDocument type, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
+    public DocumentDto upload(Long demandeCorrectionId, String codeDocument, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
 
-        requirementValidator.validateUpload(ProcessusDocument.CORRECTION_OFFRE_FISCALE, type, file);
+        requirementValidator.validateUpload(ProcessusDocument.CORRECTION_OFFRE_FISCALE, codeDocument, file);
         DemandeCorrection demande = demandeRepository.findById(demandeCorrectionId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + demandeCorrectionId));
 
         int nextVersion = 1;
-        Document previous = documentRepository.findByDemandeCorrectionIdAndTypeAndActifTrue(demandeCorrectionId, type)
+        Document previous = documentRepository.findByDemandeCorrectionIdAndCodeDocumentAndActifTrue(demandeCorrectionId, codeDocument)
                 .orElse(null);
         if (previous != null) {
-            assertReplacementAllowed(demande, type, user);
+            assertReplacementAllowed(demande, codeDocument, user);
             previous.setActif(false);
             nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
         } else {
             nextVersion = documentRepository
-                    .findTopByDemandeCorrection_IdAndTypeOrderByVersionDesc(demandeCorrectionId, type)
+                    .findTopByDemandeCorrection_IdAndCodeDocumentOrderByVersionDesc(demandeCorrectionId, codeDocument)
                     .map(d -> d.getVersion() != null ? d.getVersion() + 1 : 1)
                     .orElse(1);
         }
@@ -69,7 +68,7 @@ public class DocumentService {
                         demande.getId(),
                         DecisionCorrectionType.REJET_TEMP,
                         RejetTempStatus.OUVERT
-                ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(type));
+                ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(codeDocument));
 
         if (askedByOpenRejetTemp && (message == null || message.isBlank())) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le message de réponse est obligatoire");
@@ -79,7 +78,7 @@ public class DocumentService {
         String fileUrl = minioService.uploadFile(file);
 
         Document doc = Document.builder()
-                .type(type)
+                .codeDocument(codeDocument)
                 .nomFichier(originalFilename != null ? originalFilename : file.getName())
                 .chemin(fileUrl)
                 .dateUpload(Instant.now())
@@ -93,13 +92,13 @@ public class DocumentService {
         auditService.log(AuditAction.CREATE, "Document", String.valueOf(doc.getId()), result);
 
         if (askedByOpenRejetTemp) {
-            rejetTempResponseService.recordCorrectionUploadResponse(demande.getId(), type, message, doc, user);
+            rejetTempResponseService.recordCorrectionUploadResponse(demande.getId(), codeDocument, message, doc, user);
         }
 
         return result;
     }
 
-    private void assertReplacementAllowed(DemandeCorrection demande, TypeDocument type, AuthenticatedUser user) {
+    private void assertReplacementAllowed(DemandeCorrection demande, String codeDocument, AuthenticatedUser user) {
         if (demande == null || demande.getId() == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Demande de correction invalide");
         }
@@ -119,7 +118,7 @@ public class DocumentService {
                 .anyMatch(d -> d.getDecision() == DecisionCorrectionType.REJET_TEMP
                         && d.getRejetTempStatus() == RejetTempStatus.OUVERT
                         && d.getDocumentsDemandes() != null
-                        && d.getDocumentsDemandes().contains(type));
+                        && d.getDocumentsDemandes().contains(codeDocument));
 
         if (!asked) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Remplacement interdit: aucun rejet temporaire ouvert ne demande ce document");
@@ -133,10 +132,10 @@ public class DocumentService {
     }
 
     @Transactional(readOnly = true)
-    public List<TypeDocument> findActiveDocumentTypes(Long demandeCorrectionId) {
+    public List<String> findActiveDocumentTypes(Long demandeCorrectionId) {
         return documentRepository.findByDemandeCorrectionIdAndActifTrue(demandeCorrectionId)
                 .stream()
-                .map(Document::getType)
+                .map(Document::getCodeDocument)
                 .distinct()
                 .collect(Collectors.toList());
     }
@@ -147,11 +146,11 @@ public class DocumentService {
      */
     @Transactional
     public void archiveAdoptionEtOffresCorrigePourRouverture(Long demandeCorrectionId) {
-        for (TypeDocument type : java.util.EnumSet.of(
-                TypeDocument.LETTRE_ADOPTION,
-                TypeDocument.OFFRE_FISCALE_CORRIGEE,
-                TypeDocument.OFFRE_CORRIGEE)) {
-            documentRepository.findByDemandeCorrectionIdAndTypeAndActifTrue(demandeCorrectionId, type)
+        for (String code : java.util.List.of(
+                "LETTRE_ADOPTION",
+                "OFFRE_FISCALE_CORRIGEE",
+                "OFFRE_CORRIGEE")) {
+            documentRepository.findByDemandeCorrectionIdAndCodeDocumentAndActifTrue(demandeCorrectionId, code)
                     .ifPresent(d -> {
                         d.setActif(false);
                         documentRepository.save(d);
@@ -167,7 +166,7 @@ public class DocumentService {
     private DocumentDto toDto(Document d) {
         return DocumentDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())

@@ -131,9 +131,9 @@ public class SousTraitanceController {
     @PreAuthorize("hasAuthority('sous_traitance.submit')")
     public DocumentSousTraitanceDto uploadDocument(
             @PathVariable Long id,
-            @RequestParam TypeDocument type,
+            @RequestParam String codeDocument,
             @RequestParam("file") MultipartFile file
     ) throws IOException {
-        return documentService.upload(id, type, file);
+        return documentService.upload(id, codeDocument, file);
     }
 }

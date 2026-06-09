@@ -15,5 +15,5 @@ public interface DocumentTransfertCreditRepository extends JpaRepository<Documen
 
     List<DocumentTransfertCredit> findByTransfertCreditIdAndActifTrue(Long transfertCreditId);
 
-    Optional<DocumentTransfertCredit> findByTransfertCreditIdAndTypeAndActifTrue(Long transfertCreditId, TypeDocument type);
+    Optional<DocumentTransfertCredit> findByTransfertCreditIdAndCodeDocumentAndActifTrue(Long transfertCreditId, String codeDocument);
 }

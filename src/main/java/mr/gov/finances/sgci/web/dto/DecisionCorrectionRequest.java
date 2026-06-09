@@ -18,5 +18,5 @@ public class DecisionCorrectionRequest {
     private DecisionCorrectionType decision;
     private String motifRejet;
 
-    private List<TypeDocument> documentsDemandes;
+    private List<String> documentsDemandes;
 }

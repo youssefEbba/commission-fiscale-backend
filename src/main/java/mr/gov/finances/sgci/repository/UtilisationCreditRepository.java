@@ -6,13 +6,17 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
+import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 
+import java.util.Collection;
 import java.util.List;
 
 @Repository
 public interface UtilisationCreditRepository extends JpaRepository<UtilisationCredit, Long> {
 
     List<UtilisationCredit> findByCertificatCreditId(Long certificatCreditId);
+
+    long countByCertificatCreditIdAndStatutNotIn(Long certificatCreditId, Collection<StatutUtilisation> statuts);
 
     List<UtilisationCredit> findByEntrepriseId(Long entrepriseId);
 

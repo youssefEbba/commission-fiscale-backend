@@ -40,20 +40,20 @@ public class DocumentCertificatCreditService {
     private final RejetTempResponseService rejetTempResponseService;
 
     @Transactional
-    public DocumentCertificatCreditDto upload(Long certificatCreditId, TypeDocument type, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
+    public DocumentCertificatCreditDto upload(Long certificatCreditId, String codeDocument, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
-        requirementValidator.validateUpload(ProcessusDocument.MISE_EN_PLACE_CI, type, file);
+        requirementValidator.validateUpload(ProcessusDocument.MISE_EN_PLACE_CI, codeDocument, file);
 
         CertificatCredit certificat = certificatRepository.findById(certificatCreditId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + certificatCreditId));
 
         int nextVersion = 1;
-        DocumentCertificatCredit previous = repository.findByCertificatCreditIdAndTypeAndActifTrue(certificatCreditId, type)
+        DocumentCertificatCredit previous = repository.findByCertificatCreditIdAndCodeDocumentAndActifTrue(certificatCreditId, codeDocument)
                 .orElse(null);
         if (previous != null) {
-            assertReplacementAllowed(certificat, type, user);
+            assertReplacementAllowed(certificat, codeDocument, user);
             previous.setActif(false);
             nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
         }
@@ -62,7 +62,7 @@ public class DocumentCertificatCreditService {
                         certificat.getId(),
                         DecisionCorrectionType.REJET_TEMP,
                         RejetTempStatus.OUVERT
-                ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(type));
+                ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(codeDocument));
 
         if (askedByOpenRejetTemp && (message == null || message.isBlank())) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le message de réponse est obligatoire");
@@ -72,7 +72,7 @@ public class DocumentCertificatCreditService {
         String fileUrl = minioService.uploadFile(file);
 
         DocumentCertificatCredit doc = DocumentCertificatCredit.builder()
-                .type(type)
+                .codeDocument(codeDocument)
                 .nomFichier(originalFilename != null ? originalFilename : file.getName())
                 .chemin(fileUrl)
                 .dateUpload(Instant.now())
@@ -87,13 +87,13 @@ public class DocumentCertificatCreditService {
         auditService.log(AuditAction.CREATE, "DocumentCertificatCredit", String.valueOf(doc.getId()), result);
 
         if (askedByOpenRejetTemp) {
-            rejetTempResponseService.recordCertificatUploadResponse(certificat.getId(), type, message, doc, user);
+            rejetTempResponseService.recordCertificatUploadResponse(certificat.getId(), codeDocument, message, doc, user);
         }
 
         return result;
     }
 
-    private void assertReplacementAllowed(CertificatCredit certificat, TypeDocument type, AuthenticatedUser user) {
+    private void assertReplacementAllowed(CertificatCredit certificat, String codeDocument, AuthenticatedUser user) {
         if (certificat == null || certificat.getId() == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat invalide");
         }
@@ -110,7 +110,7 @@ public class DocumentCertificatCreditService {
                 .anyMatch(d -> d.getDecision() == DecisionCorrectionType.REJET_TEMP
                         && d.getRejetTempStatus() == RejetTempStatus.OUVERT
                         && d.getDocumentsDemandes() != null
-                        && d.getDocumentsDemandes().contains(type));
+                        && d.getDocumentsDemandes().contains(codeDocument));
         if (!asked) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Remplacement interdit: aucun acteur n'a demandé ce document");
         }
@@ -124,10 +124,10 @@ public class DocumentCertificatCreditService {
     }
 
     @Transactional(readOnly = true)
-    public List<TypeDocument> findActiveDocumentTypes(Long certificatCreditId) {
+    public List<String> findActiveDocumentTypes(Long certificatCreditId) {
         return repository.findByCertificatCreditIdAndActifTrue(certificatCreditId)
                 .stream()
-                .map(DocumentCertificatCredit::getType)
+                .map(DocumentCertificatCredit::getCodeDocument)
                 .distinct()
                 .collect(Collectors.toList());
     }
@@ -135,7 +135,7 @@ public class DocumentCertificatCreditService {
     private DocumentCertificatCreditDto toDto(DocumentCertificatCredit d) {
         return DocumentCertificatCreditDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())

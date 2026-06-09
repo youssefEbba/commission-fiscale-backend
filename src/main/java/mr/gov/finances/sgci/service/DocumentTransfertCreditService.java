@@ -11,7 +11,7 @@ import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
+import mr.gov.finances.sgci.domain.enums.WorkflowEventCode;
 import mr.gov.finances.sgci.repository.DecisionTransfertCreditRepository;
 import mr.gov.finances.sgci.repository.DocumentTransfertCreditRepository;
 import mr.gov.finances.sgci.repository.TransfertCreditRepository;
@@ -38,23 +38,35 @@ public class DocumentTransfertCreditService {
     private final AuditService auditService;
     private final DocumentRequirementValidator requirementValidator;
     private final RejetTempResponseService rejetTempResponseService;
+    private final WorkflowNotificationHelper workflowNotificationHelper;
 
     private static final EnumSet<StatutTransfert> STATUTS_DEPOT =
             EnumSet.of(StatutTransfert.DEMANDE, StatutTransfert.EN_COURS, StatutTransfert.VALIDE,
                     StatutTransfert.INCOMPLETE, StatutTransfert.A_RECONTROLER);
 
     @Transactional
-    public DocumentTransfertCreditDto upload(Long transfertCreditId, TypeDocument type, MultipartFile file) throws IOException {
-        return upload(transfertCreditId, type, null, file, null);
+    public DocumentTransfertCreditDto upload(Long transfertCreditId, String codeDocument, MultipartFile file) throws IOException {
+        return upload(transfertCreditId, codeDocument, null, file, null, null);
     }
 
     @Transactional
-    public DocumentTransfertCreditDto upload(Long transfertCreditId, TypeDocument type, String message, MultipartFile file,
+    public DocumentTransfertCreditDto upload(Long transfertCreditId, String codeDocument, String message, MultipartFile file,
                                              AuthenticatedUser user) throws IOException {
+        return upload(transfertCreditId, codeDocument, message, file, user, null);
+    }
+
+    /**
+     * @param restrictRejetTempResponseToDecisionId si non nul (réponse à un rejet ciblée), le message est obligatoire
+     *                                              et {@link RejetTempResponseService#recordTransfertUploadResponse}
+     *                                              n’associe la pièce qu’à cette décision.
+     */
+    @Transactional
+    public DocumentTransfertCreditDto upload(Long transfertCreditId, String codeDocument, String message, MultipartFile file,
+                                             AuthenticatedUser user, Long restrictRejetTempResponseToDecisionId) throws IOException {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
-        requirementValidator.validateUpload(ProcessusDocument.TRANSFERT_CREDIT, type, file);
+        requirementValidator.validateUpload(ProcessusDocument.TRANSFERT_CREDIT, codeDocument, file);
 
         TransfertCredit transfert = transfertRepository.findById(transfertCreditId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Transfert de crédit non trouvé: " + transfertCreditId));
@@ -64,11 +76,20 @@ public class DocumentTransfertCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Dépôt de pièces interdit pour le statut: " + st);
         }
 
-        boolean askedByOpenRejetTemp = decisionRepository.findByTransfertCredit_IdAndDecisionAndRejetTempStatus(
-                        transfert.getId(),
-                        DecisionCorrectionType.REJET_TEMP,
-                        RejetTempStatus.OUVERT
-                ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(type));
+        boolean askedByOpenRejetTemp;
+        if (restrictRejetTempResponseToDecisionId != null) {
+            askedByOpenRejetTemp = decisionRepository.findById(restrictRejetTempResponseToDecisionId)
+                    .filter(d -> d.getTransfertCredit() != null && d.getTransfertCredit().getId().equals(transfert.getId()))
+                    .filter(d -> d.getDecision() == DecisionCorrectionType.REJET_TEMP && d.getRejetTempStatus() == RejetTempStatus.OUVERT)
+                    .map(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(codeDocument))
+                    .orElse(false);
+        } else {
+            askedByOpenRejetTemp = decisionRepository.findByTransfertCredit_IdAndDecisionAndRejetTempStatus(
+                            transfert.getId(),
+                            DecisionCorrectionType.REJET_TEMP,
+                            RejetTempStatus.OUVERT
+                    ).stream().anyMatch(d -> d.getDocumentsDemandes() != null && d.getDocumentsDemandes().contains(codeDocument));
+        }
 
         if (askedByOpenRejetTemp && (message == null || message.isBlank())) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le message de réponse est obligatoire");
@@ -78,7 +99,7 @@ public class DocumentTransfertCreditService {
         }
 
         int nextVersion = 1;
-        DocumentTransfertCredit previous = repository.findByTransfertCreditIdAndTypeAndActifTrue(transfertCreditId, type)
+        DocumentTransfertCredit previous = repository.findByTransfertCreditIdAndCodeDocumentAndActifTrue(transfertCreditId, codeDocument)
                 .orElse(null);
         if (previous != null) {
             previous.setActif(false);
@@ -89,7 +110,7 @@ public class DocumentTransfertCreditService {
         String fileUrl = minioService.uploadFile(file);
 
         DocumentTransfertCredit doc = DocumentTransfertCredit.builder()
-                .type(type)
+                .codeDocument(codeDocument)
                 .nomFichier(originalFilename != null ? originalFilename : file.getName())
                 .chemin(fileUrl)
                 .dateUpload(Instant.now())
@@ -103,12 +124,14 @@ public class DocumentTransfertCreditService {
         if (transfert.getStatut() == StatutTransfert.DEMANDE) {
             transfert.setStatut(StatutTransfert.EN_COURS);
             transfertRepository.save(transfert);
+            workflowNotificationHelper.transfert(transfert, WorkflowEventCode.TRANSFERT_EN_COURS, user);
         }
         DocumentTransfertCreditDto result = toDto(doc);
         auditService.log(AuditAction.CREATE, "DocumentTransfertCredit", String.valueOf(doc.getId()), result);
 
         if (askedByOpenRejetTemp) {
-            rejetTempResponseService.recordTransfertUploadResponse(transfert.getId(), type, message, doc, user);
+            rejetTempResponseService.recordTransfertUploadResponse(transfert.getId(), codeDocument, message, doc, user,
+                    restrictRejetTempResponseToDecisionId);
         }
 
         return result;
@@ -135,10 +158,10 @@ public class DocumentTransfertCreditService {
     }
 
     @Transactional(readOnly = true)
-    public List<TypeDocument> findActiveDocumentTypes(Long transfertCreditId) {
+    public List<String> findActiveDocumentTypes(Long transfertCreditId) {
         return repository.findByTransfertCreditIdAndActifTrue(transfertCreditId)
                 .stream()
-                .map(DocumentTransfertCredit::getType)
+                .map(DocumentTransfertCredit::getCodeDocument)
                 .distinct()
                 .collect(Collectors.toList());
     }
@@ -146,7 +169,7 @@ public class DocumentTransfertCreditService {
     private DocumentTransfertCreditDto toDto(DocumentTransfertCredit d) {
         return DocumentTransfertCreditDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())

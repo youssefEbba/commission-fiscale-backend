@@ -141,11 +141,11 @@ public class CertificatCreditController {
     @PreAuthorize("hasAnyAuthority('mise_en_place.document.upload', 'mise_en_place.dgd.queue.view', 'mise_en_place.president.signature.upload', 'mise_en_place.president.document.generate')")
     public DocumentCertificatCreditDto uploadDocument(
             @PathVariable Long id,
-            @RequestParam TypeDocument type,
+            @RequestParam String codeDocument,
             @RequestParam(required = false) String message,
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return documentService.upload(id, type, message, file, user);
+        return documentService.upload(id, codeDocument, message, file, user);
     }
 }

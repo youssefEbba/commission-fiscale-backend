@@ -8,6 +8,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import mr.gov.finances.sgci.domain.enums.AffectationTaxe;
 import mr.gov.finances.sgci.domain.enums.TypeAchat;
 import mr.gov.finances.sgci.domain.enums.TypeLigneTaxe;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
@@ -82,5 +83,11 @@ public class CreateUtilisationCreditRequest {
         @NotNull(message = "La valeur de la taxe est obligatoire")
         @PositiveOrZero
         private BigDecimal valeurTaxe;
+
+        /**
+         * Proposition entreprise : AU_CI (pris en charge par le crédit / cordon) ou A_PAYER (à payer).
+         * Obligatoire pour chaque ligne avec valeur &gt; 0 à la soumission (hors brouillon).
+         */
+        private AffectationTaxe affectation;
     }
 }

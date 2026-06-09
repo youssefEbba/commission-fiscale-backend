@@ -31,9 +31,9 @@ public class AvenantController {
     @PreAuthorize("hasAuthority('modification.document.upload')")
     public DocumentAvenantDto uploadDocument(
             @PathVariable Long id,
-            @RequestParam TypeDocument type,
+            @RequestParam String codeDocument,
             @RequestParam("file") MultipartFile file
     ) throws IOException {
-        return documentService.upload(id, type, file);
+        return documentService.upload(id, codeDocument, file);
     }
 }

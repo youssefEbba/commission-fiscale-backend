@@ -13,4 +13,7 @@ public interface ClotureCreditRepository extends JpaRepository<ClotureCredit, Lo
     Optional<ClotureCredit> findByCertificatCreditId(Long certificatCreditId);
 
     List<ClotureCredit> findByApprouveeIsNull();
+
+    /** Propositions non finalisées (DGTCP : suivi jusqu'à clôture effective). */
+    List<ClotureCredit> findByDateClotureIsNullOrderByDatePropositionDesc();
 }

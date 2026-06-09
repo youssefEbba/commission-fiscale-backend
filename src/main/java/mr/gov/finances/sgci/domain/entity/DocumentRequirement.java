@@ -3,7 +3,6 @@ package mr.gov.finances.sgci.domain.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.domain.enums.TypeFichierAutorise;
 
 import java.util.EnumSet;
@@ -12,7 +11,7 @@ import java.util.Set;
 @Entity
 @Table(name = "document_requirement",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_doc_req_process_type", columnNames = {"processus", "type_document"})
+                @UniqueConstraint(name = "uk_doc_req_process_code", columnNames = {"processus", "code_document"})
         }
 )
 @Getter
@@ -30,9 +29,8 @@ public class DocumentRequirement {
     @Column(nullable = false)
     private ProcessusDocument processus;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "type_document", nullable = false)
-    private TypeDocument typeDocument;
+    @Column(name = "code_document", nullable = false, length = 64)
+    private String codeDocument;
 
     @Column(nullable = false)
     @Builder.Default

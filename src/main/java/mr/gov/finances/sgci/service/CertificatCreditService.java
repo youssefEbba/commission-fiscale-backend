@@ -63,7 +63,7 @@ public class CertificatCreditService {
     private final TvaDeductibleStockRepository tvaDeductibleStockRepository;
     private final CertificatCreditWorkflow workflow;
     private final AuditService auditService;
-    private final NotificationService notificationService;
+    private final WorkflowNotificationHelper workflowNotificationHelper;
     private final DocumentCertificatCreditService documentService;
     private final DocumentRequirementValidator requirementValidator;
     private final DossierGedService dossierGedService;
@@ -748,21 +748,6 @@ public class CertificatCreditService {
     }
 
     private void notifyCertificat(CertificatCredit certificat, StatutCertificat statut) {
-        if (certificat == null || certificat.getEntreprise() == null) {
-            return;
-        }
-        List<Long> userIds = utilisateurRepository.findByEntrepriseId(certificat.getEntreprise().getId())
-                .stream()
-                .map(mr.gov.finances.sgci.domain.entity.Utilisateur::getId)
-                .collect(Collectors.toList());
-        if (userIds.isEmpty()) {
-            return;
-        }
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("statut", statut.name());
-        payload.put("numero", certificat.getNumero());
-        String message = "Certificat " + certificat.getNumero() + " statut: " + statut;
-        notificationService.notifyUsers(userIds, NotificationType.CERTIFICAT_STATUT_CHANGE,
-                "CertificatCredit", certificat.getId(), message, payload);
+        workflowNotificationHelper.certificatStatut(certificat, statut.name(), null, null);
     }
 }

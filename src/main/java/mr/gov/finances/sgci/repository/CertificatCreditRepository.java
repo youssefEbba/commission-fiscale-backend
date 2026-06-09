@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -25,6 +26,8 @@ public interface CertificatCreditRepository extends JpaRepository<CertificatCred
     /** Autres certificats non annulés pour la même demande (exclut le certificat en cours d’édition / soumission). */
     long countByDemandeCorrectionIdAndStatutNotAndIdNot(Long demandeCorrectionId, StatutCertificat statut, Long excludeCertificatId);
     List<CertificatCredit> findByStatutOrderByDateEmissionDescIdDesc(StatutCertificat statut);
+
+    List<CertificatCredit> findByStatutInOrderByDateEmissionDescIdDesc(Collection<StatutCertificat> statuts);
 
     List<CertificatCredit> findByEntrepriseIdOrderByDateEmissionDescIdDesc(Long entrepriseId);
 

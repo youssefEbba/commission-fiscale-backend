@@ -15,5 +15,5 @@ public interface DocumentClotureCreditRepository extends JpaRepository<DocumentC
 
     List<DocumentClotureCredit> findByClotureCreditIdAndActifTrue(Long clotureCreditId);
 
-    Optional<DocumentClotureCredit> findByClotureCreditIdAndTypeAndActifTrue(Long clotureCreditId, TypeDocument type);
+    Optional<DocumentClotureCredit> findByClotureCreditIdAndCodeDocumentAndActifTrue(Long clotureCreditId, String codeDocument);
 }

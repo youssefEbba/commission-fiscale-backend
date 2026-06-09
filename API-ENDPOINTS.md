@@ -54,6 +54,30 @@ Authorization: Bearer <token>
     }
     ```
 
+- **POST** `/api/auth/password-reset/check-email` (public)  
+  - Vérifie si un e-mail est enregistré sur un compte **actif**.
+  - Body :
+    ```json
+    { "email": "user@example.com" }
+    ```
+  - Réponse :
+    ```json
+    { "exists": true }
+    ```
+
+- **POST** `/api/auth/password-reset/request` (public)  
+  - Crée une demande de réinitialisation (statut `EN_ATTENTE`) si l'e-mail correspond à un compte actif unique.
+  - Body : `{ "email": "user@example.com" }`
+  - Réponse : `202 Accepted`
+    ```json
+    {
+      "message": "Si l'e-mail est enregistré, votre demande a été transmise à l'administrateur."
+    }
+    ```
+  - Erreurs : `409` si demande déjà en attente ou plusieurs comptes partagent le même e-mail.
+
+> Voir `docs/GESTION_RESET_PASSWORD.md` et `docs/RESET_PASSWORD_FRONT.md`.
+
 ---
 
 ## 2. Santé & Swagger
@@ -248,7 +272,20 @@ Base : `/api/utilisations-credit`
 
 ## 8. Gestion des utilisateurs (validation admin)
 
-Base : `/api/utilisateurs` – réservé au rôle **PRESIDENT**.
+Base : `/api/utilisateurs` – permissions **`user.list`**, **`user.update`**, **`user.disable`** (rôles `ADMIN_SI`, `PRESIDENT`).
+
+### Mon profil (tout utilisateur authentifié)
+
+- **GET** `/api/utilisateurs/me` — profil connecté
+- **PATCH** `/api/utilisateurs/me` — mise à jour `nomComplet` / `email`
+- **PATCH** `/api/utilisateurs/me/password` — changement mot de passe (connecté, mot de passe actuel requis) — voir `docs/CHANGE_PASSWORD_FRONT.md`
+
+### Administration
+
+- **GET** `/api/utilisateurs/{id}` — détail (permission `user.list`)
+- **PUT** `/api/utilisateurs/{id}` — modification admin (permission `user.update`, changement de rôle : `user.role.assign`)
+
+Guide front : [docs/GESTION_UTILISATEURS_FRONT.md](docs/GESTION_UTILISATEURS_FRONT.md)
 
 - **GET** `/api/utilisateurs`  
   Liste tous les comptes :
@@ -273,6 +310,24 @@ Base : `/api/utilisateurs` – réservé au rôle **PRESIDENT**.
   - Réponse : `204 No Content`.
 
 > À l’inscription (`/auth/register`), les comptes sont créés avec `actif=false` et ne peuvent pas se connecter tant que l’admin ne les a pas validés.
+
+### Réinitialisation mot de passe (admin)
+
+Permission requise : **`user.reset`** (rôles `ADMIN_SI`, `DGI`, `PRESIDENT`).
+
+Base : `/api/utilisateurs/password-reset-requests`
+
+- **GET** `/api/utilisateurs/password-reset-requests?statut=EN_ATTENTE`  
+  Liste des demandes (filtre `statut` optionnel : `EN_ATTENTE`, `APPROUVEE`, `REFUSEE`).
+
+- **GET** `/api/utilisateurs/password-reset-requests/{id}`  
+  Détail d'une demande.
+
+- **PATCH** `/api/utilisateurs/password-reset-requests/{id}/approve`  
+  Approuve la demande, génère un mot de passe temporaire, met à jour le compte et envoie un e-mail à l'utilisateur.
+
+- **PATCH** `/api/utilisateurs/password-reset-requests/{id}/reject`  
+  Refuse la demande. Body optionnel : `{ "motif": "..." }`. Un e-mail de refus est envoyé si l'utilisateur a une adresse e-mail.
 
 ---
 

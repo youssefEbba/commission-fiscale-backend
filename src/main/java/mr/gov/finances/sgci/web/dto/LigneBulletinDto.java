@@ -30,9 +30,15 @@ public class LigneBulletinDto {
     /** Valeur saisie par l'entreprise (MRU). */
     private BigDecimal valeurTaxe;
 
+    /** Proposition entreprise (AU_CI / A_PAYER). */
+    private AffectationTaxe affectationEntreprise;
+
     /**
-     * Décision DGD : AU_CI (pris en charge par le CI) ou A_PAYER (comptant).
-     * Null tant que la liquidation n'a pas été effectuée.
+     * Décision finale DGD : AU_CI ou A_PAYER. Null avant visa DGD.
+     * Si différent de {@link #affectationEntreprise}, le DGD a modifié la proposition.
      */
     private AffectationTaxe affectation;
+
+    /** {@code true} si le DGD a modifié l'affectation proposée par l'entreprise. */
+    private Boolean affectationModifieeParDgd;
 }

@@ -1,11 +1,15 @@
 package mr.gov.finances.sgci.web.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.SousTraitanceService;
 import mr.gov.finances.sgci.service.UtilisateurService;
+import mr.gov.finances.sgci.web.dto.ChangeMyPasswordRequest;
 import mr.gov.finances.sgci.web.dto.EntrepriseDto;
+import mr.gov.finances.sgci.web.dto.UpdateMyProfileRequest;
+import mr.gov.finances.sgci.web.dto.UpdateUtilisateurRequest;
 import mr.gov.finances.sgci.web.dto.UtilisateurDto;
 
 import org.springframework.http.HttpStatus;
@@ -26,12 +30,65 @@ public class UtilisateurController {
     private final SousTraitanceService sousTraitanceService;
 
     /**
+     * Profil de l'utilisateur connecté.
+     */
+    @GetMapping("/me")
+    public UtilisateurDto getMyProfile(@AuthenticationPrincipal AuthenticatedUser user) {
+        return utilisateurService.findMyProfile(user);
+    }
+
+    /**
+     * Mise à jour du profil de l'utilisateur connecté (nom complet, e-mail).
+     */
+    @PatchMapping("/me")
+    public UtilisateurDto updateMyProfile(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @RequestBody UpdateMyProfileRequest request
+    ) {
+        return utilisateurService.updateMyProfile(user, request);
+    }
+
+    /**
+     * Changement de mot de passe par l'utilisateur connecté (mot de passe actuel requis).
+     */
+    @PatchMapping("/me/password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void changeMyPassword(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @RequestBody ChangeMyPasswordRequest request
+    ) {
+        utilisateurService.changeMyPassword(user, request);
+    }
+
+    /**
      * Liste tous les utilisateurs (réservé à l'administrateur / PRESIDENT).
      */
     @GetMapping
     @PreAuthorize("hasAuthority('user.list')")
     public List<UtilisateurDto> getAll() {
         return utilisateurService.findAll();
+    }
+
+    /**
+     * Détail d'un utilisateur.
+     */
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('user.list')")
+    public UtilisateurDto getById(@PathVariable Long id) {
+        return utilisateurService.findById(id);
+    }
+
+    /**
+     * Modification d'un compte utilisateur (identité, rattachements, mot de passe, rôle).
+     */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('user.update')")
+    public UtilisateurDto update(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateUtilisateurRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return utilisateurService.update(id, request, user);
     }
 
     /**
@@ -72,4 +129,3 @@ public class UtilisateurController {
         utilisateurService.setActif(id, actif);
     }
 }
-

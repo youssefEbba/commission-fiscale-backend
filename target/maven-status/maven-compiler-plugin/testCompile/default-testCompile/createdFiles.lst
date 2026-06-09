@@ -1,6 +1,12 @@
 mr\gov\finances\sgci\RejetWorkflowsIT$LoginResult.class
+mr\gov\finances\sgci\ZAllWorkflowsIT$LoginResult.class
+mr\gov\finances\sgci\WorkflowNotificationMailIT.class
+mr\gov\finances\sgci\DemandeExplicationIT.class
+mr\gov\finances\sgci\DocumentTypesParametrageIT.class
+mr\gov\finances\sgci\PasswordResetIT.class
 mr\gov\finances\sgci\WorkflowSmokeIT$LoginResult.class
 mr\gov\finances\sgci\WorkflowSmokeIT.class
 mr\gov\finances\sgci\RejetWorkflowsIT.class
-mr\gov\finances\sgci\ZAllWorkflowsIT$LoginResult.class
+mr\gov\finances\sgci\PasswordResetMailIT.class
 mr\gov\finances\sgci\ZAllWorkflowsIT.class
+mr\gov\finances\sgci\UtilisateurIT.class

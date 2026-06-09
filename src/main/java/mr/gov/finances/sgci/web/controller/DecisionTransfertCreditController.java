@@ -2,7 +2,6 @@ package mr.gov.finances.sgci.web.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.DecisionTransfertCreditService;
 import mr.gov.finances.sgci.service.RejetTempResponseService;
@@ -74,13 +73,15 @@ public class DecisionTransfertCreditController {
     public List<RejetTempResponseDto> addRejetTempResponseMultipart(
             @PathVariable Long decisionId,
             @RequestParam("message") String message,
-            @RequestParam(value = "type", required = false) TypeDocument type,
-            @RequestParam(value = "typeDocument", required = false) TypeDocument typeDocument,
+            @RequestParam(value = "type", required = false) String typeParam,
+            @RequestParam(value = "typeDocument", required = false) String typeDocumentParam,
+            @RequestParam(value = "codeDocument", required = false) String codeDocumentParam,
             @RequestParam(value = "file", required = false) MultipartFile file,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        TypeDocument resolvedType = type != null ? type : typeDocument;
-        return decisionService.respondRejetTemp(decisionId, message, file, resolvedType, user);
+        String resolvedCode = codeDocumentParam != null && !codeDocumentParam.isBlank() ? codeDocumentParam
+                : (typeDocumentParam != null && !typeDocumentParam.isBlank() ? typeDocumentParam : typeParam);
+        return decisionService.respondRejetTemp(decisionId, message, file, resolvedCode, user);
     }
 
     @PutMapping("/decisions/{decisionId}/resolve")

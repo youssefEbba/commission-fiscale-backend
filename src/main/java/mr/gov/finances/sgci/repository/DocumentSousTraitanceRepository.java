@@ -15,5 +15,5 @@ public interface DocumentSousTraitanceRepository extends JpaRepository<DocumentS
 
     List<DocumentSousTraitance> findBySousTraitanceIdAndActifTrue(Long sousTraitanceId);
 
-    Optional<DocumentSousTraitance> findBySousTraitanceIdAndTypeAndActifTrue(Long sousTraitanceId, TypeDocument type);
+    Optional<DocumentSousTraitance> findBySousTraitanceIdAndCodeDocumentAndActifTrue(Long sousTraitanceId, String codeDocument);
 }

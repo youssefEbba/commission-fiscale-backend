@@ -15,5 +15,5 @@ public interface DocumentCertificatCreditRepository extends JpaRepository<Docume
 
     List<DocumentCertificatCredit> findByCertificatCreditIdAndActifTrue(Long certificatCreditId);
 
-    Optional<DocumentCertificatCredit> findByCertificatCreditIdAndTypeAndActifTrue(Long certificatCreditId, TypeDocument type);
+    Optional<DocumentCertificatCredit> findByCertificatCreditIdAndCodeDocumentAndActifTrue(Long certificatCreditId, String codeDocument);
 }

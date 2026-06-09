@@ -20,7 +20,7 @@ public class DecisionCreditDto {
     private Role role;
     private DecisionCorrectionType decision;
     private String motifRejet;
-    private Set<TypeDocument> documentsDemandes;
+    private Set<String> documentsDemandes;
     private Instant dateDecision;
     private RejetTempStatus rejetTempStatus;
     private Instant rejetTempResolvedAt;

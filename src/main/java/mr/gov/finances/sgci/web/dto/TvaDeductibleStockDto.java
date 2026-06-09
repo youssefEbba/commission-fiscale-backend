@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import mr.gov.finances.sgci.domain.enums.TvaDeductibleStockSource;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -15,6 +16,9 @@ import java.time.Instant;
 public class TvaDeductibleStockDto {
 
     private Long id;
+
+    /** {@code UTILISATION_DOUANE} ou {@code TRANSFERT_CREDIT} ; si absent en base (données anciennes), le front peut déduire de {@link #utilisationDouaneId}. */
+    private TvaDeductibleStockSource source;
 
     /** Identifiant de l'importation (UtilisationDouaniere) qui a généré cette tranche */
     private Long utilisationDouaneId;

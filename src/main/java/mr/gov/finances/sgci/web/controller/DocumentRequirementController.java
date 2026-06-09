@@ -28,20 +28,20 @@ public class DocumentRequirementController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAuthority('permissions.manage')")
+    @PreAuthorize("hasAuthority('document.types.manage') or hasAuthority('permissions.manage')")
     public DocumentRequirementDto create(@Valid @RequestBody UpsertDocumentRequirementRequest request) {
         return service.create(request);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('permissions.manage')")
+    @PreAuthorize("hasAuthority('document.types.manage') or hasAuthority('permissions.manage')")
     public DocumentRequirementDto update(@PathVariable Long id, @Valid @RequestBody UpsertDocumentRequirementRequest request) {
         return service.update(id, request);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAuthority('permissions.manage')")
+    @PreAuthorize("hasAuthority('document.types.manage') or hasAuthority('permissions.manage')")
     public void delete(@PathVariable Long id) {
         service.delete(id);
     }

@@ -37,6 +37,7 @@ import mr.gov.finances.sgci.repository.ReferentielTaxeRepository;
 import mr.gov.finances.sgci.repository.RolePermissionRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.service.DossierGedService;
+import mr.gov.finances.sgci.service.ReferentielTypeDocumentService;
 
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
@@ -69,6 +70,9 @@ public class DataInitializer implements CommandLineRunner {
     private final RolePermissionRepository rolePermissionRepository;
     private final PasswordEncoder passwordEncoder;
     private final DossierGedService dossierGedService;
+    private final ReferentielTypeDocumentService referentielTypeDocumentService;
+    private final DocumentRequirementLegacyMigration documentRequirementLegacyMigration;
+    private final NotificationSchemaMigration notificationSchemaMigration;
     private final Environment environment;
 
     @Override
@@ -79,6 +83,7 @@ public class DataInitializer implements CommandLineRunner {
                     .passwordHash(passwordEncoder.encode("admin"))
                     .role(Role.ADMIN_SI)
                     .nomComplet("Administrateur SGCI")
+                    .email(seedUserEmail("admin"))
                     .actif(true)
                     .build();
             utilisateurRepository.save(admin);
@@ -86,6 +91,9 @@ public class DataInitializer implements CommandLineRunner {
 
         seedPermissions();
         seedRolePermissions();
+        referentielTypeDocumentService.seedFromEnumIfEmpty();
+        documentRequirementLegacyMigration.migrateIfNeeded();
+        notificationSchemaMigration.migrateIfNeeded();
         seedDocumentRequirements();
         seedDefaultUsers();
         seedReferentielTaxes();
@@ -104,99 +112,99 @@ public class DataInitializer implements CommandLineRunner {
     private void seedDocumentRequirements() {
         EnumSet<TypeFichierAutorise> all = EnumSet.allOf(TypeFichierAutorise.class);
 
-        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, TypeDocument.LETTRE_SAISINE, false,
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "LETTRE_SAISINE", false,
                 all, "Lettre de saisine", 1);
-        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, TypeDocument.PV_OUVERTURE, false,
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "PV_OUVERTURE", false,
                 all, "PV d’ouverture des offres financières", 2);
-        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, TypeDocument.ATTESTATION_FISCALE, false,
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "ATTESTATION_FISCALE", false,
                 all, "Attestation fiscale de l’entreprise", 3);
-        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, TypeDocument.OFFRE_FISCALE, false,
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "OFFRE_FISCALE", false,
                 all, "Offre fiscale", 4);
-        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, TypeDocument.OFFRE_FINANCIERE, false,
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "OFFRE_FINANCIERE", false,
                 all, "Offre financière", 5);
-        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, TypeDocument.TABLEAU_MODELE, false,
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "TABLEAU_MODELE", false,
                 all, "Tableau modèle (nature, valeur, classification)", 6);
-        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, TypeDocument.DAO_DQE, false,
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "DAO_DQE", false,
                 all, "DAO + DQE", 7);
-        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, TypeDocument.LISTE_ITEMS, false,
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "LISTE_ITEMS", false,
                 all, "Liste des items Excel (FR/AR)", 8);
 
-        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, TypeDocument.FEUILLE_EVALUATION_SIGNEE, false,
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "FEUILLE_EVALUATION_SIGNEE", false,
                 all, "Feuille d’évaluation signée", 9);
 
         /* GED / exigences pièces : ne pas retirer — utilisées par mise en place, utilisations, etc. */
-        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, TypeDocument.LETTRE_SAISINE, false,
+        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, "LETTRE_SAISINE", false,
                 all, "Lettre de saisine", 1);
-        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, TypeDocument.CONTRAT, false,
+        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, "CONTRAT", false,
                 all, "Contrat enregistré", 2);
-        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, TypeDocument.LETTRE_NOTIFICATION_CONTRAT, false,
+        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, "LETTRE_NOTIFICATION_CONTRAT", false,
                 all, "Lettre de notification du marché", 3);
-        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, TypeDocument.CERTIFICAT_NIF, false,
+        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, "CERTIFICAT_NIF", false,
                 all, "Certificat NIF", 4);
-        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, TypeDocument.LETTRE_CORRECTION, false,
+        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, "LETTRE_CORRECTION", false,
                 all, "Lettre de correction", 5);
-        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, TypeDocument.CERTIFICAT_CREDIT_IMPOTS, false,
+        seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, "CERTIFICAT_CREDIT_IMPOTS", false,
                 all, "Certificat de crédit d’impôt", 6);
 
-        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, TypeDocument.DEMANDE_UTILISATION, false,
+        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "DEMANDE_UTILISATION", false,
                 all, "Demande d’utilisation", 1);
-        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, TypeDocument.ORDRE_TRANSIT, false,
+        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "ORDRE_TRANSIT", false,
                 all, "Ordre de transit", 2);
-        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, TypeDocument.DECLARATION_DOUANE, false,
+        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "DECLARATION_DOUANE", false,
                 all, "Déclaration en douane", 3);
-        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, TypeDocument.BULLETIN_LIQUIDATION, false,
+        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "BULLETIN_LIQUIDATION", false,
                 all, "Bulletin de liquidation", 4);
-        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, TypeDocument.FACTURE, false,
+        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "FACTURE", false,
                 all, "Facture commerciale", 5);
-        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, TypeDocument.CONNAISSEMENT, false,
+        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "CONNAISSEMENT", false,
                 all, "Connaissement / LTA / LVI", 6);
-        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, TypeDocument.CERTIFICAT_CREDIT_IMPOTS_SYDONIA, false,
+        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "CERTIFICAT_CREDIT_IMPOTS_SYDONIA", false,
                 all, "Copie du certificat (SYDONIA)", 7);
 
-        seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, TypeDocument.FACTURE, false,
+        seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, "FACTURE", false,
                 all, "Facture fournisseur", 1);
-        seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, TypeDocument.DECLARATION_TVA, false,
+        seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, "DECLARATION_TVA", false,
                 all, "Déclaration TVA", 2);
-        seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, TypeDocument.DECOMPTE, false,
+        seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, "DECOMPTE", false,
                 all, "Décompte (selon cas)", 3);
 
-        seedDocReq(ProcessusDocument.MODIFICATION_CI, TypeDocument.NOTE_SERVICE, false,
+        seedDocReq(ProcessusDocument.MODIFICATION_CI, "NOTE_SERVICE", false,
                 all, "Note de service", 1);
-        seedDocReq(ProcessusDocument.MODIFICATION_CI, TypeDocument.JUSTIFICATIONS_LEGALES, false,
+        seedDocReq(ProcessusDocument.MODIFICATION_CI, "JUSTIFICATIONS_LEGALES", false,
                 all, "Justifications légales", 2);
-        seedDocReq(ProcessusDocument.MODIFICATION_CI, TypeDocument.LETTRES_MOTIVEES, false,
+        seedDocReq(ProcessusDocument.MODIFICATION_CI, "LETTRES_MOTIVEES", false,
                 all, "Lettres motivées", 3);
-        seedDocReq(ProcessusDocument.MODIFICATION_CI, TypeDocument.AVENANT_CONTRAT, false,
+        seedDocReq(ProcessusDocument.MODIFICATION_CI, "AVENANT_CONTRAT", false,
                 all, "Avenant au contrat", 4);
-        seedDocReq(ProcessusDocument.MODIFICATION_CI, TypeDocument.LETTRES_AUTORITE_CONTRACTANTE, false,
+        seedDocReq(ProcessusDocument.MODIFICATION_CI, "LETTRES_AUTORITE_CONTRACTANTE", false,
                 all, "Lettres de l’autorité contractante", 5);
-        seedDocReq(ProcessusDocument.MODIFICATION_CI, TypeDocument.DETAIL_CORRECTIONS_NECESSAIRES, false,
+        seedDocReq(ProcessusDocument.MODIFICATION_CI, "DETAIL_CORRECTIONS_NECESSAIRES", false,
                 all, "Détail des corrections nécessaires", 6);
-        seedDocReq(ProcessusDocument.MODIFICATION_CI, TypeDocument.DOCUMENTS_OFFICIELS, false,
+        seedDocReq(ProcessusDocument.MODIFICATION_CI, "DOCUMENTS_OFFICIELS", false,
                 all, "Documents officiels", 7);
-        seedDocReq(ProcessusDocument.MODIFICATION_CI, TypeDocument.DECISION_COMMISSION, false,
+        seedDocReq(ProcessusDocument.MODIFICATION_CI, "DECISION_COMMISSION", false,
                 all, "Décision de la commission / validation formelle", 8);
 
-        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, TypeDocument.DEMANDE_MOTIVEE_TRANSFERT, true,
+        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, "DEMANDE_MOTIVEE_TRANSFERT", true,
                 all, "Demande motivée", 1);
-        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, TypeDocument.DECLARATION_CLOTURE_DOUANE, true,
+        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, "DECLARATION_CLOTURE_DOUANE", true,
                 all, "Déclaration de clôture", 2);
-        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, TypeDocument.JUSTIFICATIFS_CLOTURE_DOUANE, true,
+        seedDocReq(ProcessusDocument.TRANSFERT_CREDIT, "JUSTIFICATIFS_CLOTURE_DOUANE", true,
                 all, "Justificatifs de clôture douane", 3);
 
-        seedDocReq(ProcessusDocument.SOUS_TRAITANCE, TypeDocument.CONTRAT_SOUS_TRAITANCE_ENREGISTRE, false,
+        seedDocReq(ProcessusDocument.SOUS_TRAITANCE, "CONTRAT_SOUS_TRAITANCE_ENREGISTRE", false,
                 all, "Contrat de sous-traitance enregistré", 1);
-        seedDocReq(ProcessusDocument.SOUS_TRAITANCE, TypeDocument.LETTRE_SOUS_TRAITANCE, false,
+        seedDocReq(ProcessusDocument.SOUS_TRAITANCE, "LETTRE_SOUS_TRAITANCE", false,
                 all, "Lettre détaillant volumes, quantités et pouvoirs", 2);
 
-        seedDocReq(ProcessusDocument.CLOTURE_CI, TypeDocument.LISTE_CREDITS_A_CLOTURER, false,
+        seedDocReq(ProcessusDocument.CLOTURE_CI, "LISTE_CREDITS_A_CLOTURER", false,
                 all, "Liste des crédits à annuler ou clôturer", 1);
 
-        seedDocReq(ProcessusDocument.CONVENTION, TypeDocument.CONVENTION_JOIGNED_DOCUMENT, false,
+        seedDocReq(ProcessusDocument.CONVENTION, "CONVENTION_JOIGNED_DOCUMENT", false,
                 all, "Convention: document joint", 1);
-        seedDocReq(ProcessusDocument.PROJET, TypeDocument.AUTRE_DOCUMENT, false,
+        seedDocReq(ProcessusDocument.PROJET, "AUTRE_DOCUMENT", false,
                 all, "Projet: document joint", 1);
-        seedDocReq(ProcessusDocument.MARCHE, TypeDocument.AUTRE_DOCUMENT, false,
+        seedDocReq(ProcessusDocument.MARCHE, "AUTRE_DOCUMENT", false,
                 all, "Marché: document joint", 1);
 
         upgradeTransfertCreditDocumentsToObligatoires();
@@ -204,11 +212,11 @@ public class DataInitializer implements CommandLineRunner {
 
     /** Bases déjà seedées avec obligatoire=false : passage à obligatoire pour le P9. */
     private void upgradeTransfertCreditDocumentsToObligatoires() {
-        for (TypeDocument type : java.util.List.of(
-                TypeDocument.DEMANDE_MOTIVEE_TRANSFERT,
-                TypeDocument.DECLARATION_CLOTURE_DOUANE,
-                TypeDocument.JUSTIFICATIFS_CLOTURE_DOUANE)) {
-            documentRequirementRepository.findByProcessusAndTypeDocument(ProcessusDocument.TRANSFERT_CREDIT, type)
+        for (String code : java.util.List.of(
+                "DEMANDE_MOTIVEE_TRANSFERT",
+                "DECLARATION_CLOTURE_DOUANE",
+                "JUSTIFICATIFS_CLOTURE_DOUANE")) {
+            documentRequirementRepository.findByProcessusAndCodeDocument(ProcessusDocument.TRANSFERT_CREDIT, code)
                     .filter(req -> !Boolean.TRUE.equals(req.getObligatoire()))
                     .ifPresent(req -> {
                         req.setObligatoire(true);
@@ -217,23 +225,37 @@ public class DataInitializer implements CommandLineRunner {
         }
     }
 
-    private void seedDocReq(ProcessusDocument processus, TypeDocument type, boolean obligatoire,
+    private void seedDocReq(ProcessusDocument processus, String codeDocument, boolean obligatoire,
                             EnumSet<TypeFichierAutorise> typesAutorises, String description, Integer ordre) {
-        if (processus == null || type == null) {
+        if (processus == null || codeDocument == null) {
             return;
         }
-        if (documentRequirementRepository.existsByProcessusAndTypeDocument(processus, type)) {
-            return;
-        }
-        DocumentRequirement req = DocumentRequirement.builder()
-                .processus(processus)
-                .typeDocument(type)
-                .obligatoire(obligatoire)
-                .typesAutorises(typesAutorises != null ? typesAutorises : EnumSet.noneOf(TypeFichierAutorise.class))
-                .description(description)
-                .ordreAffichage(ordre)
-                .build();
-        documentRequirementRepository.save(req);
+        documentRequirementRepository.findByProcessusAndCodeDocument(processus, codeDocument)
+                .ifPresentOrElse(
+                        existing -> {
+                            if (description != null && (existing.getDescription() == null || existing.getDescription().isBlank())) {
+                                existing.setDescription(description);
+                            }
+                            if (ordre != null && existing.getOrdreAffichage() == null) {
+                                existing.setOrdreAffichage(ordre);
+                            }
+                            documentRequirementRepository.save(existing);
+                        },
+                        () -> {
+                            DocumentRequirement req = DocumentRequirement.builder()
+                                    .processus(processus)
+                                    .codeDocument(codeDocument)
+                                    .obligatoire(obligatoire)
+                                    .typesAutorises(typesAutorises != null ? typesAutorises : EnumSet.noneOf(TypeFichierAutorise.class))
+                                    .description(description)
+                                    .ordreAffichage(ordre)
+                                    .build();
+                            try {
+                                documentRequirementRepository.save(req);
+                            } catch (org.springframework.dao.DataIntegrityViolationException ignored) {
+                                // Ligne déjà présente (legacy type_document ou concurrence au démarrage)
+                            }
+                        });
     }
 
     private static final String DEMO_CORRECTION_NUMERO_PREFIX = "DC-DEFAULT-";
@@ -396,6 +418,12 @@ public class DataInitializer implements CommandLineRunner {
     private static final String DEMO_UC_SCEN_D_DC = "DC-DEMO-SCEN-D";
     private static final String DEMO_UC_SCEN_D_MP = "MP-DEMO-SCEN-D";
     private static final String DEMO_UC_SCEN_D_CI = "CI-DEMO-SCEN-D";
+    private static final String DEMO_UC_SCEN_E_DC = "DC-DEMO-SCEN-E";
+    private static final String DEMO_UC_SCEN_E_MP = "MP-DEMO-SCEN-E";
+    private static final String DEMO_UC_SCEN_E_CI = "CI-DEMO-SCEN-E";
+    private static final String DEMO_UC_SCEN_F_DC = "DC-DEMO-SCEN-F";
+    private static final String DEMO_UC_SCEN_F_MP = "MP-DEMO-SCEN-F";
+    private static final String DEMO_UC_SCEN_F_CI = "CI-DEMO-SCEN-F";
 
     private void seedUtilisationCreditDemoScenarios() {
         AutoriteContractante autoriteContractante;
@@ -416,6 +444,8 @@ public class DataInitializer implements CommandLineRunner {
         DemandeCorrection dB = upsertAdopteeDemandeAvecMarche(DEMO_UC_SCEN_B_DC, DEMO_UC_SCEN_B_MP, autoriteContractante, entreprise, convention);
         DemandeCorrection dC = upsertAdopteeDemandeAvecMarche(DEMO_UC_SCEN_C_DC, DEMO_UC_SCEN_C_MP, autoriteContractante, entreprise, convention);
         DemandeCorrection dD = upsertAdopteeDemandeAvecMarche(DEMO_UC_SCEN_D_DC, DEMO_UC_SCEN_D_MP, autoriteContractante, entreprise, convention);
+        DemandeCorrection dE = upsertAdopteeDemandeAvecMarche(DEMO_UC_SCEN_E_DC, DEMO_UC_SCEN_E_MP, autoriteContractante, entreprise, convention);
+        DemandeCorrection dF = upsertAdopteeDemandeAvecMarche(DEMO_UC_SCEN_F_DC, DEMO_UC_SCEN_F_MP, autoriteContractante, entreprise, convention);
 
         if (dA != null && dA.getId() != null) {
             createPetitCertificatOuvertSiAbsent(DEMO_UC_SCEN_A_CI, dA, entreprise,
@@ -440,6 +470,23 @@ public class DataInitializer implements CommandLineRunner {
             createPetitCertificatOuvertSiAbsent(DEMO_UC_SCEN_D_CI, dD, entreprise,
                     BigDecimal.valueOf(25), BigDecimal.valueOf(8), BigDecimal.valueOf(5),
                     BigDecimal.valueOf(40), BigDecimal.valueOf(14));
+        }
+        if (dE != null && dE.getId() != null) {
+            // Scénario E — solde cordon (e) = 100 MRU pour tests utilisation douanière
+            // (a)=40, (b)=80, (d)=20 → (e)=100 ; (f)=50, (g)=22, (d)=20 → (h)=8
+            createPetitCertificatOuvertSiAbsent(DEMO_UC_SCEN_E_CI, dE, entreprise,
+                    BigDecimal.valueOf(40), BigDecimal.valueOf(80), BigDecimal.valueOf(20),
+                    BigDecimal.valueOf(50), BigDecimal.valueOf(22));
+        }
+        if (dF != null && dF.getId() != null) {
+            // Scénario F — solde cordon (e) = 200 MRU pour tests utilisation douanière
+            // (a)=60, (b)=160, (d)=40 → (e)=200 ; (f)=80, (g)=55, (d)=40 → (h)=15 (g > d obligatoire)
+            createPetitCertificatOuvertSiAbsent(DEMO_UC_SCEN_F_CI, dF, entreprise,
+                    BigDecimal.valueOf(60), BigDecimal.valueOf(160), BigDecimal.valueOf(40),
+                    BigDecimal.valueOf(80), BigDecimal.valueOf(55));
+            repairDemoCertificatRecapSiCreditsNegatifs(DEMO_UC_SCEN_F_CI,
+                    BigDecimal.valueOf(60), BigDecimal.valueOf(160), BigDecimal.valueOf(40),
+                    BigDecimal.valueOf(80), BigDecimal.valueOf(55));
         }
     }
 
@@ -516,10 +563,70 @@ public class DataInitializer implements CommandLineRunner {
         if (certificatCreditRepository.countByDemandeCorrectionIdAndStatutNot(demande.getId(), StatutCertificat.ANNULE) > 0) {
             return;
         }
+        applyRecapFiscalToCertificat(buildOpenCertificatEntity(
+                numeroCertificat, demande, entreprise,
+                valeurDouaneFournitures, droitsEtTaxesDouaneHorsTva, tvaImportationDouane,
+                montantMarcheHt, tvaCollecteeTravaux,
+                droitsEtTaxesDouaneHorsTva, tvaCollecteeTravaux.subtract(tvaImportationDouane)));
+    }
+
+    /**
+     * Corrige un certificat démo déjà en base si le récapitulatif a été seedé avec (g) &lt; (d)
+     * (crédit intérieur h = g − d négatif).
+     */
+    private void repairDemoCertificatRecapSiCreditsNegatifs(
+            String numeroCertificat,
+            BigDecimal valeurDouaneFournitures,
+            BigDecimal droitsEtTaxesDouaneHorsTva,
+            BigDecimal tvaImportationDouane,
+            BigDecimal montantMarcheHt,
+            BigDecimal tvaCollecteeTravaux) {
+        certificatCreditRepository.findByNumero(numeroCertificat).ifPresent(existing -> {
+            BigDecimal h = existing.getMontantTVAInterieure() != null
+                    ? existing.getMontantTVAInterieure()
+                    : BigDecimal.ZERO;
+            BigDecimal soldeTva = existing.getSoldeTVA() != null ? existing.getSoldeTVA() : BigDecimal.ZERO;
+            if (h.compareTo(BigDecimal.ZERO) >= 0 && soldeTva.compareTo(BigDecimal.ZERO) >= 0) {
+                return;
+            }
+            existing.setValeurDouaneFournitures(valeurDouaneFournitures);
+            existing.setDroitsEtTaxesDouaneHorsTva(droitsEtTaxesDouaneHorsTva);
+            existing.setTvaImportationDouaneAccordee(tvaImportationDouane);
+            if (existing.getTvaImportationDouane() == null
+                    || existing.getTvaImportationDouane().compareTo(tvaImportationDouane) > 0) {
+                existing.setTvaImportationDouane(tvaImportationDouane);
+            }
+            existing.setMontantMarcheHt(montantMarcheHt);
+            existing.setTvaCollecteeTravaux(tvaCollecteeTravaux);
+            BigDecimal montantCordon = droitsEtTaxesDouaneHorsTva.add(tvaImportationDouane);
+            BigDecimal montantTVAInterieure = tvaCollecteeTravaux.subtract(tvaImportationDouane);
+            existing.setMontantCordon(montantCordon);
+            existing.setMontantTVAInterieure(montantTVAInterieure);
+            if (existing.getSoldeCordon() == null || existing.getSoldeCordon().compareTo(BigDecimal.ZERO) < 0) {
+                existing.setSoldeCordon(droitsEtTaxesDouaneHorsTva);
+            }
+            if (existing.getSoldeTVA() == null || existing.getSoldeTVA().compareTo(BigDecimal.ZERO) < 0) {
+                existing.setSoldeTVA(montantTVAInterieure.max(BigDecimal.ZERO));
+            }
+            certificatCreditRepository.save(existing);
+        });
+    }
+
+    private CertificatCredit buildOpenCertificatEntity(
+            String numeroCertificat,
+            DemandeCorrection demande,
+            Entreprise entreprise,
+            BigDecimal valeurDouaneFournitures,
+            BigDecimal droitsEtTaxesDouaneHorsTva,
+            BigDecimal tvaImportationDouane,
+            BigDecimal montantMarcheHt,
+            BigDecimal tvaCollecteeTravaux,
+            BigDecimal soldeCordonInitial,
+            BigDecimal soldeTvaInitial) {
+        assertRecapCreditsNonNegatifs(droitsEtTaxesDouaneHorsTva, tvaImportationDouane, tvaCollecteeTravaux, numeroCertificat);
         BigDecimal montantCordon = droitsEtTaxesDouaneHorsTva.add(tvaImportationDouane);
         BigDecimal montantTVAInterieure = tvaCollecteeTravaux.subtract(tvaImportationDouane);
-
-        CertificatCredit certificat = CertificatCredit.builder()
+        return CertificatCredit.builder()
                 .numero(numeroCertificat)
                 .dateEmission(Instant.now())
                 .dateValidite(Instant.now().plusSeconds(365L * 24 * 3600))
@@ -531,13 +638,34 @@ public class DataInitializer implements CommandLineRunner {
                 .tvaCollecteeTravaux(tvaCollecteeTravaux)
                 .montantCordon(montantCordon)
                 .montantTVAInterieure(montantTVAInterieure)
-                .soldeCordon(droitsEtTaxesDouaneHorsTva)
-                .soldeTVA(montantTVAInterieure)
+                .soldeCordon(soldeCordonInitial)
+                .soldeTVA(soldeTvaInitial.max(BigDecimal.ZERO))
                 .statut(StatutCertificat.OUVERT)
                 .entreprise(entreprise)
                 .demandeCorrection(demande)
                 .build();
+    }
+
+    private void applyRecapFiscalToCertificat(CertificatCredit certificat) {
         certificatCreditRepository.save(certificat);
+    }
+
+    private static void assertRecapCreditsNonNegatifs(
+            BigDecimal droitsEtTaxesDouaneHorsTva,
+            BigDecimal tvaImportationDouane,
+            BigDecimal tvaCollecteeTravaux,
+            String numeroCertificat) {
+        if (droitsEtTaxesDouaneHorsTva.compareTo(BigDecimal.ZERO) < 0
+                || tvaImportationDouane.compareTo(BigDecimal.ZERO) < 0
+                || tvaCollecteeTravaux.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalStateException("Récapitulatif invalide pour " + numeroCertificat + " : montants (b), (d) ou (g) négatifs");
+        }
+        BigDecimal h = tvaCollecteeTravaux.subtract(tvaImportationDouane);
+        if (h.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalStateException(
+                    "Récapitulatif invalide pour " + numeroCertificat
+                            + " : crédit intérieur (h) = (g)−(d) négatif ; augmenter (g) ou réduire (d)");
+        }
     }
 
     /**
@@ -665,6 +793,7 @@ public class DataInitializer implements CommandLineRunner {
 
     private void createUserIfMissing(String username, Role role, String nomComplet,
                                      AutoriteContractante autoriteContractante, Entreprise entreprise) {
+        String email = seedUserEmail(username);
         Utilisateur existing = utilisateurRepository.findByUsername(username).orElse(null);
         if (existing == null) {
             Utilisateur user = Utilisateur.builder()
@@ -674,6 +803,7 @@ public class DataInitializer implements CommandLineRunner {
                     .autoriteContractante(autoriteContractante)
                     .entreprise(entreprise)
                     .nomComplet(nomComplet)
+                    .email(email)
                     .actif(true)
                     .build();
             utilisateurRepository.save(user);
@@ -693,6 +823,10 @@ public class DataInitializer implements CommandLineRunner {
             existing.setNomComplet(nomComplet);
             changed = true;
         }
+        if (existing.getEmail() == null || existing.getEmail().isBlank() || !email.equalsIgnoreCase(existing.getEmail())) {
+            existing.setEmail(email);
+            changed = true;
+        }
         if (existing.getAutoriteContractante() == null && autoriteContractante != null) {
             existing.setAutoriteContractante(autoriteContractante);
             changed = true;
@@ -704,6 +838,11 @@ public class DataInitializer implements CommandLineRunner {
         if (changed) {
             utilisateurRepository.save(existing);
         }
+    }
+
+    /** E-mail de test pour les comptes seed (ex. entreprise → entreprise@sharklasers.com). */
+    private static String seedUserEmail(String username) {
+        return username + "@sharklasers.com";
     }
 
     private Entreprise createEntrepriseIfMissing(String raisonSociale, String nif, String adresse, String situationFiscale) {
@@ -910,6 +1049,11 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("cloture.president.queue.view", "Consulter les propositions de clôture");
         createPermission("cloture.president.validate", "Valider la clôture/annulation");
         createPermission("cloture.president.reject", "Rejeter la clôture/annulation");
+
+        createPermission("demande.explication.view", "Consulter les demandes d'explication (discussion commission)");
+        createPermission("demande.explication.create", "Ouvrir une demande d'explication");
+        createPermission("demande.explication.reply", "Répondre à une demande d'explication");
+        createPermission("demande.explication.close", "Fermer une demande d'explication");
         createPermission("archivage.view", "Accéder aux archives complètes");
 
         createPermission("referentiel.taxe.manage", "Gérer le référentiel des taxes douanières (CRUD)");
@@ -929,6 +1073,8 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("permissions.manage", "Gérer les permissions d'un rôle");
         createPermission("permissions.view", "Consulter les permissions");
         createPermission("document.requirements.view", "Consulter la configuration des documents requis");
+        createPermission("document.types.view", "Consulter le référentiel des types de documents GED");
+        createPermission("document.types.manage", "Gérer le référentiel et les exigences documentaires par processus");
         createPermission("entreprise.list", "Consulter la liste des entreprises");
         createPermission("entreprise.create", "Créer une entreprise");
         createPermission("entreprise.update", "Modifier une entreprise");
@@ -1135,7 +1281,11 @@ public class DataInitializer implements CommandLineRunner {
                 "mise_en_place.dgd.validate",
                 "mise_en_place.dgd.reject",
                 "mise_en_place.dgd.resolve",
-                "reporting.view"
+                "reporting.view",
+                "demande.explication.view",
+                "demande.explication.create",
+                "demande.explication.reply",
+                "demande.explication.close"
         );
 
         assign(Role.DGI,
@@ -1176,7 +1326,11 @@ public class DataInitializer implements CommandLineRunner {
                 "entreprise.create",
                 "entreprise.update",
                 "entreprise.delete",
-                "reporting.view"
+                "reporting.view",
+                "demande.explication.view",
+                "demande.explication.create",
+                "demande.explication.reply",
+                "demande.explication.close"
         );
 
         assign(Role.DGB,
@@ -1192,7 +1346,11 @@ public class DataInitializer implements CommandLineRunner {
                 "correction.dgb.visa",
                 "correction.dgb.reject",
                 "correction.offer.view",
-                "reporting.view");
+                "reporting.view",
+                "demande.explication.view",
+                "demande.explication.create",
+                "demande.explication.reply",
+                "demande.explication.close");
 
         // Président : accès complet (toutes les permissions enregistrées)
         assignAllPermissions(Role.PRESIDENT);
@@ -1244,7 +1402,12 @@ public class DataInitializer implements CommandLineRunner {
                 "entreprise.list",
                 "reporting.view",
                 "cloture.queue.view",
-                "cloture.prepare"
+                "cloture.prepare",
+                "cloture.report.view",
+                "demande.explication.view",
+                "demande.explication.create",
+                "demande.explication.reply",
+                "demande.explication.close"
         );
 
         assign(Role.COMMISSION_RELAIS,
@@ -1255,11 +1418,14 @@ public class DataInitializer implements CommandLineRunner {
                 "commission.relais.release",
                 "document.requirements.view",
                 "utilisation.douane.entreprise.cheque",
-                "utilisation.douane.entreprise.reception"
+                "utilisation.douane.entreprise.reception",
+                "referentiel.taxe.manage"
         );
 
     assign(Role.ADMIN_SI,
         "document.requirements.view",
+        "document.types.view",
+        "document.types.manage",
         "mise_en_place.annuler",
             "projet.view.all",
             "projet.validate",

@@ -13,7 +13,7 @@ public class RejetTempResponseDto {
     private Long id;
     private String message;
     private String documentUrl;
-    private TypeDocument documentType;
+    private String codeDocument;
     private Integer documentVersion;
     private Instant createdAt;
     private Long utilisateurId;

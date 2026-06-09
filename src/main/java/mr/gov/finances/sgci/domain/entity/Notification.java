@@ -37,10 +37,10 @@ public class Notification {
     private Utilisateur utilisateur;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 64)
     private NotificationType type;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 64)
     private String entityType;
 
     @Column(nullable = false)

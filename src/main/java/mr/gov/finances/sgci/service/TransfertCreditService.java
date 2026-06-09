@@ -8,15 +8,16 @@ import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.TransfertCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
-import mr.gov.finances.sgci.domain.enums.NotificationType;
+import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
-import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
+import mr.gov.finances.sgci.domain.enums.TvaDeductibleStockSource;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
+import mr.gov.finances.sgci.domain.enums.WorkflowEventCode;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.DecisionTransfertCreditRepository;
 import mr.gov.finances.sgci.repository.TransfertCreditRepository;
@@ -33,7 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -49,7 +49,7 @@ public class TransfertCreditService {
     private final DocumentTransfertCreditService documentService;
     private final DocumentRequirementValidator requirementValidator;
     private final AuditService auditService;
-    private final NotificationService notificationService;
+    private final WorkflowNotificationHelper workflowNotificationHelper;
     private final EffectiveIdentityService effectiveIdentityService;
     private final UtilisationCreditRepository utilisationCreditRepository;
     private final UtilisationCreditWorkflow utilisationCreditWorkflow;
@@ -178,16 +178,7 @@ public class TransfertCreditService {
                 ex = repository.save(ex);
                 TransfertCreditDto renewed = toDto(ex);
                 auditService.log(AuditAction.UPDATE, "TransfertCredit", String.valueOf(ex.getId()), renewed);
-                notificationService.notifyUsers(
-                        utilisateurRepository.findByRole(Role.DGTCP).stream()
-                                .map(mr.gov.finances.sgci.domain.entity.Utilisateur::getId)
-                                .collect(Collectors.toList()),
-                        NotificationType.TRANSFERT_CREDIT,
-                        "TransfertCredit",
-                        ex.getId(),
-                        "Nouvelle demande de transfert de crédit (après rejet)",
-                        Collections.singletonMap("id", ex.getId())
-                );
+                workflowNotificationHelper.transfert(ex, WorkflowEventCode.TRANSFERT_DEMANDE, user);
                 return renewed;
             }
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
@@ -205,14 +196,7 @@ public class TransfertCreditService {
         entity = repository.save(entity);
         TransfertCreditDto result = toDto(entity);
         auditService.log(AuditAction.CREATE, "TransfertCredit", String.valueOf(entity.getId()), result);
-        notificationService.notifyUsers(
-                utilisateurRepository.findByRole(Role.DGTCP).stream().map(mr.gov.finances.sgci.domain.entity.Utilisateur::getId).collect(Collectors.toList()),
-                NotificationType.TRANSFERT_CREDIT,
-                "TransfertCredit",
-                entity.getId(),
-                "Nouvelle demande de transfert de crédit",
-                Collections.singletonMap("id", entity.getId())
-        );
+        workflowNotificationHelper.transfert(entity, WorkflowEventCode.TRANSFERT_DEMANDE, user);
         return result;
     }
 
@@ -249,6 +233,7 @@ public class TransfertCreditService {
         transfert = repository.save(transfert);
         TransfertCreditDto result = toDto(transfert);
         auditService.log(AuditAction.UPDATE, "TransfertCredit", String.valueOf(transfert.getId()), result);
+        workflowNotificationHelper.transfert(transfert, WorkflowEventCode.TRANSFERT_ANNULE, user);
         return result;
     }
 
@@ -312,7 +297,8 @@ public class TransfertCreditService {
             tvaDeductibleStockRepository.save(
                     mr.gov.finances.sgci.domain.entity.TvaDeductibleStock.builder()
                             .certificatCredit(source)
-                            .utilisationDouane(null)   // origine : transfert de crédit (pas une liquidation douanière)
+                            .utilisationDouane(null)
+                            .source(TvaDeductibleStockSource.TRANSFERT_CREDIT)
                             .montantInitial(dReste)
                             .montantRestant(dReste)
                             .dateCreation(Instant.now())
@@ -328,6 +314,7 @@ public class TransfertCreditService {
 
         TransfertCreditDto result = toDto(transfert);
         auditService.log(AuditAction.UPDATE, "TransfertCredit", String.valueOf(transfert.getId()), result);
+        workflowNotificationHelper.transfert(transfert, WorkflowEventCode.TRANSFERT_VALIDE, user);
         return result;
     }
 
@@ -372,6 +359,7 @@ public class TransfertCreditService {
         transfert = repository.save(transfert);
         TransfertCreditDto result = toDto(transfert);
         auditService.log(AuditAction.UPDATE, "TransfertCredit", String.valueOf(transfert.getId()), result);
+        workflowNotificationHelper.transfert(transfert, WorkflowEventCode.TRANSFERT_REJETE, user);
         return result;
     }
 

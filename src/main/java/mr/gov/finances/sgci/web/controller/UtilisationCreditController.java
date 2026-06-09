@@ -118,13 +118,13 @@ public class UtilisationCreditController {
     }
 
     /**
-     * Étape DGD : annotation des lignes du bulletin (AU_CI / A_PAYER).
+     * Étape DGD : valide ou modifie les annotations entreprise (AU_CI / A_PAYER) sur chaque ligne.
      * Accepte multipart/form-data :
-     *   - {@code decisions} : JSON array stringifié ({ligneId, affectation, valeurTaxe?})
-     *   - {@code file}      : justificatif bulletin annoté (optionnel, type BULLETIN_ANNOTE)
-     * Le DGD peut également modifier les valeurs des lignes via {@code valeurTaxe}.
-     * Appelable depuis DEMANDEE (premier visa) et EN_CONTROLE_DGD (re-annotation).
-     * Aucune opération financière. Statut résultant : EN_CONTROLE_DGD.
+     *   - {@code decisions} : JSON array ({ligneId, affectation?, valeurTaxe?}) — si {@code affectation} est omis
+     *     sur une ligne avec montant &gt; 0, la proposition {@code affectationEntreprise} est retenue (validation).
+     *   - {@code file}      : bulletin annoté (optionnel, BULLETIN_ANNOTE)
+     * L'entreprise renseigne d'abord {@code affectation} sur chaque ligne à la création (voir POST/PUT utilisation).
+     * Appelable depuis DEMANDEE et EN_CONTROLE_DGD (re-annotation). Statut résultant : EN_CONTROLE_DGD.
      */
     @PostMapping(value = "/{id}/visa-dgd", consumes = "multipart/form-data")
     @PreAuthorize("hasAnyAuthority('utilisation.douane.dgd.quittance.visa')")
@@ -271,11 +271,11 @@ public class UtilisationCreditController {
     @PreAuthorize("hasAnyAuthority('utilisation.douane.document.upload', 'utilisation.interieur.document.upload')")
     public DocumentUtilisationCreditDto uploadDocument(
             @PathVariable Long id,
-            @RequestParam TypeDocument type,
+            @RequestParam String codeDocument,
             @RequestParam(required = false) String message,
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return documentService.upload(id, type, message, file, user);
+        return documentService.upload(id, codeDocument, message, file, user);
     }
 }

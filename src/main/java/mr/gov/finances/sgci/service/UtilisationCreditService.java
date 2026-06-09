@@ -22,6 +22,7 @@ import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.domain.enums.TypeAchat;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
+import mr.gov.finances.sgci.domain.enums.TvaDeductibleStockSource;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.LigneBulletinLiquidationRepository;
@@ -55,12 +56,16 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -77,7 +82,7 @@ public class UtilisationCreditService {
     private final SousTraitanceService sousTraitanceService;
     private final UtilisationCreditWorkflow workflow;
     private final AuditService auditService;
-    private final NotificationService notificationService;
+    private final WorkflowNotificationHelper workflowNotificationHelper;
     private final DocumentUtilisationCreditService documentService;
     private final DocumentRequirementValidator requirementValidator;
     private final MinioService minioService;
@@ -274,8 +279,15 @@ public class UtilisationCreditService {
         BigDecimal restant = s.getMontantRestant() != null ? s.getMontantRestant() : BigDecimal.ZERO;
         String numeroDeclaration = s.getUtilisationDouane() != null
                 ? s.getUtilisationDouane().getNumeroDeclaration() : null;
+        TvaDeductibleStockSource source = s.getSource();
+        if (source == null) {
+            source = s.getUtilisationDouane() != null
+                    ? TvaDeductibleStockSource.UTILISATION_DOUANE
+                    : TvaDeductibleStockSource.TRANSFERT_CREDIT;
+        }
         return TvaDeductibleStockDto.builder()
                 .id(s.getId())
+                .source(source)
                 .utilisationDouaneId(s.getUtilisationDouane() != null ? s.getUtilisationDouane().getId() : null)
                 .numeroDeclaration(numeroDeclaration)
                 .montantInitial(initial)
@@ -347,6 +359,9 @@ public class UtilisationCreditService {
                 d.setMontant(total.compareTo(BigDecimal.ZERO) > 0 ? total : null);
             }
 
+            if (!brouillon) {
+                assertLignesBulletinAffectationEntreprise(request.getLignes(), true);
+            }
             // Save first to get the id, then attach lines
             entity = repository.save(d);
             attachLignes((UtilisationDouaniere) entity, request.getLignes());
@@ -368,7 +383,7 @@ public class UtilisationCreditService {
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.CREATE, "UtilisationCredit", String.valueOf(entity.getId()), result);
         if (!brouillon) {
-            notifyActorsOnCreation(entity);
+            notifyUtilisationStatutChange(entity, StatutUtilisation.DEMANDEE, user);
         }
         return result;
     }
@@ -435,25 +450,39 @@ public class UtilisationCreditService {
         }
         if (entity.getType() == TypeUtilisation.DOUANIER) {
             assertPasTransfertExecutePourUtilisationsDouanieres(certificat.getId());
+            UtilisationDouaniere douane = (UtilisationDouaniere) entity;
+            List<LigneBulletinLiquidation> lignes = ligneBulletinRepository
+                    .findByUtilisationDouaniere_IdOrderByTypeLigneAscIdAsc(douane.getId());
+            assertLignesBulletinAffectationEntrepriseFromEntities(lignes, true);
         }
         workflow.validateTransition(StatutUtilisation.BROUILLON, StatutUtilisation.DEMANDEE);
         entity.setStatut(StatutUtilisation.DEMANDEE);
         entity = repository.save(entity);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
-        notifyActorsOnCreation(entity);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.DEMANDEE, user);
         return result;
     }
 
     /**
      * Après validation DGTCP / Président, un transfert exécuté ({@link StatutTransfert#TRANSFERE}) vide le mécanisme
      * cordon → intérieur : plus de nouvelles demandes d'utilisation <strong>douanière</strong> sur ce certificat.
+     * <p>
+     * On vérifie à la fois la ligne {@code transfert_credit} (statut {@code TRANSFERE}) et la trace fonctionnelle
+     * en stock TVA déductible d’origine transfert ({@link TvaDeductibleStockSource#TRANSFERT_CREDIT} ou, pour données
+     * anciennes, ligne sans utilisation douanière), pour éviter les trous si la ligne transfert est absente ou si le
+     * statut en base ne correspond plus à l'enum (données anciennes).
      */
     private void assertPasTransfertExecutePourUtilisationsDouanieres(Long certificatCreditId) {
         if (certificatCreditId == null) {
             return;
         }
-        if (transfertCreditRepository.existsByCertificatCreditIdAndStatut(certificatCreditId, StatutTransfert.TRANSFERE)) {
+        boolean transfertExecute = transfertCreditRepository.existsByCertificatCreditIdAndStatut(
+                certificatCreditId, StatutTransfert.TRANSFERE);
+        boolean traceStockTransfert = tvaStockRepository.existsByCertificatCreditIdAndSource(
+                        certificatCreditId, TvaDeductibleStockSource.TRANSFERT_CREDIT)
+                || tvaStockRepository.existsByCertificatCreditIdAndUtilisationDouaneIsNull(certificatCreditId);
+        if (transfertExecute || traceStockTransfert) {
             throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Un transfert de crédit a été exécuté sur ce certificat : les demandes d'utilisation douanière ne sont plus possibles.");
         }
@@ -512,6 +541,9 @@ public class UtilisationCreditService {
 
             // Replace lines
             if (request.getLignes() != null) {
+                if (entity.getStatut() == StatutUtilisation.DEMANDEE) {
+                    assertLignesBulletinAffectationEntreprise(request.getLignes(), true);
+                }
                 d.getLignes().clear();
                 repository.save(d); // flush orphan removal before re-attaching
                 attachLignes(d, request.getLignes());
@@ -540,33 +572,11 @@ public class UtilisationCreditService {
         return result;
     }
 
-    private void notifyActorsOnCreation(UtilisationCredit utilisation) {
-        if (utilisation == null || utilisation.getType() == null) {
-            return;
-        }
-        List<Role> targetRoles;
-        if (utilisation.getType() == TypeUtilisation.DOUANIER) {
-            targetRoles = List.of(Role.DGD);
-        } else {
-            targetRoles = List.of(Role.DGTCP);
-        }
-        String typeName = utilisation.getType() == TypeUtilisation.DOUANIER ? "douanière" : "TVA intérieure";
-        String message = "Nouvelle demande d'utilisation " + typeName + " à traiter";
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("type", utilisation.getType().name());
-        payload.put("statut", StatutUtilisation.DEMANDEE.name());
-        payload.put("utilisationId", utilisation.getId());
-
-        for (Role targetRole : targetRoles) {
-            List<Long> userIds = utilisateurRepository.findByRole(targetRole)
-                    .stream()
-                    .map(mr.gov.finances.sgci.domain.entity.Utilisateur::getId)
-                    .collect(Collectors.toList());
-            if (!userIds.isEmpty()) {
-                notificationService.notifyUsers(userIds, NotificationType.UTILISATION_STATUT_CHANGE,
-                        "UtilisationCredit", utilisation.getId(), message, payload);
-            }
-        }
+    /**
+     * Notifie les acteurs concernés selon le statut (entreprise titulaire, commission relais via entreprise, services).
+     */
+    private void notifyUtilisationStatutChange(UtilisationCredit utilisation, StatutUtilisation statut, AuthenticatedUser actor) {
+        workflowNotificationHelper.utilisationStatut(utilisation, statut.name(), actor, null);
     }
 
     @Transactional
@@ -609,7 +619,7 @@ public class UtilisationCreditService {
             if (tvaDeductible.compareTo(tvaDeductibleDispo) > 0) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                         "TVA déductible insuffisante (disponible=" + tvaDeductibleDispo
-                                + ", demandée=" + tvaDeductible + ")");
+                        + ", demandée=" + tvaDeductible + ")");
             }
         }
 
@@ -660,7 +670,7 @@ public class UtilisationCreditService {
         entity = repository.save(t);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
-        notifyUtilisation(entity, StatutUtilisation.APUREE);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.APUREE, user);
         return result;
     }
 
@@ -688,24 +698,24 @@ public class UtilisationCreditService {
 
     private void assertRequiredDocumentsPresent(UtilisationCredit utilisation) {
         ProcessusDocument processus = resolveProcessus(utilisation);
-        List<TypeDocument> presentTypes = documentService.findActiveDocumentTypes(utilisation.getId());
+        List<String> presentTypes = documentService.findActiveDocumentTypes(utilisation.getId());
 
         // Base: contraintes déclaratives via DocumentRequirement
         requirementValidator.assertRequiredDocumentsPresent(processus, presentTypes);
 
         // Complément: règles conditionnelles TVA intérieure (achat local vs décompte)
         if (utilisation.getType() == TypeUtilisation.TVA_INTERIEURE && utilisation instanceof UtilisationTVAInterieure t) {
-            Set<TypeDocument> present = Set.copyOf(presentTypes);
+            Set<String> present = Set.copyOf(presentTypes);
             TypeAchat typeAchat = t.getTypeAchat();
             if (typeAchat == TypeAchat.ACHAT_LOCAL) {
-                if (!present.contains(TypeDocument.FACTURE) || !present.contains(TypeDocument.DECLARATION_TVA)) {
+                if (!present.contains("FACTURE") || !present.contains("DECLARATION_TVA")) {
                     throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
                             "Documents obligatoires manquants (Achat local): "
-                                    + (present.contains(TypeDocument.FACTURE) ? "" : "FACTURE ")
-                                    + (present.contains(TypeDocument.DECLARATION_TVA) ? "" : "DECLARATION_TVA"));
+                            + (present.contains("FACTURE") ? "" : "FACTURE ")
+                            + (present.contains("DECLARATION_TVA") ? "" : "DECLARATION_TVA"));
                 }
             } else if (typeAchat == TypeAchat.DECOMPTE) {
-                if (!present.contains(TypeDocument.DECOMPTE)) {
+                if (!present.contains("DECOMPTE")) {
                     throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Document obligatoire manquant (Décompte): DECOMPTE");
                 }
             }
@@ -737,10 +747,52 @@ public class UtilisationCreditService {
                         .denominationTaxe(r.getDenominationTaxe())
                         .typeLigne(r.getTypeLigne())
                         .valeurTaxe(r.getValeurTaxe())
+                        .affectationEntreprise(r.getAffectation())
                         .utilisationDouaniere(d)
                         .build())
                 .collect(Collectors.toList());
         ligneBulletinRepository.saveAll(lignes);
+    }
+
+    /**
+     * À la soumission, chaque ligne avec montant &gt; 0 doit avoir une affectation entreprise (AU_CI / A_PAYER).
+     */
+    private void assertLignesBulletinAffectationEntreprise(
+            List<CreateUtilisationCreditRequest.LigneBulletinRequest> ligneRequests, boolean strict) {
+        if (ligneRequests == null || ligneRequests.isEmpty()) {
+            if (strict) {
+                throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                        "Le bulletin de liquidation doit contenir au moins une ligne");
+            }
+            return;
+        }
+        for (CreateUtilisationCreditRequest.LigneBulletinRequest r : ligneRequests) {
+            BigDecimal val = r.getValeurTaxe() != null ? r.getValeurTaxe() : BigDecimal.ZERO;
+            if (val.compareTo(BigDecimal.ZERO) > 0 && r.getAffectation() == null) {
+                throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                        "Chaque ligne avec un montant doit indiquer AU_CI (cordon) ou A_PAYER pour la taxe "
+                                + r.getCodeTaxe());
+            }
+        }
+    }
+
+    private void assertLignesBulletinAffectationEntrepriseFromEntities(
+            List<LigneBulletinLiquidation> lignes, boolean strict) {
+        if (lignes == null || lignes.isEmpty()) {
+            if (strict) {
+                throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                        "Le bulletin de liquidation doit contenir au moins une ligne");
+            }
+            return;
+        }
+        for (LigneBulletinLiquidation l : lignes) {
+            BigDecimal val = l.getValeurTaxe() != null ? l.getValeurTaxe() : BigDecimal.ZERO;
+            if (val.compareTo(BigDecimal.ZERO) > 0 && l.getAffectationEntreprise() == null) {
+                throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                        "Chaque ligne avec un montant doit indiquer AU_CI (cordon) ou A_PAYER pour la taxe "
+                                + l.getCodeTaxe());
+            }
+        }
     }
 
     private void mapBase(UtilisationCredit u, CreateUtilisationCreditRequest r, CertificatCredit c, Entreprise e) {
@@ -754,10 +806,10 @@ public class UtilisationCreditService {
     /**
      * Étape DGD : annotation des lignes du bulletin (AU_CI / A_PAYER) + visa.
      * <p>
-     * Le DGD choisit, pour chaque ligne du bulletin, si la taxe est prise en charge
-     * par le crédit d'impôt (AU_CI) ou payée comptant (A_PAYER), peut corriger les
-     * valeurs, et upload un bulletin annoté. Appelable aussi depuis EN_CONTROLE_DGD
-     * pour re-annotation. Aucune opération financière à cette étape.
+     * Le DGD valide ou modifie, pour chaque ligne, la proposition entreprise ({@code affectationEntreprise}) :
+     * décision finale {@code affectation} (AU_CI / A_PAYER), correction éventuelle des montants,
+     * upload du bulletin annoté. Si le DGD omet une décision sur une ligne, la proposition entreprise est retenue (validation).
+     * Appelable aussi depuis EN_CONTROLE_DGD pour re-annotation. Aucune opération financière à cette étape.
      * Statut résultant : {@link StatutUtilisation#EN_CONTROLE_DGD}.
      */
     @Transactional
@@ -817,9 +869,13 @@ public class UtilisationCreditService {
             if (aff == null) {
                 if (val.compareTo(BigDecimal.ZERO) == 0) {
                     aff = AffectationTaxe.A_PAYER;
+                } else if (ligne.getAffectationEntreprise() != null) {
+                    // Validation implicite : le DGD retient la proposition entreprise
+                    aff = ligne.getAffectationEntreprise();
                 } else {
                     throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
-                            "Décision manquante pour la ligne id=" + ligne.getId() + " (" + ligne.getCodeTaxe() + ")");
+                            "Décision manquante pour la ligne id=" + ligne.getId() + " (" + ligne.getCodeTaxe()
+                                    + ") : aucune proposition entreprise");
                 }
             }
             ligne.setAffectation(aff);
@@ -843,7 +899,7 @@ public class UtilisationCreditService {
         if (file != null && !file.isEmpty()) {
             // Désactiver l'ancien bulletin annoté s'il existe
             documentUtilisationCreditRepository
-                    .findByUtilisationCreditIdAndTypeAndActifTrue(id, TypeDocument.BULLETIN_ANNOTE)
+                    .findByUtilisationCreditIdAndCodeDocumentAndActifTrue(id, "BULLETIN_ANNOTE")
                     .ifPresent(prev -> {
                         prev.setActif(false);
                         documentUtilisationCreditRepository.save(prev);
@@ -851,7 +907,7 @@ public class UtilisationCreditService {
             String fileUrl = minioService.uploadFile(file);
             mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit doc =
                     mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit.builder()
-                            .type(TypeDocument.BULLETIN_ANNOTE)
+                            .codeDocument("BULLETIN_ANNOTE")
                             .nomFichier(file.getOriginalFilename() != null ? file.getOriginalFilename() : file.getName())
                             .chemin(fileUrl)
                             .dateUpload(Instant.now())
@@ -873,7 +929,7 @@ public class UtilisationCreditService {
         entity = repository.save(d);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
-        notifyUtilisation(entity, StatutUtilisation.EN_CONTROLE_DGD);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.EN_CONTROLE_DGD, user);
         return result;
     }
 
@@ -910,7 +966,7 @@ public class UtilisationCreditService {
 
         // Désactiver l'éventuel document précédent du même type
         documentUtilisationCreditRepository
-                .findByUtilisationCreditIdAndTypeAndActifTrue(id, TypeDocument.CHEQUE_CERTIFIE)
+                .findByUtilisationCreditIdAndCodeDocumentAndActifTrue(id, "CHEQUE_CERTIFIE")
                 .ifPresent(prev -> {
                     prev.setActif(false);
                     documentUtilisationCreditRepository.save(prev);
@@ -920,7 +976,7 @@ public class UtilisationCreditService {
         String fileUrl = minioService.uploadFile(file);
         mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit doc =
                 mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit.builder()
-                        .type(TypeDocument.CHEQUE_CERTIFIE)
+                        .codeDocument("CHEQUE_CERTIFIE")
                         .nomFichier(file.getOriginalFilename() != null ? file.getOriginalFilename() : file.getName())
                         .chemin(fileUrl)
                         .dateUpload(Instant.now())
@@ -933,7 +989,7 @@ public class UtilisationCreditService {
 
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
-        notifyUtilisation(entity, StatutUtilisation.CHEQUE_SAISI);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.CHEQUE_SAISI, user);
         return result;
     }
 
@@ -961,7 +1017,7 @@ public class UtilisationCreditService {
         entity = repository.save(d);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
-        notifyUtilisation(entity, StatutUtilisation.ENVOYEE_AU_TRESOR);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.ENVOYEE_AU_TRESOR, user);
         return result;
     }
 
@@ -1018,7 +1074,7 @@ public class UtilisationCreditService {
                 // Enregistrer aussi dans le GED (document_utilisation_credit)
                 mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit doc =
                         mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit.builder()
-                                .type(TypeDocument.QUITTANCE_TRESOR)
+                                .codeDocument("QUITTANCE_TRESOR")
                                 .nomFichier(documentNomFichier)
                                 .chemin(documentChemin)
                                 .dateUpload(Instant.now())
@@ -1046,7 +1102,7 @@ public class UtilisationCreditService {
         entity = repository.save(d);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
-        notifyUtilisation(entity, StatutUtilisation.QUITTANCES_ENREGISTREES);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.QUITTANCES_ENREGISTREES, user);
         return result;
     }
 
@@ -1069,7 +1125,7 @@ public class UtilisationCreditService {
         entity = repository.save(entity);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
-        notifyUtilisation(entity, StatutUtilisation.CLOTUREE);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.CLOTUREE, user);
         return result;
     }
 
@@ -1156,6 +1212,7 @@ public class UtilisationCreditService {
             tvaStockRepository.save(mr.gov.finances.sgci.domain.entity.TvaDeductibleStock.builder()
                     .certificatCredit(d.getCertificatCredit())
                     .utilisationDouane(d)
+                    .source(TvaDeductibleStockSource.UTILISATION_DOUANE)
                     .montantInitial(tvaAuCI)
                     .montantRestant(tvaAuCI)
                     .dateCreation(Instant.now())
@@ -1165,7 +1222,7 @@ public class UtilisationCreditService {
         entity = repository.save(d);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
-        notifyUtilisation(entity, StatutUtilisation.LIQUIDEE);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.LIQUIDEE, user);
         return result;
     }
 
@@ -1194,7 +1251,7 @@ public class UtilisationCreditService {
         entity = repository.save(entity);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
-        notifyUtilisation(entity, statut);
+        notifyUtilisationStatutChange(entity, statut, user);
         return result;
     }
 
@@ -1362,14 +1419,22 @@ public class UtilisationCreditService {
         if (u instanceof UtilisationDouaniere d) {
             List<LigneBulletinDto> lignesDto = d.getLignes() == null ? List.of() :
                     d.getLignes().stream()
-                            .map(l -> LigneBulletinDto.builder()
-                                    .id(l.getId())
-                                    .codeTaxe(l.getCodeTaxe())
-                                    .denominationTaxe(l.getDenominationTaxe())
-                                    .typeLigne(l.getTypeLigne())
-                                    .valeurTaxe(l.getValeurTaxe())
-                                    .affectation(l.getAffectation())
-                                    .build())
+                            .map(l -> {
+                                Boolean modifieeParDgd = null;
+                                if (l.getAffectation() != null && l.getAffectationEntreprise() != null) {
+                                    modifieeParDgd = l.getAffectation() != l.getAffectationEntreprise();
+                                }
+                                return LigneBulletinDto.builder()
+                                        .id(l.getId())
+                                        .codeTaxe(l.getCodeTaxe())
+                                        .denominationTaxe(l.getDenominationTaxe())
+                                        .typeLigne(l.getTypeLigne())
+                                        .valeurTaxe(l.getValeurTaxe())
+                                        .affectationEntreprise(l.getAffectationEntreprise())
+                                        .affectation(l.getAffectation())
+                                        .affectationModifieeParDgd(modifieeParDgd)
+                                        .build();
+                            })
                             .collect(Collectors.toList());
             List<QuittanceTresorDto> quittancesDto = d.getQuittances() == null ? List.of() :
                     d.getQuittances().stream()
@@ -1418,22 +1483,4 @@ public class UtilisationCreditService {
         return b.build();
     }
 
-    private void notifyUtilisation(UtilisationCredit utilisation, StatutUtilisation statut) {
-        if (utilisation == null || utilisation.getEntreprise() == null) {
-            return;
-        }
-        List<Long> userIds = utilisateurRepository.findByEntrepriseId(utilisation.getEntreprise().getId())
-                .stream()
-                .map(mr.gov.finances.sgci.domain.entity.Utilisateur::getId)
-                .collect(Collectors.toList());
-        if (userIds.isEmpty()) {
-            return;
-        }
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("statut", statut.name());
-        payload.put("type", utilisation.getType() != null ? utilisation.getType().name() : null);
-        String message = "Utilisation de crédit statut: " + statut;
-        notificationService.notifyUsers(userIds, NotificationType.UTILISATION_STATUT_CHANGE,
-                "UtilisationCredit", utilisation.getId(), message, payload);
-    }
 }

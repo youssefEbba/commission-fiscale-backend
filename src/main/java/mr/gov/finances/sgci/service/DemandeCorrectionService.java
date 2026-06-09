@@ -74,7 +74,7 @@ public class DemandeCorrectionService {
     private final UtilisateurRepository utilisateurRepository;
     private final DemandeCorrectionWorkflow workflow;
     private final AuditService auditService;
-    private final NotificationService notificationService;
+    private final WorkflowNotificationHelper workflowNotificationHelper;
     private final DocumentService documentService;
     private final DocumentRequirementValidator requirementValidator;
     private final DossierGedService dossierGedService;
@@ -805,7 +805,7 @@ public class DemandeCorrectionService {
                 .id(entity.getId())
                 .message(entity.getMessage())
                 .documentUrl(entity.getDocumentUrl())
-                .documentType(entity.getDocumentType())
+                .codeDocument(entity.getCodeDocument())
                 .documentVersion(entity.getDocumentVersion())
                 .createdAt(entity.getCreatedAt())
                 .utilisateurId(entity.getUtilisateur() != null ? entity.getUtilisateur().getId() : null)
@@ -1027,7 +1027,7 @@ public class DemandeCorrectionService {
     private DocumentDto documentToDto(Document doc) {
         return DocumentDto.builder()
                 .id(doc.getId())
-                .type(doc.getType())
+                .codeDocument(doc.getCodeDocument())
                 .nomFichier(doc.getNomFichier())
                 .chemin(doc.getChemin())
                 .dateUpload(doc.getDateUpload())
@@ -1040,48 +1040,7 @@ public class DemandeCorrectionService {
                                          String motifRejet,
                                          AuthenticatedUser user,
                                          boolean finale) {
-        List<Long> userIds = resolveRelatedUserIds(entity);
-        if (userIds.isEmpty()) {
-            return;
-        }
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("statut", statut.name());
-        payload.put("finale", finale);
-        if (motifRejet != null && !motifRejet.isBlank()) {
-            payload.put("motifRejet", motifRejet);
-        }
-        if (user != null && user.getRole() != null) {
-            payload.put("acteurRole", user.getRole().name());
-            payload.put("acteurUserId", user.getUserId());
-        }
-        String message = "Demande de correction " + entity.getNumero() + " statut: " + statut;
-        notificationService.notifyUsers(userIds, NotificationType.CORRECTION_STATUT_CHANGE,
-                "DemandeCorrection", entity.getId(), message, payload);
-    }
-
-    private List<Long> resolveRelatedUserIds(DemandeCorrection entity) {
-        if (entity == null) {
-            return List.of();
-        }
-        List<Long> entrepriseUsers = entity.getEntreprise() != null
-                ? utilisateurRepository.findByEntrepriseId(entity.getEntreprise().getId()).stream()
-                .map(Utilisateur::getId)
-                .collect(Collectors.toList())
-                : List.of();
-        List<Long> autoriteUsers = entity.getAutoriteContractante() != null
-                ? utilisateurRepository.findByAutoriteContractanteId(entity.getAutoriteContractante().getId()).stream()
-                .map(Utilisateur::getId)
-                .collect(Collectors.toList())
-                : List.of();
-        List<Long> commission = Stream.of(Role.PRESIDENT, Role.DGD, Role.DGTCP, Role.DGI, Role.DGB)
-                .flatMap(r -> utilisateurRepository.findByRole(r).stream())
-                .map(Utilisateur::getId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-        return Stream.of(entrepriseUsers.stream(), autoriteUsers.stream(), commission.stream())
-                .flatMap(s -> s)
-                .distinct()
-                .collect(Collectors.toList());
+        workflowNotificationHelper.correctionStatut(entity, statut, user, motifRejet, finale);
     }
 
     @Transactional(readOnly = true)

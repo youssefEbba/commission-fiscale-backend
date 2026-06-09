@@ -46,7 +46,7 @@ public class DecisionCorrectionService {
     private final DecisionCorrectionRepository decisionRepository;
     private final DemandeCorrectionRepository demandeRepository;
     private final UtilisateurRepository utilisateurRepository;
-    private final NotificationService notificationService;
+    private final WorkflowNotificationHelper workflowNotificationHelper;
     private final DemandeCorrectionWorkflow demandeCorrectionWorkflow;
     private final DemandeCorrectionService demandeCorrectionService;
 
@@ -84,6 +84,7 @@ public class DecisionCorrectionService {
                 if (demande != null && demande.getStatut() == StatutDemande.INCOMPLETE) {
                     demande.setStatut(StatutDemande.RECEVABLE);
                     demandeRepository.save(demande);
+                    workflowNotificationHelper.correctionRejetTempResolu(demande, user);
                 }
             }
         }
@@ -92,7 +93,7 @@ public class DecisionCorrectionService {
     }
 
     @Transactional
-    public DecisionCorrectionDto saveDecision(Long demandeId, DecisionCorrectionType decision, String motifRejet, Set<TypeDocument> documentsDemandes, AuthenticatedUser user) {
+    public DecisionCorrectionDto saveDecision(Long demandeId, DecisionCorrectionType decision, String motifRejet, Set<String> documentsDemandes, AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
@@ -245,7 +246,7 @@ public class DecisionCorrectionService {
                 .id(entity.getId())
                 .message(entity.getMessage())
                 .documentUrl(entity.getDocumentUrl())
-                .documentType(entity.getDocumentType())
+                .codeDocument(entity.getCodeDocument())
                 .documentVersion(entity.getDocumentVersion())
                 .createdAt(entity.getCreatedAt())
                 .utilisateurId(entity.getUtilisateur() != null ? entity.getUtilisateur().getId() : null)
@@ -254,42 +255,9 @@ public class DecisionCorrectionService {
     }
 
     private void notifyDecision(DemandeCorrection demande, DecisionCorrection decision, AuthenticatedUser user) {
-        if (demande == null || decision == null) {
+        if (demande == null || decision == null || decision.getDecision() == null) {
             return;
         }
-        List<Long> userIds = resolveRelatedUserIds(demande);
-        if (userIds.isEmpty()) {
-            return;
-        }
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("decision", decision.getDecision().name());
-        if (decision.getMotifRejet() != null && !decision.getMotifRejet().isBlank()) {
-            payload.put("motifRejet", decision.getMotifRejet());
-        }
-        if (decision.getRole() != null) {
-            payload.put("role", decision.getRole().name());
-        }
-        if (user != null) {
-            payload.put("acteurUserId", user.getUserId());
-        }
-        String message = "Décision sur demande " + demande.getNumero() + ": " + decision.getDecision();
-        notificationService.notifyUsers(userIds, NotificationType.CORRECTION_DECISION,
-                "DemandeCorrection", demande.getId(), message, payload);
-    }
-
-    private List<Long> resolveRelatedUserIds(DemandeCorrection demande) {
-        List<Long> entrepriseUsers = demande.getEntreprise() != null
-                ? utilisateurRepository.findByEntrepriseId(demande.getEntreprise().getId()).stream()
-                .map(Utilisateur::getId)
-                .collect(Collectors.toList())
-                : List.of();
-        List<Long> autoriteUsers = demande.getAutoriteContractante() != null
-                ? utilisateurRepository.findByAutoriteContractanteId(demande.getAutoriteContractante().getId()).stream()
-                .map(Utilisateur::getId)
-                .collect(Collectors.toList())
-                : List.of();
-        return java.util.stream.Stream.concat(entrepriseUsers.stream(), autoriteUsers.stream())
-                .distinct()
-                .collect(Collectors.toList());
+        workflowNotificationHelper.correctionDecision(demande, decision.getDecision().name(), user, decision.getMotifRejet());
     }
 }

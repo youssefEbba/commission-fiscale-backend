@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>SGCI — Demande de correction</title>
+</head>
+<body style="font-family: Arial, sans-serif; color: #222; max-width: 640px;">
+<p>Bonjour,</p>
+<p th:switch="${eventCode}">
+    <span th:case="'CORRECTION_SOUMISE'">Une demande de correction a été soumise et est à traiter.</span>
+    <span th:case="'CORRECTION_STATUT_CHANGE'">Le statut d'une demande de correction a été modifié.</span>
+    <span th:case="'CORRECTION_VISA'">Un visa a été posé sur une demande de correction.</span>
+    <span th:case="'CORRECTION_REJET_TEMP'">Un rejet temporaire a été émis sur une demande de correction — compléments requis.</span>
+    <span th:case="'CORRECTION_REJET_TEMP_REPONSE'">Une réponse au rejet temporaire a été déposée sur une demande de correction.</span>
+    <span th:case="'CORRECTION_REJET_TEMP_RESOLU'">Un rejet temporaire a été résolu — la demande est à recontrôler.</span>
+    <span th:case="'CORRECTION_REJET_DEFINITIF'">Une demande de correction a été rejetée définitivement.</span>
+    <span th:case="'CORRECTION_ADOPTEE'">Une demande de correction a été adoptée.</span>
+    <span th:case="'CORRECTION_RECLAMATION_DEPOSEE'">Une réclamation a été déposée sur une demande de correction.</span>
+    <span th:case="'CORRECTION_RECLAMATION_TRAITEE'">Une réclamation sur une demande de correction a été traitée.</span>
+    <span th:case="'CORRECTION_RECLAMATION_ANNULEE'">Une réclamation sur une demande de correction a été annulée.</span>
+    <span th:case="*">Notification relative à une demande de correction.</span>
+</p>
+<p th:text="${message}">Message</p>
+<p th:if="${dossierLabel != null and !#strings.isEmpty(dossierLabel)}">
+    <strong>Dossier :</strong> <span th:text="${dossierLabel}"></span>
+</p>
+<p th:if="${newStatus != null}">
+    <strong>Statut :</strong> <span th:text="${newStatus}"></span>
+</p>
+<p th:if="${motif != null and !#strings.isEmpty(motif)}">
+    <strong>Motif :</strong> <span th:text="${motif}"></span>
+</p>
+<p style="color:#666;font-size:12px;margin-top:24px;">
+    Commission Fiscale — SGCI<br/>
+    Processus : demande de correction<br/>
+    Événement : <span th:text="${eventCode}"></span>
+</p>
+</body>
+</html>

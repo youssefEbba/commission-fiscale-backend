@@ -3,6 +3,7 @@ package mr.gov.finances.sgci.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import mr.gov.finances.sgci.domain.entity.AuditLog;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.repository.AuditLogRepository;
@@ -18,7 +19,11 @@ import java.time.Instant;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuditService {
+
+    /** Limite pratique pour LONGTEXT (évite snapshots aberrants). */
+    private static final int MAX_SNAPSHOT_CHARS = 1_000_000;
 
     private final AuditLogRepository repository;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -54,16 +59,28 @@ public class AuditService {
         } else if (action == AuditAction.DELETE && entityId != null) {
             snapshotJson = "{\"id\":\"" + entityId + "\",\"deleted\":true}";
         }
+        snapshotJson = truncateSnapshot(snapshotJson);
 
-        AuditLog log = AuditLog.builder()
-                .timestamp(Instant.now())
-                .userId(userId)
-                .username(username)
-                .action(action)
-                .entityType(entityType)
-                .entityId(entityId)
-                .objectSnapshot(snapshotJson)
-                .build();
-        repository.save(log);
+        try {
+            AuditLog entry = AuditLog.builder()
+                    .timestamp(Instant.now())
+                    .userId(userId)
+                    .username(username)
+                    .action(action)
+                    .entityType(entityType)
+                    .entityId(entityId)
+                    .objectSnapshot(snapshotJson)
+                    .build();
+            repository.save(entry);
+        } catch (Exception e) {
+            log.warn("Échec enregistrement audit {} {} {}: {}", action, entityType, entityId, e.getMessage());
+        }
+    }
+
+    private static String truncateSnapshot(String snapshotJson) {
+        if (snapshotJson == null || snapshotJson.length() <= MAX_SNAPSHOT_CHARS) {
+            return snapshotJson;
+        }
+        return snapshotJson.substring(0, MAX_SNAPSHOT_CHARS);
     }
 }

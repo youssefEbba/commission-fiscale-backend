@@ -2,19 +2,24 @@
 
 Ce document execute le plan "qui, par quoi, condition, declencheur" avec une validation directe dans le code source du projet.
 
-## 1) Cartographie finale des emetteurs
+> **Mise à jour (mail + couverture complète)** : les six workflows cibles passent par `WorkflowNotificationDispatcher` (in-app + e-mail). Voir `docs/NOTIFICATIONS_MAIL.md`.
+
+## 1) Cartographie finale des emetteurs (workflows cibles)
 
 | Type notification | Qui est notifie | Par quoi (service) | Declencheur API |
 |---|---|---|---|
-| `CORRECTION_STATUT_CHANGE` | Utilisateurs de l'entreprise + autorite contractante de la demande | `DemandeCorrectionService.notifyDemandeCorrection(...)` | `PATCH /api/demandes-correction/{id}/statut` |
-| `CORRECTION_DECISION` | Utilisateurs de l'entreprise + autorite contractante de la demande | `DecisionCorrectionService.notifyDecision(...)` | `POST /api/demandes-correction/{id}/decisions` |
+| `CORRECTION_*` | Entreprise, AC, commission selon événement | `WorkflowNotificationHelper` via `DemandeCorrectionService`, `DecisionCorrectionService`, `ReclamationDemandeCorrectionService`, `RejetTempResponseService` | soumission, statut, décisions, réclamations, réponses rejet temp |
+| `CERTIFICAT_*` / rejets temp | Entreprise, DGI/DGD/DGTCP, Président | `CertificatCreditService`, `DecisionCertificatCreditService`, `RejetTempResponseService` | statut, décisions, réponses |
+| `UTILISATION_*` / rejets temp | Entreprise, DGD/DGTCP selon type | `UtilisationCreditService`, `DecisionUtilisationCreditService`, `RejetTempResponseService` | statut, décisions, réponses |
+| `TRANSFERT_CREDIT` / rejets temp | DGTCP, entreprise, Président selon étape | `TransfertCreditService`, `DocumentTransfertCreditService`, `DecisionTransfertCreditService`, `RejetTempResponseService` | création, pièces, validation, rejet, annulation |
+| `CLOTURE_CERTIFICAT` | Président, DGTCP, entreprise | `ClotureCreditService` | proposer, valider/rejeter, finaliser |
+
+Autres processus (hors scope mail) :
+
+| Type notification | Qui est notifie | Par quoi (service) | Declencheur API |
+|---|---|---|---|
 | `CONVENTION_STATUT_CHANGE` | Utilisateurs de l'autorite contractante | `ConventionService.notifyConvention(...)` | `PATCH /api/conventions/{id}/statut` |
 | `REFERENTIEL_STATUT_CHANGE` | Utilisateurs de l'autorite contractante | `ReferentielProjetService.notifyReferentielProjet(...)` | `PATCH /api/referentiels-projet/{id}/statut` |
-| `CERTIFICAT_STATUT_CHANGE` (entreprise) | Utilisateurs de l'entreprise du certificat | `CertificatCreditService.notifyCertificat(...)` | `PATCH /api/certificats-credit/{id}/statut` |
-| `CERTIFICAT_STATUT_CHANGE` (president) | Utilisateurs role `PRESIDENT` | `DecisionCertificatCreditService.notifyPresidentForValidation(...)` | `POST /api/certificats-credit/{id}/decisions` (apres 3 visas) |
-| `UTILISATION_STATUT_CHANGE` (creation) | `DGD` si douanier, `DGTCP` si TVA interieure | `UtilisationCreditService.notifyActorsOnCreation(...)` | `POST /api/utilisations-credit` |
-| `UTILISATION_STATUT_CHANGE` (evolution) | Utilisateurs de l'entreprise liee | `UtilisationCreditService.notifyUtilisation(...)` | `PATCH /api/utilisations-credit/{id}/statut`, `POST /{id}/apurement-tva`, `POST /{id}/liquidation-douane` |
-| `TRANSFERT_CREDIT` | Utilisateurs role `DGTCP` | `TransfertCreditService.create(...)` | `POST /api/transferts-credit` |
 | `SOUS_TRAITANCE` | Utilisateurs role `DGTCP` | `SousTraitanceService.create(...)` | `POST /api/sous-traitances` |
 
 ## 2) Conditions metier verifiees
@@ -54,6 +59,12 @@ Ce document execute le plan "qui, par quoi, condition, declencheur" avec une val
    - destination `/topic/notifications/user/{userId}`
    - endpoint websocket `/ws`.
 
-## 5) Conclusion d'execution
+## 5) E-mail (SMTP)
 
-Le plan est implemente et trace dans ce rapport: toutes les notifications du systeme sont reliees a un emetteur, un declencheur API, des conditions metier et des destinataires explicites.
+- Configuration : `docs/NOTIFICATIONS_MAIL.md`
+- Phase test : `app.mail.override-recipient=emine.youbah@esen.tn`
+- Test automatisé : `WorkflowNotificationMailIT`
+
+## 6) Conclusion d'execution
+
+Le plan est implemente et trace dans ce rapport: les six workflows cibles emettent notification in-app **et** e-mail via `WorkflowNotificationDispatcher`, avec payload `eventCode` pour le front.

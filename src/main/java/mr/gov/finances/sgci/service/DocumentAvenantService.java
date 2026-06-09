@@ -32,18 +32,18 @@ public class DocumentAvenantService {
     private final DocumentRequirementValidator requirementValidator;
 
     @Transactional
-    public DocumentAvenantDto upload(Long avenantId, TypeDocument type, MultipartFile file) throws IOException {
+    public DocumentAvenantDto upload(Long avenantId, String codeDocument, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
 
-        requirementValidator.validateUpload(ProcessusDocument.MODIFICATION_CI, type, file);
+        requirementValidator.validateUpload(ProcessusDocument.MODIFICATION_CI, codeDocument, file);
 
         Avenant avenant = avenantRepository.findById(avenantId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Avenant non trouvé: " + avenantId));
 
         int nextVersion = 1;
-        DocumentAvenant previous = repository.findByAvenantIdAndTypeAndActifTrue(avenantId, type)
+        DocumentAvenant previous = repository.findByAvenantIdAndCodeDocumentAndActifTrue(avenantId, codeDocument)
                 .orElse(null);
         if (previous != null) {
             previous.setActif(false);
@@ -54,7 +54,7 @@ public class DocumentAvenantService {
         String fileUrl = minioService.uploadFile(file);
 
         DocumentAvenant doc = DocumentAvenant.builder()
-                .type(type)
+                .codeDocument(codeDocument)
                 .nomFichier(originalFilename != null ? originalFilename : file.getName())
                 .chemin(fileUrl)
                 .dateUpload(Instant.now())
@@ -81,7 +81,7 @@ public class DocumentAvenantService {
     private DocumentAvenantDto toDto(DocumentAvenant d) {
         return DocumentAvenantDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())

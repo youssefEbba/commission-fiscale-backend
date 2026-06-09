@@ -96,11 +96,11 @@ public class TransfertCreditController {
     @PreAuthorize("hasAuthority('transfert.submit')")
     public DocumentTransfertCreditDto uploadDocument(
             @PathVariable Long id,
-            @RequestParam TypeDocument type,
+            @RequestParam String codeDocument,
             @RequestParam(value = "message", required = false) String message,
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return documentService.upload(id, type, message, file, user);
+        return documentService.upload(id, codeDocument, message, file, user);
     }
 }

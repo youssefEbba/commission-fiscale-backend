@@ -329,7 +329,7 @@ public class DossierGedService {
     private DocumentDto toDocumentDto(Document d) {
         return DocumentDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())
@@ -342,7 +342,7 @@ public class DossierGedService {
     private DocumentDto toDocumentDto(DocumentCertificatCredit d) {
         return DocumentDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())
@@ -355,7 +355,7 @@ public class DossierGedService {
     private DocumentDto toDocumentDto(DocumentUtilisationCredit d) {
         return DocumentDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())
@@ -368,7 +368,7 @@ public class DossierGedService {
     private DocumentDto toDocumentDto(DocumentTransfertCredit d) {
         return DocumentDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())
@@ -381,7 +381,7 @@ public class DossierGedService {
     private DocumentDto toDocumentDto(DocumentSousTraitance d) {
         return DocumentDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())
@@ -471,7 +471,7 @@ public class DossierGedService {
     private DocumentDto toDocumentDto(mr.gov.finances.sgci.domain.entity.DocumentConvention d) {
         return DocumentDto.builder()
                 .id(d.getId())
-                .type(null)
+                .codeDocument(null)
                 .typeDetail("CONVENTION:" + (d.getType() != null ? d.getType().name() : ""))
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
@@ -483,7 +483,7 @@ public class DossierGedService {
     private DocumentDto toDocumentDto(mr.gov.finances.sgci.domain.entity.DocumentMarche d) {
         return DocumentDto.builder()
                 .id(d.getId())
-                .type(null)
+                .codeDocument(null)
                 .typeDetail("MARCHE:" + (d.getType() != null ? d.getType().name() : ""))
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
@@ -495,7 +495,7 @@ public class DossierGedService {
     private DocumentDto toDocumentDto(mr.gov.finances.sgci.domain.entity.DocumentProjet d) {
         return DocumentDto.builder()
                 .id(d.getId())
-                .type(null)
+                .codeDocument(null)
                 .typeDetail("REFERENTIEL_PROJET:" + (d.getType() != null ? d.getType().name() : ""))
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
@@ -507,7 +507,7 @@ public class DossierGedService {
     private DocumentDto toDocumentDto(DocumentClotureCredit d) {
         return DocumentDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())
@@ -520,7 +520,7 @@ public class DossierGedService {
     private DocumentDto toDocumentDto(DocumentAvenant d) {
         return DocumentDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())

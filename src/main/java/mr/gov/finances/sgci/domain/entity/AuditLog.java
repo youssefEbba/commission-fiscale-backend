@@ -39,7 +39,8 @@ public class AuditLog {
 
     private String entityId;
 
-    @Lob
+    /** JSON sérialisé — LONGTEXT pour éviter la troncature MySQL (VARCHAR 255 hérité). */
+    @Column(columnDefinition = "LONGTEXT")
     private String objectSnapshot;
 
     @PrePersist

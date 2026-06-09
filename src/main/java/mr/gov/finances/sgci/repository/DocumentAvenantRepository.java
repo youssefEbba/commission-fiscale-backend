@@ -15,5 +15,5 @@ public interface DocumentAvenantRepository extends JpaRepository<DocumentAvenant
 
     List<DocumentAvenant> findByAvenantIdAndActifTrue(Long avenantId);
 
-    Optional<DocumentAvenant> findByAvenantIdAndTypeAndActifTrue(Long avenantId, TypeDocument type);
+    Optional<DocumentAvenant> findByAvenantIdAndCodeDocumentAndActifTrue(Long avenantId, String codeDocument);
 }

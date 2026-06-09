@@ -15,7 +15,7 @@ import java.time.Instant;
 public class DocumentDto {
 
     private Long id;
-    private TypeDocument type;
+    private String codeDocument;
     /** Présent pour les pièces hors {@link TypeDocument} (ex. convention, marché, référentiel projet). */
     private String typeDetail;
     private String nomFichier;

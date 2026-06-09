@@ -5,7 +5,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.domain.enums.TypeFichierAutorise;
 
 import java.util.Set;
@@ -18,7 +17,8 @@ public class DocumentRequirementDto {
 
     private Long id;
     private ProcessusDocument processus;
-    private TypeDocument typeDocument;
+    private String codeDocument;
+    private String libelle;
     private Boolean obligatoire;
     private Set<TypeFichierAutorise> typesAutorises;
     private String description;

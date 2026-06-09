@@ -32,17 +32,17 @@ public class DocumentSousTraitanceService {
     private final DocumentRequirementValidator requirementValidator;
 
     @Transactional
-    public DocumentSousTraitanceDto upload(Long sousTraitanceId, TypeDocument type, MultipartFile file) throws IOException {
+    public DocumentSousTraitanceDto upload(Long sousTraitanceId, String codeDocument, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
-        requirementValidator.validateUpload(ProcessusDocument.SOUS_TRAITANCE, type, file);
+        requirementValidator.validateUpload(ProcessusDocument.SOUS_TRAITANCE, codeDocument, file);
 
         SousTraitance st = sousTraitanceRepository.findById(sousTraitanceId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Sous-traitance non trouvée: " + sousTraitanceId));
 
         int nextVersion = 1;
-        DocumentSousTraitance previous = repository.findBySousTraitanceIdAndTypeAndActifTrue(sousTraitanceId, type)
+        DocumentSousTraitance previous = repository.findBySousTraitanceIdAndCodeDocumentAndActifTrue(sousTraitanceId, codeDocument)
                 .orElse(null);
         if (previous != null) {
             previous.setActif(false);
@@ -53,7 +53,7 @@ public class DocumentSousTraitanceService {
         String fileUrl = minioService.uploadFile(file);
 
         DocumentSousTraitance doc = DocumentSousTraitance.builder()
-                .type(type)
+                .codeDocument(codeDocument)
                 .nomFichier(originalFilename != null ? originalFilename : file.getName())
                 .chemin(fileUrl)
                 .dateUpload(Instant.now())
@@ -77,10 +77,10 @@ public class DocumentSousTraitanceService {
     }
 
     @Transactional(readOnly = true)
-    public List<TypeDocument> findActiveDocumentTypes(Long sousTraitanceId) {
+    public List<String> findActiveDocumentTypes(Long sousTraitanceId) {
         return repository.findBySousTraitanceIdAndActifTrue(sousTraitanceId)
                 .stream()
-                .map(DocumentSousTraitance::getType)
+                .map(DocumentSousTraitance::getCodeDocument)
                 .distinct()
                 .collect(Collectors.toList());
     }
@@ -88,7 +88,7 @@ public class DocumentSousTraitanceService {
     private DocumentSousTraitanceDto toDto(DocumentSousTraitance d) {
         return DocumentSousTraitanceDto.builder()
                 .id(d.getId())
-                .type(d.getType())
+                .codeDocument(d.getCodeDocument())
                 .nomFichier(d.getNomFichier())
                 .chemin(d.getChemin())
                 .dateUpload(d.getDateUpload())

@@ -1,0 +1,376 @@
+package mr.gov.finances.sgci.service;
+
+import mr.gov.finances.sgci.domain.entity.CertificatCredit;
+import mr.gov.finances.sgci.domain.entity.ClotureCredit;
+import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
+import mr.gov.finances.sgci.domain.entity.TransfertCredit;
+import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
+import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.StatutDemande;
+import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
+import mr.gov.finances.sgci.domain.enums.WorkflowEventCode;
+import mr.gov.finances.sgci.notification.WorkflowNotificationContext;
+import mr.gov.finances.sgci.security.AuthenticatedUser;
+import org.springframework.stereotype.Component;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Component
+public class WorkflowNotificationHelper {
+
+    private final WorkflowNotificationDispatcher dispatcher;
+
+    public WorkflowNotificationHelper(WorkflowNotificationDispatcher dispatcher) {
+        this.dispatcher = dispatcher;
+    }
+
+    public void correctionStatut(DemandeCorrection d, StatutDemande statut, AuthenticatedUser actor,
+                                 String motif, boolean finale) {
+        if (d == null) {
+            return;
+        }
+        WorkflowEventCode event = WorkflowEventCode.CORRECTION_STATUT_CHANGE;
+        if (statut == StatutDemande.RECUE) {
+            event = WorkflowEventCode.CORRECTION_SOUMISE;
+        } else if (finale && statut == StatutDemande.ADOPTEE) {
+            event = WorkflowEventCode.CORRECTION_ADOPTEE;
+        } else if (statut == StatutDemande.REJETEE) {
+            event = WorkflowEventCode.CORRECTION_REJET_DEFINITIF;
+        }
+        dispatchCorrection(event, d, actor, statut != null ? statut.name() : null, motif, true);
+    }
+
+    public void correctionDecision(DemandeCorrection d, String decisionType, AuthenticatedUser actor, String motif) {
+        if (d == null) {
+            return;
+        }
+        WorkflowEventCode event = "REJET_TEMP".equals(decisionType)
+                ? WorkflowEventCode.CORRECTION_REJET_TEMP
+                : ("REJET".equals(decisionType) ? WorkflowEventCode.CORRECTION_REJET_DEFINITIF : WorkflowEventCode.CORRECTION_VISA);
+        dispatchCorrection(event, d, actor, null, motif, false);
+    }
+
+    public void correctionRejetTempResolu(DemandeCorrection d, AuthenticatedUser actor) {
+        dispatchCorrection(WorkflowEventCode.CORRECTION_REJET_TEMP_RESOLU, d, actor, StatutDemande.RECEVABLE.name(), null, false);
+    }
+
+    public void correctionRejetTempReponse(DemandeCorrection d, AuthenticatedUser actor, Role emitterRole, String codeDocument) {
+        Map<String, Object> extra = new HashMap<>();
+        if (codeDocument != null) {
+            extra.put("codeDocument", codeDocument);
+        }
+        WorkflowNotificationContext ctx = baseCorrection(d, actor)
+                .extraPayload(extra)
+                .roleRecipients(emitterRole != null ? List.of(emitterRole) : List.of(Role.DGD, Role.DGTCP, Role.DGI, Role.DGB))
+                .build();
+        dispatcher.dispatch(WorkflowEventCode.CORRECTION_REJET_TEMP_REPONSE, ctx);
+    }
+
+    public void correctionReclamation(DemandeCorrection d, WorkflowEventCode event, AuthenticatedUser actor) {
+        if (d == null) {
+            return;
+        }
+        List<Role> roles = switch (event) {
+            case CORRECTION_RECLAMATION_DEPOSEE, CORRECTION_RECLAMATION_ANNULEE ->
+                    List.of(Role.DGTCP, Role.PRESIDENT);
+            case CORRECTION_RECLAMATION_TRAITEE -> List.of();
+            default -> List.of();
+        };
+        WorkflowNotificationContext ctx = baseCorrection(d, actor)
+                .roleRecipients(roles)
+                .build();
+        if (event == WorkflowEventCode.CORRECTION_RECLAMATION_TRAITEE) {
+            ctx = baseCorrection(d, actor).build();
+        }
+        dispatcher.dispatch(event, ctx);
+    }
+
+    private void dispatchCorrection(WorkflowEventCode event, DemandeCorrection d, AuthenticatedUser actor,
+                                    String newStatus, String motif, boolean includeCommission) {
+        dispatchCorrection(event, d, actor, newStatus, motif, includeCommission, Map.of(), commissionRoles(includeCommission));
+    }
+
+    private void dispatchCorrection(WorkflowEventCode event, DemandeCorrection d, AuthenticatedUser actor,
+                                    String newStatus, String motif, boolean includeCommission,
+                                    Map<String, Object> extra, List<Role> extraRoles) {
+        WorkflowNotificationContext.WorkflowNotificationContextBuilder b = baseCorrection(d, actor)
+                .newStatus(newStatus)
+                .motif(motif)
+                .extraPayload(extra);
+        if (includeCommission) {
+            b.roleRecipients(commissionRoles(true));
+        } else if (extraRoles != null && !extraRoles.isEmpty()) {
+            b.roleRecipients(extraRoles);
+        }
+        dispatcher.dispatch(event, b.build());
+    }
+
+    private WorkflowNotificationContext.WorkflowNotificationContextBuilder baseCorrection(DemandeCorrection d, AuthenticatedUser actor) {
+        return WorkflowNotificationContext.builder()
+                .entityType("DemandeCorrection")
+                .entityId(d.getId())
+                .dossierLabel(d.getNumero())
+                .actor(actor)
+                .entrepriseId(d.getEntreprise() != null ? d.getEntreprise().getId() : null)
+                .autoriteContractanteId(d.getAutoriteContractante() != null ? d.getAutoriteContractante().getId() : null);
+    }
+
+    public void certificatStatut(CertificatCredit c, String statut, AuthenticatedUser actor, WorkflowEventCode eventOverride) {
+        if (c == null) {
+            return;
+        }
+        WorkflowEventCode event = eventOverride != null ? eventOverride : WorkflowEventCode.CERTIFICAT_STATUT_CHANGE;
+        if ("ENVOYEE".equals(statut)) {
+            event = WorkflowEventCode.CERTIFICAT_SOUMIS;
+        }
+        List<Role> roles = "ENVOYEE".equals(statut) || "EN_CONTROLE".equals(statut)
+                ? List.of(Role.DGI, Role.DGD, Role.DGTCP) : List.of();
+        dispatcher.dispatch(event, WorkflowNotificationContext.builder()
+                .entityType("CertificatCredit")
+                .entityId(c.getId())
+                .dossierLabel(c.getNumero())
+                .actor(actor)
+                .newStatus(statut)
+                .entrepriseId(c.getEntreprise() != null ? c.getEntreprise().getId() : null)
+                .roleRecipients(roles)
+                .build());
+    }
+
+    public void certificatDecision(CertificatCredit c, String decisionType, AuthenticatedUser actor, String motif) {
+        if (c == null) {
+            return;
+        }
+        WorkflowEventCode event = "REJET_TEMP".equals(decisionType)
+                ? WorkflowEventCode.CERTIFICAT_REJET_TEMP
+                : WorkflowEventCode.CERTIFICAT_VISA;
+        dispatcher.dispatch(event, WorkflowNotificationContext.builder()
+                .entityType("CertificatCredit")
+                .entityId(c.getId())
+                .dossierLabel(c.getNumero())
+                .actor(actor)
+                .motif(motif)
+                .entrepriseId(c.getEntreprise() != null ? c.getEntreprise().getId() : null)
+                .build());
+    }
+
+    public void certificatPresidentValidation(CertificatCredit c) {
+        if (c == null) {
+            return;
+        }
+        dispatcher.dispatch(WorkflowEventCode.CERTIFICAT_PRESIDENT_VALIDATION, WorkflowNotificationContext.builder()
+                .entityType("CertificatCredit")
+                .entityId(c.getId())
+                .dossierLabel(c.getNumero())
+                .newStatus("EN_VALIDATION_PRESIDENT")
+                .roleRecipients(List.of(Role.PRESIDENT))
+                .build());
+    }
+
+    public void certificatRejetTempResolu(CertificatCredit c, AuthenticatedUser actor) {
+        dispatcher.dispatch(WorkflowEventCode.CERTIFICAT_REJET_TEMP_RESOLU, WorkflowNotificationContext.builder()
+                .entityType("CertificatCredit")
+                .entityId(c.getId())
+                .dossierLabel(c.getNumero())
+                .actor(actor)
+                .newStatus("A_RECONTROLER")
+                .entrepriseId(c.getEntreprise() != null ? c.getEntreprise().getId() : null)
+                .build());
+    }
+
+    public void certificatRejetTempReponse(CertificatCredit c, AuthenticatedUser actor, Role emitterRole) {
+        dispatcher.dispatch(WorkflowEventCode.CERTIFICAT_REJET_TEMP_REPONSE, WorkflowNotificationContext.builder()
+                .entityType("CertificatCredit")
+                .entityId(c.getId())
+                .dossierLabel(c.getNumero())
+                .actor(actor)
+                .roleRecipients(emitterRole != null ? List.of(emitterRole) : List.of(Role.DGI, Role.DGD, Role.DGTCP))
+                .build());
+    }
+
+    public void utilisationStatut(UtilisationCredit u, String statut, AuthenticatedUser actor, WorkflowEventCode eventOverride) {
+        if (u == null) {
+            return;
+        }
+        boolean douane = u.getType() == TypeUtilisation.DOUANIER;
+        WorkflowEventCode event = eventOverride != null ? eventOverride : mapUtilStatutEvent(douane, statut);
+        List<Role> roles = resolveUtilRoles(douane, statut);
+        dispatcher.dispatch(event, WorkflowNotificationContext.builder()
+                .entityType("UtilisationCredit")
+                .entityId(u.getId())
+                .dossierLabel(utilisationLabel(u))
+                .actor(actor)
+                .newStatus(statut)
+                .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null)
+                .roleRecipients(roles)
+                .build());
+    }
+
+    public void utilisationVisa(UtilisationCredit u, AuthenticatedUser actor, Role visaRole) {
+        if (u == null) {
+            return;
+        }
+        boolean douane = u.getType() == TypeUtilisation.DOUANIER;
+        WorkflowEventCode event = douane
+                ? WorkflowEventCode.UTIL_DOUANE_STATUT_CHANGE
+                : WorkflowEventCode.UTIL_TVA_STATUT_CHANGE;
+        String role = visaRole != null ? visaRole.name()
+                : (actor != null && actor.getRole() != null ? actor.getRole().name() : "");
+        dispatcher.dispatch(event, WorkflowNotificationContext.builder()
+                .entityType("UtilisationCredit")
+                .entityId(u.getId())
+                .dossierLabel(utilisationLabel(u))
+                .actor(actor)
+                .messageOverride("Visa " + role + " posé sur l'utilisation " + utilisationLabel(u))
+                .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null)
+                .build());
+    }
+
+    public void utilisationRejetTemp(UtilisationCredit u, AuthenticatedUser actor, String motif) {
+        boolean douane = u.getType() == TypeUtilisation.DOUANIER;
+        dispatcher.dispatch(douane ? WorkflowEventCode.UTIL_DOUANE_REJET_TEMP : WorkflowEventCode.UTIL_TVA_REJET_TEMP,
+                WorkflowNotificationContext.builder()
+                        .entityType("UtilisationCredit")
+                        .entityId(u.getId())
+                        .dossierLabel(utilisationLabel(u))
+                        .actor(actor)
+                        .motif(motif)
+                        .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null)
+                        .build());
+    }
+
+    public void utilisationRejetTempResolu(UtilisationCredit u, AuthenticatedUser actor) {
+        boolean douane = u.getType() == TypeUtilisation.DOUANIER;
+        dispatcher.dispatch(douane ? WorkflowEventCode.UTIL_DOUANE_REJET_TEMP_RESOLU : WorkflowEventCode.UTIL_TVA_REJET_TEMP_RESOLU,
+                WorkflowNotificationContext.builder()
+                        .entityType("UtilisationCredit")
+                        .entityId(u.getId())
+                        .dossierLabel(utilisationLabel(u))
+                        .actor(actor)
+                        .newStatus("A_RECONTROLER")
+                        .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null)
+                        .roleRecipients(douane ? List.of(Role.DGD) : List.of(Role.DGTCP))
+                        .build());
+    }
+
+    public void utilisationRejetTempReponse(UtilisationCredit u, AuthenticatedUser actor, Role emitterRole) {
+        boolean douane = u.getType() == TypeUtilisation.DOUANIER;
+        dispatcher.dispatch(douane ? WorkflowEventCode.UTIL_DOUANE_REJET_TEMP_REPONSE : WorkflowEventCode.UTIL_TVA_REJET_TEMP_REPONSE,
+                WorkflowNotificationContext.builder()
+                        .entityType("UtilisationCredit")
+                        .entityId(u.getId())
+                        .dossierLabel(utilisationLabel(u))
+                        .actor(actor)
+                        .roleRecipients(emitterRole != null ? List.of(emitterRole) : List.of(Role.DGTCP, Role.DGD))
+                        .build());
+    }
+
+    public void transfert(TransfertCredit t, WorkflowEventCode event, AuthenticatedUser actor) {
+        if (t == null) {
+            return;
+        }
+        String label = t.getCertificatCredit() != null ? t.getCertificatCredit().getNumero() : ("#" + t.getId());
+        Long entrepriseId = t.getCertificatCredit() != null && t.getCertificatCredit().getEntreprise() != null
+                ? t.getCertificatCredit().getEntreprise().getId() : null;
+        List<Role> roles = switch (event) {
+            case TRANSFERT_DEMANDE, TRANSFERT_EN_COURS, TRANSFERT_ANNULE -> List.of(Role.DGTCP);
+            case TRANSFERT_REJET_TEMP_RESOLU -> List.of();
+            case TRANSFERT_REJET_TEMP_REPONSE -> List.of(Role.DGTCP, Role.PRESIDENT);
+            case TRANSFERT_REJET_TEMP, TRANSFERT_VALIDE, TRANSFERT_REJETE -> List.of();
+            default -> List.of(Role.DGTCP);
+        };
+        dispatcher.dispatch(event, WorkflowNotificationContext.builder()
+                .entityType("TransfertCredit")
+                .entityId(t.getId())
+                .dossierLabel(label)
+                .actor(actor)
+                .newStatus(t.getStatut() != null ? t.getStatut().name() : null)
+                .entrepriseId(entrepriseId)
+                .roleRecipients(roles)
+                .build());
+    }
+
+    public void cloture(ClotureCredit cc, WorkflowEventCode event, AuthenticatedUser actor) {
+        if (cc == null || cc.getCertificatCredit() == null) {
+            return;
+        }
+        CertificatCredit c = cc.getCertificatCredit();
+        List<Role> roles = switch (event) {
+            case CLOTURE_PROPOSEE -> List.of(Role.PRESIDENT);
+            case CLOTURE_APPROUVEE, CLOTURE_REJETEE -> List.of(Role.DGTCP);
+            case CLOTURE_FINALISEE -> List.of(Role.DGTCP);
+            default -> List.of();
+        };
+        // Étapes proposition/approbation/rejet : internes (DGTCP ↔ Président).
+        // L'entreprise n'est informée qu'à la finalisation de la clôture.
+        Long entrepriseId = event == WorkflowEventCode.CLOTURE_FINALISEE && c.getEntreprise() != null
+                ? c.getEntreprise().getId()
+                : null;
+        dispatcher.dispatch(event, WorkflowNotificationContext.builder()
+                .entityType("ClotureCredit")
+                .entityId(cc.getId())
+                .dossierLabel(c.getNumero())
+                .actor(actor)
+                .entrepriseId(entrepriseId)
+                .roleRecipients(roles)
+                .motif(cc.getMotif() != null ? cc.getMotif().name() : null)
+                .build());
+    }
+
+    private List<Role> commissionRoles(boolean include) {
+        return include ? List.of(Role.PRESIDENT, Role.DGD, Role.DGTCP, Role.DGI, Role.DGB) : List.of();
+    }
+
+    private String utilisationLabel(UtilisationCredit u) {
+        if (u.getCertificatCredit() != null && u.getCertificatCredit().getNumero() != null) {
+            return u.getCertificatCredit().getNumero() + " / util #" + u.getId();
+        }
+        return "utilisation #" + u.getId();
+    }
+
+    private WorkflowEventCode mapUtilStatutEvent(boolean douane, String statut) {
+        if (statut == null) {
+            return douane ? WorkflowEventCode.UTIL_DOUANE_STATUT_CHANGE : WorkflowEventCode.UTIL_TVA_STATUT_CHANGE;
+        }
+        if (douane) {
+            return switch (statut) {
+                case "DEMANDEE" -> WorkflowEventCode.UTIL_DOUANE_SOUMISE;
+                case "EN_CONTROLE_DGD", "VISE" -> WorkflowEventCode.UTIL_DOUANE_VISA_DGD;
+                case "CHEQUE_SAISI" -> WorkflowEventCode.UTIL_DOUANE_CHEQUE;
+                case "ENVOYEE_AU_TRESOR" -> WorkflowEventCode.UTIL_DOUANE_TRESOR;
+                case "QUITTANCES_ENREGISTREES" -> WorkflowEventCode.UTIL_DOUANE_QUITTANCES;
+                case "LIQUIDEE" -> WorkflowEventCode.UTIL_DOUANE_LIQUIDEE;
+                case "CLOTUREE" -> WorkflowEventCode.UTIL_DOUANE_CLOTUREE;
+                case "REJETEE" -> WorkflowEventCode.UTIL_DOUANE_REJET_DEFINITIF;
+                default -> WorkflowEventCode.UTIL_DOUANE_STATUT_CHANGE;
+            };
+        }
+        return switch (statut) {
+            case "DEMANDEE" -> WorkflowEventCode.UTIL_TVA_SOUMISE;
+            case "APUREE" -> WorkflowEventCode.UTIL_TVA_APUREE;
+            case "REJETEE" -> WorkflowEventCode.UTIL_TVA_REJET_DEFINITIF;
+            default -> WorkflowEventCode.UTIL_TVA_STATUT_CHANGE;
+        };
+    }
+
+    private List<Role> resolveUtilRoles(boolean douane, String statut) {
+        if (statut == null) {
+            return List.of();
+        }
+        if (douane) {
+            return switch (statut) {
+                case "DEMANDEE", "EN_CONTROLE_DGD", "VISE" -> List.of(Role.DGD);
+                case "CHEQUE_SAISI", "ENVOYEE_AU_TRESOR", "QUITTANCES_ENREGISTREES", "LIQUIDEE", "CLOTUREE" ->
+                        List.of(Role.DGTCP);
+                case "REJETEE" -> List.of(Role.DGD, Role.DGTCP);
+                default -> List.of();
+            };
+        }
+        return switch (statut) {
+            case "DEMANDEE", "EN_VERIFICATION", "VALIDEE", "APUREE", "REJETEE", "INCOMPLETE", "A_RECONTROLER" ->
+                    List.of(Role.DGTCP);
+            default -> List.of();
+        };
+    }
+}

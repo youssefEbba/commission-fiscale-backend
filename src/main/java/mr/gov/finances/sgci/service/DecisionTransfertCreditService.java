@@ -13,6 +13,7 @@ import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
+import mr.gov.finances.sgci.domain.enums.WorkflowEventCode;
 import mr.gov.finances.sgci.repository.DecisionTransfertCreditRepository;
 import mr.gov.finances.sgci.repository.RejetTempResponseRepository;
 import mr.gov.finances.sgci.repository.TransfertCreditRepository;
@@ -41,6 +42,7 @@ public class DecisionTransfertCreditService {
     private final DocumentTransfertCreditService documentTransfertCreditService;
     private final RejetTempResponseService rejetTempResponseService;
     private final RejetTempResponseRepository rejetTempResponseRepository;
+    private final WorkflowNotificationHelper workflowNotificationHelper;
 
     @Transactional(readOnly = true)
     public List<DecisionCreditDto> findByTransfert(Long transfertCreditId) {
@@ -82,6 +84,7 @@ public class DecisionTransfertCreditService {
                 if (transfert != null && transfert.getStatut() == StatutTransfert.INCOMPLETE) {
                     transfert.setStatut(StatutTransfert.A_RECONTROLER);
                     transfertRepository.save(transfert);
+                    workflowNotificationHelper.transfert(transfert, WorkflowEventCode.TRANSFERT_REJET_TEMP_RESOLU, user);
                 }
             }
         }
@@ -93,7 +96,7 @@ public class DecisionTransfertCreditService {
     public DecisionCreditDto saveDecision(Long transfertCreditId,
                                           DecisionCorrectionType decision,
                                           String motifRejet,
-                                          Set<TypeDocument> documentsDemandes,
+                                          Set<String> documentsDemandes,
                                           AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
@@ -141,6 +144,7 @@ public class DecisionTransfertCreditService {
         entity = decisionRepository.save(entity);
         transfert.setStatut(StatutTransfert.INCOMPLETE);
         transfertRepository.save(transfert);
+        workflowNotificationHelper.transfert(transfert, WorkflowEventCode.TRANSFERT_REJET_TEMP, user);
         return toDto(entity);
     }
 
@@ -149,19 +153,25 @@ public class DecisionTransfertCreditService {
             Long decisionId,
             String message,
             MultipartFile file,
-            TypeDocument type,
+            String codeDocument,
             AuthenticatedUser user) throws IOException {
         if (message == null || message.isBlank()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le message de réponse est obligatoire");
         }
         if (file != null && !file.isEmpty()) {
-            if (type == null) {
+            if (codeDocument == null || codeDocument.isBlank()) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le type de document est obligatoire lors de l'envoi d'un fichier");
             }
             DecisionTransfertCredit decision = decisionRepository.findById(decisionId)
                     .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Décision transfert non trouvée: " + decisionId));
+            rejetTempResponseService.assertTransfertDecisionOpenRejetTemp(decision);
+            if (decision.getDocumentsDemandes() == null || !decision.getDocumentsDemandes().contains(codeDocument)) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Le type de document doit être l'un des types demandés dans le rejet temporaire : "
+                                + decision.getDocumentsDemandes());
+            }
             Long transfertId = decision.getTransfertCredit().getId();
-            documentTransfertCreditService.upload(transfertId, type, message, file, user);
+            documentTransfertCreditService.upload(transfertId, codeDocument, message, file, user, decisionId);
             return rejetTempResponseRepository.findByDecisionTransfertCredit_IdOrderByCreatedAtAsc(decisionId).stream()
                     .map(this::toResponseDto)
                     .collect(Collectors.toList());
@@ -192,7 +202,7 @@ public class DecisionTransfertCreditService {
                 .id(entity.getId())
                 .message(entity.getMessage())
                 .documentUrl(entity.getDocumentUrl())
-                .documentType(entity.getDocumentType())
+                .codeDocument(entity.getCodeDocument())
                 .documentVersion(entity.getDocumentVersion())
                 .createdAt(entity.getCreatedAt())
                 .utilisateurId(entity.getUtilisateur() != null ? entity.getUtilisateur().getId() : null)

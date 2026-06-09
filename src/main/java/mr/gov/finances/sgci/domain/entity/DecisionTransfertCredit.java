@@ -5,7 +5,6 @@ import lombok.*;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.Role;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
 
 import java.time.Instant;
 import java.util.HashSet;
@@ -39,10 +38,9 @@ public class DecisionTransfertCredit {
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "decision_transfert_credit_documents_demandes",
             joinColumns = @JoinColumn(name = "decision_transfert_credit_id"))
-    @Enumerated(EnumType.STRING)
-    @Column(name = "type_document", nullable = false)
+    @Column(name = "code_document", nullable = false, length = 64)
     @Builder.Default
-    private Set<TypeDocument> documentsDemandes = new HashSet<>();
+    private Set<String> documentsDemandes = new HashSet<>();
 
     private Instant dateDecision;
 

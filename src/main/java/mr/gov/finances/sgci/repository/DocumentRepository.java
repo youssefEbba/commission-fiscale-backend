@@ -15,7 +15,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     List<Document> findByDemandeCorrectionId(Long demandeCorrectionId);
 
     List<Document> findByDemandeCorrectionIdAndActifTrue(Long demandeCorrectionId);
-    Optional<Document> findByDemandeCorrectionIdAndTypeAndActifTrue(Long demandeCorrectionId, TypeDocument type);
+    Optional<Document> findByDemandeCorrectionIdAndCodeDocumentAndActifTrue(Long demandeCorrectionId, String codeDocument);
 
-    Optional<Document> findTopByDemandeCorrection_IdAndTypeOrderByVersionDesc(Long demandeCorrectionId, TypeDocument type);
+    Optional<Document> findTopByDemandeCorrection_IdAndCodeDocumentOrderByVersionDesc(Long demandeCorrectionId, String codeDocument);
 }

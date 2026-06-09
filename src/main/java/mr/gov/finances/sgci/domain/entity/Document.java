@@ -2,7 +2,6 @@ package mr.gov.finances.sgci.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
 
 import java.time.Instant;
 
@@ -19,9 +18,8 @@ public class Document {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 64)
-    private TypeDocument type;
+    @Column(name = "code_document", nullable = false, length = 64)
+    private String codeDocument;
 
     @Column(nullable = false)
     private String nomFichier;
