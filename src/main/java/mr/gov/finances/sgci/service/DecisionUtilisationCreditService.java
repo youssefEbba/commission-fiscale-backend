@@ -168,7 +168,7 @@ public class DecisionUtilisationCreditService {
         utilisationRepository.save(utilisation);
 
         if (decision == DecisionCorrectionType.REJET_TEMP) {
-            workflowNotificationHelper.utilisationRejetTemp(utilisation, user, motifRejet);
+            workflowNotificationHelper.utilisationRejetTemp(utilisation, entity, user);
         } else if (decision == DecisionCorrectionType.VISA) {
             workflowNotificationHelper.utilisationVisa(utilisation, user, role);
         }

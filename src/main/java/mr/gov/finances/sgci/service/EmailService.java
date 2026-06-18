@@ -112,6 +112,35 @@ public class EmailService {
     }
 
     @Async
+    public void sendPasswordResetRequestToAdmin(String toEmail, String username, String userEmail, String dateCreation) {
+        if (!mailProperties.isEnabled()) {
+            return;
+        }
+        String recipient = resolveRecipient(toEmail);
+        if (recipient == null) {
+            return;
+        }
+        try {
+            Context ctx = new Context();
+            ctx.setVariable("username", username != null ? username : "");
+            ctx.setVariable("email", userEmail != null ? userEmail : "");
+            ctx.setVariable("dateCreation", dateCreation != null ? dateCreation : "");
+            String html = templateEngine.process("mail/password-reset-request-admin", ctx);
+
+            MimeMessage mime = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mime, StandardCharsets.UTF_8.name());
+            helper.setFrom(mailProperties.getFrom());
+            helper.setTo(recipient);
+            helper.setSubject("[SGCI] Nouvelle demande de réinitialisation de mot de passe — " + username);
+            helper.setText(html, true);
+            mailSender.send(mime);
+            log.info("E-mail demande reset password envoyé à l'admin {}", recipient);
+        } catch (MessagingException | RuntimeException e) {
+            log.warn("Échec envoi e-mail demande reset password à l'admin {}: {}", recipient, e.getMessage());
+        }
+    }
+
+    @Async
     public void sendPasswordResetApproved(String toEmail, String username, String newPassword) {
         if (!mailProperties.isEnabled()) {
             return;

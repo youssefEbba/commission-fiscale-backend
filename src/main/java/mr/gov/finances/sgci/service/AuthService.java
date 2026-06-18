@@ -48,11 +48,12 @@ public class AuthService {
         if (!passwordEncoder.matches(request.getPassword(), u.getPasswordHash())) {
             throw new BadCredentialsException("Identifiants incorrects");
         }
+        var permissions = permissionService.findPermissionCodesByRole(u.getRole()).stream().toList();
         String token = jwtService.generateToken(
                 u.getUsername(),
                 u.getRole(),
                 u.getId(),
-                permissionService.findPermissionCodesByRole(u.getRole())
+                permissionService.findPermissionCodesForJwt(u.getRole())
         );
         return LoginResponse.builder()
                 .token(token)
@@ -63,7 +64,7 @@ public class AuthService {
                 .nomComplet(u.getNomComplet())
                 .autoriteContractanteId(u.getAutoriteContractante() != null ? u.getAutoriteContractante().getId() : null)
                 .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null)
-                .permissions(permissionService.findPermissionCodesByRole(u.getRole()).stream().toList())
+                .permissions(permissions)
                 .impersonating(false)
                 .build();
     }
@@ -125,11 +126,12 @@ public class AuthService {
         u = utilisateurRepository.save(u);
         auditService.log(AuditAction.CREATE, "Utilisateur", String.valueOf(u.getId()),
                 Map.of("username", u.getUsername(), "role", u.getRole().name(), "nomComplet", u.getNomComplet() != null ? u.getNomComplet() : ""));
+        var permissions = permissionService.findPermissionCodesByRole(u.getRole()).stream().toList();
         String token = jwtService.generateToken(
                 u.getUsername(),
                 u.getRole(),
                 u.getId(),
-                permissionService.findPermissionCodesByRole(u.getRole())
+                permissionService.findPermissionCodesForJwt(u.getRole())
         );
         return LoginResponse.builder()
                 .token(token)
@@ -140,7 +142,7 @@ public class AuthService {
                 .nomComplet(u.getNomComplet())
                 .autoriteContractanteId(u.getAutoriteContractante() != null ? u.getAutoriteContractante().getId() : null)
                 .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null)
-                .permissions(permissionService.findPermissionCodesByRole(u.getRole()).stream().toList())
+                .permissions(permissions)
                 .impersonating(false)
                 .build();
     }

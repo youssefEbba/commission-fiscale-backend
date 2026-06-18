@@ -72,6 +72,7 @@ public class DemandeExplicationService {
     private final CertificatCreditService certificatCreditService;
     private final UtilisationCreditService utilisationCreditService;
     private final NotificationService notificationService;
+    private final NotificationNavigationHelper notificationNavigationHelper;
     private final AuditService auditService;
 
     @Transactional(readOnly = true)
@@ -288,6 +289,7 @@ public class DemandeExplicationService {
         payload.put("dossierId", entityId);
         payload.put("roleDestinataire", thread.getRoleDestinataire().name());
         payload.put("statut", thread.getStatut().name());
+        payload.put("redirectPath", notificationNavigationHelper.buildRedirectPath(thread.getContexte(), entityId));
 
         notificationService.notifyUsers(
                 userIds,

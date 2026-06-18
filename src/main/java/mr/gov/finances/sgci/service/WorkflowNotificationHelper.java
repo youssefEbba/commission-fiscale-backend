@@ -2,6 +2,8 @@ package mr.gov.finances.sgci.service;
 
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.ClotureCredit;
+import mr.gov.finances.sgci.domain.entity.DecisionCorrection;
+import mr.gov.finances.sgci.domain.entity.DecisionUtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.TransfertCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
@@ -13,9 +15,11 @@ import mr.gov.finances.sgci.notification.WorkflowNotificationContext;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class WorkflowNotificationHelper {
@@ -42,6 +46,22 @@ public class WorkflowNotificationHelper {
         dispatchCorrection(event, d, actor, statut != null ? statut.name() : null, motif, true);
     }
 
+    public void correctionDecision(DemandeCorrection d, DecisionCorrection decision, AuthenticatedUser actor) {
+        if (d == null || decision == null || decision.getDecision() == null) {
+            return;
+        }
+        String decisionType = decision.getDecision().name();
+        WorkflowEventCode event = "REJET_TEMP".equals(decisionType)
+                ? WorkflowEventCode.CORRECTION_REJET_TEMP
+                : ("REJET".equals(decisionType) ? WorkflowEventCode.CORRECTION_REJET_DEFINITIF : WorkflowEventCode.CORRECTION_VISA);
+        if ("REJET_TEMP".equals(decisionType)) {
+            Map<String, Object> extra = rejetTempExtra(decision.getId(), decision.getDocumentsDemandes());
+            dispatchCorrection(event, d, actor, StatutDemande.INCOMPLETE.name(), decision.getMotifRejet(), false, extra, List.of());
+        } else {
+            dispatchCorrection(event, d, actor, null, decision.getMotifRejet(), false);
+        }
+    }
+
     public void correctionDecision(DemandeCorrection d, String decisionType, AuthenticatedUser actor, String motif) {
         if (d == null) {
             return;
@@ -56,10 +76,14 @@ public class WorkflowNotificationHelper {
         dispatchCorrection(WorkflowEventCode.CORRECTION_REJET_TEMP_RESOLU, d, actor, StatutDemande.RECEVABLE.name(), null, false);
     }
 
-    public void correctionRejetTempReponse(DemandeCorrection d, AuthenticatedUser actor, Role emitterRole, String codeDocument) {
+    public void correctionRejetTempReponse(DemandeCorrection d, AuthenticatedUser actor, Role emitterRole,
+                                           String codeDocument, Long decisionId) {
         Map<String, Object> extra = new HashMap<>();
         if (codeDocument != null) {
             extra.put("codeDocument", codeDocument);
+        }
+        if (decisionId != null) {
+            extra.put("decisionId", decisionId);
         }
         WorkflowNotificationContext ctx = baseCorrection(d, actor)
                 .extraPayload(extra)
@@ -138,21 +162,20 @@ public class WorkflowNotificationHelper {
                 .build());
     }
 
-    public void certificatDecision(CertificatCredit c, String decisionType, AuthenticatedUser actor, String motif) {
+    public void certificatDecision(CertificatCredit c, String decisionType, AuthenticatedUser actor, String motif,
+                                   Set<String> documentsDemandes, Long decisionId) {
         if (c == null) {
             return;
         }
         WorkflowEventCode event = "REJET_TEMP".equals(decisionType)
                 ? WorkflowEventCode.CERTIFICAT_REJET_TEMP
                 : WorkflowEventCode.CERTIFICAT_VISA;
-        dispatcher.dispatch(event, WorkflowNotificationContext.builder()
-                .entityType("CertificatCredit")
-                .entityId(c.getId())
-                .dossierLabel(c.getNumero())
-                .actor(actor)
-                .motif(motif)
-                .entrepriseId(c.getEntreprise() != null ? c.getEntreprise().getId() : null)
-                .build());
+        WorkflowNotificationContext.WorkflowNotificationContextBuilder builder = baseCertificat(c, actor).motif(motif);
+        if ("REJET_TEMP".equals(decisionType)) {
+            Map<String, Object> extra = rejetTempExtra(decisionId, documentsDemandes);
+            builder.newStatus("INCOMPLETE").extraPayload(extra);
+        }
+        dispatcher.dispatch(event, builder.build());
     }
 
     public void certificatPresidentValidation(CertificatCredit c) {
@@ -169,23 +192,23 @@ public class WorkflowNotificationHelper {
     }
 
     public void certificatRejetTempResolu(CertificatCredit c, AuthenticatedUser actor) {
-        dispatcher.dispatch(WorkflowEventCode.CERTIFICAT_REJET_TEMP_RESOLU, WorkflowNotificationContext.builder()
-                .entityType("CertificatCredit")
-                .entityId(c.getId())
-                .dossierLabel(c.getNumero())
-                .actor(actor)
+        dispatcher.dispatch(WorkflowEventCode.CERTIFICAT_REJET_TEMP_RESOLU, baseCertificat(c, actor)
                 .newStatus("A_RECONTROLER")
-                .entrepriseId(c.getEntreprise() != null ? c.getEntreprise().getId() : null)
                 .build());
     }
 
-    public void certificatRejetTempReponse(CertificatCredit c, AuthenticatedUser actor, Role emitterRole) {
-        dispatcher.dispatch(WorkflowEventCode.CERTIFICAT_REJET_TEMP_REPONSE, WorkflowNotificationContext.builder()
-                .entityType("CertificatCredit")
-                .entityId(c.getId())
-                .dossierLabel(c.getNumero())
-                .actor(actor)
+    public void certificatRejetTempReponse(CertificatCredit c, AuthenticatedUser actor, Role emitterRole,
+                                           String codeDocument, Long decisionId) {
+        Map<String, Object> extra = new HashMap<>();
+        if (codeDocument != null && !codeDocument.isBlank()) {
+            extra.put("codeDocument", codeDocument);
+        }
+        if (decisionId != null) {
+            extra.put("decisionId", decisionId);
+        }
+        dispatcher.dispatch(WorkflowEventCode.CERTIFICAT_REJET_TEMP_REPONSE, baseCertificat(c, actor)
                 .roleRecipients(emitterRole != null ? List.of(emitterRole) : List.of(Role.DGI, Role.DGD, Role.DGTCP))
+                .extraPayload(extra)
                 .build());
     }
 
@@ -227,16 +250,22 @@ public class WorkflowNotificationHelper {
                 .build());
     }
 
-    public void utilisationRejetTemp(UtilisationCredit u, AuthenticatedUser actor, String motif) {
+    public void utilisationRejetTemp(UtilisationCredit u, DecisionUtilisationCredit decision, AuthenticatedUser actor) {
+        if (u == null || decision == null) {
+            return;
+        }
         boolean douane = u.getType() == TypeUtilisation.DOUANIER;
+        Map<String, Object> extra = rejetTempExtra(decision.getId(), decision.getDocumentsDemandes());
         dispatcher.dispatch(douane ? WorkflowEventCode.UTIL_DOUANE_REJET_TEMP : WorkflowEventCode.UTIL_TVA_REJET_TEMP,
                 WorkflowNotificationContext.builder()
                         .entityType("UtilisationCredit")
                         .entityId(u.getId())
                         .dossierLabel(utilisationLabel(u))
                         .actor(actor)
-                        .motif(motif)
+                        .motif(decision.getMotifRejet())
+                        .newStatus("INCOMPLETE")
                         .entrepriseId(u.getEntreprise() != null ? u.getEntreprise().getId() : null)
+                        .extraPayload(extra)
                         .build());
     }
 
@@ -254,8 +283,12 @@ public class WorkflowNotificationHelper {
                         .build());
     }
 
-    public void utilisationRejetTempReponse(UtilisationCredit u, AuthenticatedUser actor, Role emitterRole) {
+    public void utilisationRejetTempReponse(UtilisationCredit u, AuthenticatedUser actor, Role emitterRole, Long decisionId) {
         boolean douane = u.getType() == TypeUtilisation.DOUANIER;
+        Map<String, Object> extra = new HashMap<>();
+        if (decisionId != null) {
+            extra.put("decisionId", decisionId);
+        }
         dispatcher.dispatch(douane ? WorkflowEventCode.UTIL_DOUANE_REJET_TEMP_REPONSE : WorkflowEventCode.UTIL_TVA_REJET_TEMP_REPONSE,
                 WorkflowNotificationContext.builder()
                         .entityType("UtilisationCredit")
@@ -263,10 +296,16 @@ public class WorkflowNotificationHelper {
                         .dossierLabel(utilisationLabel(u))
                         .actor(actor)
                         .roleRecipients(emitterRole != null ? List.of(emitterRole) : List.of(Role.DGTCP, Role.DGD))
+                        .extraPayload(extra)
                         .build());
     }
 
     public void transfert(TransfertCredit t, WorkflowEventCode event, AuthenticatedUser actor) {
+        transfert(t, event, actor, null, null);
+    }
+
+    public void transfert(TransfertCredit t, WorkflowEventCode event, AuthenticatedUser actor,
+                          Long decisionId, Set<String> documentsDemandes) {
         if (t == null) {
             return;
         }
@@ -280,6 +319,7 @@ public class WorkflowNotificationHelper {
             case TRANSFERT_REJET_TEMP, TRANSFERT_VALIDE, TRANSFERT_REJETE -> List.of();
             default -> List.of(Role.DGTCP);
         };
+        Map<String, Object> extra = rejetTempExtra(decisionId, documentsDemandes);
         dispatcher.dispatch(event, WorkflowNotificationContext.builder()
                 .entityType("TransfertCredit")
                 .entityId(t.getId())
@@ -288,6 +328,7 @@ public class WorkflowNotificationHelper {
                 .newStatus(t.getStatut() != null ? t.getStatut().name() : null)
                 .entrepriseId(entrepriseId)
                 .roleRecipients(roles)
+                .extraPayload(extra)
                 .build());
     }
 
@@ -310,12 +351,38 @@ public class WorkflowNotificationHelper {
         dispatcher.dispatch(event, WorkflowNotificationContext.builder()
                 .entityType("ClotureCredit")
                 .entityId(cc.getId())
+                .certificatCreditId(c.getId())
                 .dossierLabel(c.getNumero())
                 .actor(actor)
                 .entrepriseId(entrepriseId)
                 .roleRecipients(roles)
                 .motif(cc.getMotif() != null ? cc.getMotif().name() : null)
                 .build());
+    }
+
+    private WorkflowNotificationContext.WorkflowNotificationContextBuilder baseCertificat(CertificatCredit c,
+                                                                                          AuthenticatedUser actor) {
+        Long autoriteId = c.getDemandeCorrection() != null && c.getDemandeCorrection().getAutoriteContractante() != null
+                ? c.getDemandeCorrection().getAutoriteContractante().getId()
+                : null;
+        return WorkflowNotificationContext.builder()
+                .entityType("CertificatCredit")
+                .entityId(c.getId())
+                .dossierLabel(c.getNumero())
+                .actor(actor)
+                .entrepriseId(c.getEntreprise() != null ? c.getEntreprise().getId() : null)
+                .autoriteContractanteId(autoriteId);
+    }
+
+    private static Map<String, Object> rejetTempExtra(Long decisionId, Set<String> documentsDemandes) {
+        Map<String, Object> extra = new HashMap<>();
+        if (decisionId != null) {
+            extra.put("decisionId", decisionId);
+        }
+        if (documentsDemandes != null && !documentsDemandes.isEmpty()) {
+            extra.put("documentsDemandes", new ArrayList<>(documentsDemandes));
+        }
+        return extra;
     }
 
     private List<Role> commissionRoles(boolean include) {

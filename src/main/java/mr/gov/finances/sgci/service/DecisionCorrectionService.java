@@ -49,6 +49,7 @@ public class DecisionCorrectionService {
     private final WorkflowNotificationHelper workflowNotificationHelper;
     private final DemandeCorrectionWorkflow demandeCorrectionWorkflow;
     private final DemandeCorrectionService demandeCorrectionService;
+    private final DocumentService documentService;
 
     @Transactional
     public DecisionCorrectionDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
@@ -146,6 +147,12 @@ public class DecisionCorrectionService {
                         "VISA impossible: un ou plusieurs rejets temporaires sont encore ouverts pour ce rôle. "
                                 + "Résolvez-les via PUT .../decisions/{id}/resolve pour chaque rejet concerné.");
             }
+            if (role == Role.DGI) {
+                documentService.assertActiveDocumentPresent(demandeId, TypeDocument.CREDIT_INTERIEUR.name());
+            }
+            if (role == Role.DGD) {
+                documentService.assertActiveDocumentPresent(demandeId, TypeDocument.OFFRE_FISCALE_CORRIGEE.name());
+            }
         }
 
         DecisionCorrection entity = DecisionCorrection.builder()
@@ -223,6 +230,15 @@ public class DecisionCorrectionService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Réouverture après réclamation acceptée : efface visas et rejets temporaires pour que chaque
+     * membre de la commission doive à nouveau poser son visa.
+     */
+    @Transactional
+    public void resetDecisionsForReclamationAcceptee(Long demandeId) {
+        decisionRepository.deleteByDemandeCorrectionId(demandeId);
+    }
+
     private DecisionCorrectionDto toDto(DecisionCorrection entity) {
         return DecisionCorrectionDto.builder()
                 .id(entity.getId())
@@ -258,6 +274,6 @@ public class DecisionCorrectionService {
         if (demande == null || decision == null || decision.getDecision() == null) {
             return;
         }
-        workflowNotificationHelper.correctionDecision(demande, decision.getDecision().name(), user, decision.getMotifRejet());
+        workflowNotificationHelper.correctionDecision(demande, decision, user);
     }
 }

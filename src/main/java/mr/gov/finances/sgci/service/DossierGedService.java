@@ -20,12 +20,17 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.UUID;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class DossierGedService {
+
+    private static final Set<String> CORRECTION_CODES_TRAITEMENT = Set.of(
+            "OFFRE_FISCALE_CORRIGEE", "OFFRE_CORRIGEE", "CREDIT_INTERIEUR", "CREDIT_EXTERIEUR",
+            "FEUILLE_EVALUATION_SIGNEE");
+    private static final Set<String> CORRECTION_CODES_RETOUR = Set.of("LETTRE_ADOPTION");
 
     private final DossierGedRepository dossierRepository;
     private final DemandeCorrectionRepository demandeCorrectionRepository;
@@ -51,10 +56,6 @@ public class DossierGedService {
 
     private final UtilisateurRepository utilisateurRepository;
     private final EffectiveIdentityService effectiveIdentityService;
-
-    private static String generateReference() {
-        return "DOSS-" + Instant.now().getEpochSecond() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-    }
 
     /**
      * Supprime le dossier GED lié à une demande (ex. suppression d'un brouillon), sans toucher à la demande elle-même avant appelant.
@@ -88,8 +89,11 @@ public class DossierGedService {
                 .orElseGet(() -> {
                     DemandeCorrection dc = demandeCorrectionRepository.findById(demandeCorrectionId)
                             .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + demandeCorrectionId));
+                    String reference = DossierReferenceGenerator.ensureUnique(
+                            DossierReferenceGenerator.buildReference(dc),
+                            dossierRepository::existsByReference);
                     DossierGed d = DossierGed.builder()
-                            .reference(generateReference())
+                            .reference(reference)
                             .entreprise(dc.getEntreprise())
                             .demandeCorrection(dc)
                             .dateCreation(Instant.now())
@@ -206,10 +210,21 @@ public class DossierGedService {
     private List<DossierEtapeGed> buildEtapes(DossierGed dossier) {
         List<DossierEtapeGed> etapes = new ArrayList<>();
 
+        List<DocumentDto> correctionDocs = documentsCorrection(dossier);
+        List<DocumentDto> demandeCorrection = correctionDocs.stream()
+                .filter(d -> !isCorrectionTraitement(d) && !isCorrectionRetour(d))
+                .collect(Collectors.toList());
+        List<DocumentDto> traitementCorrection = correctionDocs.stream()
+                .filter(this::isCorrectionTraitement)
+                .collect(Collectors.toList());
+        List<DocumentDto> retourCorrection = correctionDocs.stream()
+                .filter(this::isCorrectionRetour)
+                .collect(Collectors.toList());
+
         etapes.add(step("DEMANDE_CORRECTION", "Demande de correction",
-                mergeByDateDesc(documentsCorrection(dossier), documentsMarche(dossier))));
-        etapes.add(step("TRAITEMENT_CORRECTION", "Traitement de la correction", List.of()));
-        etapes.add(step("RETOUR_CORRECTION", "Retour de la correction", List.of()));
+                mergeByDateDesc(demandeCorrection, documentsMarche(dossier))));
+        etapes.add(step("TRAITEMENT_CORRECTION", "Traitement de la correction", traitementCorrection));
+        etapes.add(step("RETOUR_CORRECTION", "Retour de la correction", retourCorrection));
 
         etapes.add(step("DEMANDE_CREDIT_IMPOT", "Demande de crédit d'impôt",
                 mergeByDateDesc(documentsConvention(dossier), documentsReferentielProjets(dossier))));
@@ -225,6 +240,16 @@ public class DossierGedService {
         etapes.add(step("CLOTURE_CREDIT", "Clôture du crédit", documentsCloture(dossier)));
 
         return etapes;
+    }
+
+    private boolean isCorrectionTraitement(DocumentDto d) {
+        return d != null && d.getCodeDocument() != null
+                && CORRECTION_CODES_TRAITEMENT.contains(d.getCodeDocument());
+    }
+
+    private boolean isCorrectionRetour(DocumentDto d) {
+        return d != null && d.getCodeDocument() != null
+                && CORRECTION_CODES_RETOUR.contains(d.getCodeDocument());
     }
 
     private List<DocumentDto> mergeByDateDesc(List<DocumentDto> first, List<DocumentDto> second) {
@@ -336,6 +361,7 @@ public class DossierGedService {
                 .taille(d.getTaille())
                 .version(d.getVersion())
                 .actif(d.getActif())
+                .versionCourante(Boolean.TRUE.equals(d.getActif()))
                 .build();
     }
 
@@ -349,6 +375,7 @@ public class DossierGedService {
                 .taille(d.getTaille())
                 .version(d.getVersion())
                 .actif(d.getActif())
+                .versionCourante(Boolean.TRUE.equals(d.getActif()))
                 .build();
     }
 
@@ -362,6 +389,7 @@ public class DossierGedService {
                 .taille(d.getTaille())
                 .version(d.getVersion())
                 .actif(d.getActif())
+                .versionCourante(Boolean.TRUE.equals(d.getActif()))
                 .build();
     }
 
@@ -375,6 +403,7 @@ public class DossierGedService {
                 .taille(d.getTaille())
                 .version(d.getVersion())
                 .actif(d.getActif())
+                .versionCourante(Boolean.TRUE.equals(d.getActif()))
                 .build();
     }
 
@@ -388,6 +417,7 @@ public class DossierGedService {
                 .taille(d.getTaille())
                 .version(d.getVersion())
                 .actif(d.getActif())
+                .versionCourante(Boolean.TRUE.equals(d.getActif()))
                 .build();
     }
 
@@ -514,6 +544,7 @@ public class DossierGedService {
                 .taille(d.getTaille())
                 .version(d.getVersion())
                 .actif(d.getActif())
+                .versionCourante(Boolean.TRUE.equals(d.getActif()))
                 .build();
     }
 
@@ -527,6 +558,7 @@ public class DossierGedService {
                 .taille(d.getTaille())
                 .version(d.getVersion())
                 .actif(d.getActif())
+                .versionCourante(Boolean.TRUE.equals(d.getActif()))
                 .build();
     }
 }

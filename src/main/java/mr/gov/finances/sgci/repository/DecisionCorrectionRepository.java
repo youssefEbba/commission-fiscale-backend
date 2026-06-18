@@ -14,6 +14,8 @@ import java.util.List;
 public interface DecisionCorrectionRepository extends JpaRepository<DecisionCorrection, Long> {
     List<DecisionCorrection> findByDemandeCorrectionId(Long demandeCorrectionId);
 
+    void deleteByDemandeCorrectionId(Long demandeCorrectionId);
+
     List<DecisionCorrection> findByDemandeCorrectionIdAndDecisionAndRejetTempStatus(Long demandeCorrectionId, DecisionCorrectionType decision, RejetTempStatus rejetTempStatus);
 
     boolean existsByDemandeCorrectionIdAndRoleAndDecision(Long demandeCorrectionId, Role role, DecisionCorrectionType decision);

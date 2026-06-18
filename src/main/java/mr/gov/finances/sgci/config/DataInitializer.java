@@ -6,6 +6,8 @@ import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
 import mr.gov.finances.sgci.domain.entity.Bailleur;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.Convention;
+import mr.gov.finances.sgci.domain.entity.DecisionCertificatCredit;
+import mr.gov.finances.sgci.domain.entity.DecisionCorrection;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.Dqe;
 import mr.gov.finances.sgci.domain.entity.DocumentRequirement;
@@ -17,6 +19,8 @@ import mr.gov.finances.sgci.domain.entity.ReferentielTaxe;
 import mr.gov.finances.sgci.domain.entity.RolePermission;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
+import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
+import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutMarche;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
@@ -28,6 +32,8 @@ import mr.gov.finances.sgci.repository.AutoriteContractanteRepository;
 import mr.gov.finances.sgci.repository.BailleurRepository;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.ConventionRepository;
+import mr.gov.finances.sgci.repository.DecisionCertificatCreditRepository;
+import mr.gov.finances.sgci.repository.DecisionCorrectionRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.DocumentRequirementRepository;
 import mr.gov.finances.sgci.repository.EntrepriseRepository;
@@ -61,6 +67,8 @@ public class DataInitializer implements CommandLineRunner {
     private final ConventionRepository conventionRepository;
     private final BailleurRepository bailleurRepository;
     private final DemandeCorrectionRepository demandeCorrectionRepository;
+    private final DecisionCorrectionRepository decisionCorrectionRepository;
+    private final DecisionCertificatCreditRepository decisionCertificatCreditRepository;
     private final CertificatCreditRepository certificatCreditRepository;
     private final EntrepriseRepository entrepriseRepository;
     private final MarcheRepository marcheRepository;
@@ -99,6 +107,9 @@ public class DataInitializer implements CommandLineRunner {
         seedReferentielTaxes();
         if (Boolean.TRUE.equals(environment.getProperty("app.seed.demande-correction.enabled", Boolean.class, Boolean.TRUE))) {
             seedDemandeCorrectionAdopteeDemo();
+            seedDemandeCorrectionEnValidationPresidentDemo();
+            seedCertificatEnValidationPresidentDemo();
+            seedCertificatEnControleVisasDgdDgiDemo();
         }
         if (Boolean.TRUE.equals(environment.getProperty("app.seed.utilisation-credit-demo.enabled", Boolean.class, Boolean.TRUE))
                 && Boolean.TRUE.equals(environment.getProperty("app.seed.demande-correction.enabled", Boolean.class, Boolean.TRUE))) {
@@ -131,6 +142,16 @@ public class DataInitializer implements CommandLineRunner {
 
         seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "FEUILLE_EVALUATION_SIGNEE", false,
                 all, "Feuille d’évaluation signée", 9);
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "OFFRE_FISCALE_CORRIGEE", false,
+                all, "Offre fiscale corrigée (visa DGD)", 10);
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "OFFRE_CORRIGEE", false,
+                all, "Offre corrigée (alias)", 11);
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "CREDIT_EXTERIEUR", false,
+                all, "Crédit d’impôt extérieur", 12);
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "LETTRE_ADOPTION", false,
+                all, "Lettre d’adoption (Président)", 13);
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "CREDIT_INTERIEUR", false,
+                all, "Crédit d’impôt intérieur (visa DGI)", 14);
 
         /* GED / exigences pièces : ne pas retirer — utilisées par mise en place, utilisations, etc. */
         seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, "LETTRE_SAISINE", false,
@@ -262,6 +283,20 @@ public class DataInitializer implements CommandLineRunner {
     private static final String DEMO_CORRECTION_NUMERO = "DC-DEFAULT-DEMO";
     private static final String DEMO_MARCHE_NUMERO = "MP-DEMO-DEFAULT-VOIRIE";
 
+    /** Dossier correction en attente de validation Président (4 visas commission, sans lettre d'adoption). */
+    private static final String DEMO_PRESIDENT_DC_NUMERO = "DC-DEMO-PRESIDENT";
+    private static final String DEMO_PRESIDENT_MP_NUMERO = "MP-DEMO-PRESIDENT";
+
+    /** Certificat mise en place en attente de validation Président (visas DGD / DGTCP / DGI). */
+    private static final String DEMO_PRESIDENT_CI_NUMERO = "CI-DEMO-PRESIDENT";
+
+    /** Demande de correction adoptée dédiée au certificat {@value #DEMO_CI_VISAS_DGD_DGI_NUMERO}. */
+    private static final String DEMO_CI_VISAS_DC_NUMERO = "DC-DEMO-CI-VISAS";
+    private static final String DEMO_CI_VISAS_MP_NUMERO = "MP-DEMO-CI-VISAS";
+
+    /** Certificat EN_CONTROLE avec visas DGD et DGI — montants DGTCP vides (saisie PATCH /montants). */
+    private static final String DEMO_CI_VISAS_DGD_DGI_NUMERO = "CI-DEMO-VISAS-DGD-DGI";
+
     /**
      * Données de démo : au plus une demande adoptée (+ marché lié) pour l’entreprise NIF_DEFAULT.
      * Idempotent : aucune nouvelle ligne aux redémarrages si une demande {@code DC-DEFAULT-*} existe déjà pour cette entreprise.
@@ -329,6 +364,279 @@ public class DataInitializer implements CommandLineRunner {
         marche = marcheRepository.save(marche);
         demande.setMarche(marche);
         demandeCorrectionRepository.save(demande);
+    }
+
+    /**
+     * Demande {@value #DEMO_PRESIDENT_DC_NUMERO} : statut {@link StatutDemande#EN_VALIDATION},
+     * visas DGD / DGTCP / DGI / DGB en base, sans {@code LETTRE_ADOPTION} — test upload + validation Président.
+     */
+    private void seedDemandeCorrectionEnValidationPresidentDemo() {
+        if (demandeCorrectionRepository.existsByNumero(DEMO_PRESIDENT_DC_NUMERO)) {
+            return;
+        }
+
+        AutoriteContractante autoriteContractante = autoriteContractanteRepository.findByCode("AC_DEFAULT")
+                .orElseThrow(() -> new IllegalStateException("Autorité Contractante par défaut manquante"));
+        Entreprise entreprise = entrepriseRepository.findByNif("NIF_DEFAULT")
+                .orElseThrow(() -> new IllegalStateException("Entreprise par défaut manquante"));
+        Convention convention = conventionRepository.findByReference("CONV-DEFAULT")
+                .orElseThrow(() -> new IllegalStateException("Convention par défaut manquante"));
+
+        Marche marche = Marche.builder()
+                .numeroMarche(DEMO_PRESIDENT_MP_NUMERO)
+                .dateSignature(LocalDate.now())
+                .montantContratHt(BigDecimal.valueOf(850_000))
+                .statut(StatutMarche.EN_COURS)
+                .convention(convention)
+                .build();
+        marche = marcheRepository.save(marche);
+
+        DemandeCorrection demande = DemandeCorrection.builder()
+                .numero(DEMO_PRESIDENT_DC_NUMERO)
+                .dateDepot(Instant.now())
+                .statut(StatutDemande.EN_VALIDATION)
+                .autoriteContractante(autoriteContractante)
+                .entreprise(entreprise)
+                .convention(convention)
+                .build();
+
+        applyCommissionVisaFlags(demande);
+
+        ModeleFiscal modeleFiscal = ModeleFiscal.builder().demandeCorrection(demande).build();
+        Dqe dqe = Dqe.builder().demandeCorrection(demande).build();
+        demande.setModeleFiscal(modeleFiscal);
+        demande.setDqe(dqe);
+        demande = demandeCorrectionRepository.save(demande);
+
+        dossierGedService.ensureCreatedForDemandeCorrection(demande.getId());
+
+        marche.setDemandeCorrection(demande);
+        marche = marcheRepository.save(marche);
+        demande.setMarche(marche);
+        demandeCorrectionRepository.save(demande);
+
+        seedCorrectionVisaDecision(demande, Role.DGD, "dgd");
+        seedCorrectionVisaDecision(demande, Role.DGTCP, "dgtcp");
+        seedCorrectionVisaDecision(demande, Role.DGI, "dgi");
+        seedCorrectionVisaDecision(demande, Role.DGB, "dgb");
+    }
+
+    /**
+     * Certificat {@value #DEMO_PRESIDENT_CI_NUMERO} lié à {@value #DEMO_CORRECTION_NUMERO} (ADOPTEE) :
+     * statut {@link StatutCertificat#EN_VALIDATION_PRESIDENT}, visas DGD / DGTCP / DGI — test validation Président mise en place.
+     */
+    private void seedCertificatEnValidationPresidentDemo() {
+        if (certificatCreditRepository.existsByNumero(DEMO_PRESIDENT_CI_NUMERO)) {
+            return;
+        }
+
+        DemandeCorrection demandeAdoptee = demandeCorrectionRepository.findByNumero(DEMO_CORRECTION_NUMERO).orElse(null);
+        if (demandeAdoptee == null || demandeAdoptee.getId() == null) {
+            return;
+        }
+        Entreprise entreprise = entrepriseRepository.findByNif("NIF_DEFAULT").orElse(null);
+        if (entreprise == null) {
+            return;
+        }
+
+        BigDecimal valeurDouane = BigDecimal.valueOf(500_000);
+        BigDecimal droitsHorsTva = BigDecimal.valueOf(120_000);
+        BigDecimal tvaImport = BigDecimal.valueOf(80_000);
+        BigDecimal marcheHt = BigDecimal.valueOf(600_000);
+        BigDecimal tvaTravaux = BigDecimal.valueOf(200_000);
+
+        CertificatCredit certificat = buildOpenCertificatEntity(
+                DEMO_PRESIDENT_CI_NUMERO,
+                demandeAdoptee,
+                entreprise,
+                valeurDouane,
+                droitsHorsTva,
+                tvaImport,
+                marcheHt,
+                tvaTravaux,
+                droitsHorsTva,
+                tvaTravaux.subtract(tvaImport));
+        certificat.setStatut(StatutCertificat.EN_VALIDATION_PRESIDENT);
+        certificat = certificatCreditRepository.save(certificat);
+
+        seedCertificatVisaDecision(certificat, Role.DGD, "dgd");
+        seedCertificatVisaDecision(certificat, Role.DGTCP, "dgtcp");
+        seedCertificatVisaDecision(certificat, Role.DGI, "dgi");
+    }
+
+    /**
+     * Certificat {@value #DEMO_CI_VISAS_DGD_DGI_NUMERO} lié à {@value #DEMO_CI_VISAS_DC_NUMERO} (ADOPTEE) :
+     * statut {@link StatutCertificat#EN_CONTROLE}, visas DGD et DGI posés, montants DGTCP non renseignés
+     * (saisie via {@code PATCH /api/certificats-credit/{id}/montants}).
+     */
+    private void seedCertificatEnControleVisasDgdDgiDemo() {
+        var existing = certificatCreditRepository.findByNumero(DEMO_CI_VISAS_DGD_DGI_NUMERO);
+        if (existing.isPresent()) {
+            repairDemoCertificatSansMontantsDgtcp(existing.get());
+            ensureCertificatVisasDgdDgiOnly(existing.get());
+            return;
+        }
+
+        DemandeCorrection demandeAdoptee = ensureDemandeCorrectionAdopteeForCiVisasDemo();
+        if (demandeAdoptee == null || demandeAdoptee.getId() == null) {
+            return;
+        }
+        if (certificatCreditRepository.countByDemandeCorrectionIdAndStatutNot(demandeAdoptee.getId(), StatutCertificat.ANNULE) > 0) {
+            return;
+        }
+
+        Entreprise entreprise = entrepriseRepository.findByNif("NIF_DEFAULT").orElse(null);
+        if (entreprise == null) {
+            return;
+        }
+
+        CertificatCredit certificat = CertificatCredit.builder()
+                .numero(DEMO_CI_VISAS_DGD_DGI_NUMERO)
+                .dateEmission(Instant.now())
+                .dateValidite(Instant.now().plusSeconds(365L * 24 * 3600))
+                .statut(StatutCertificat.EN_CONTROLE)
+                .entreprise(entreprise)
+                .demandeCorrection(demandeAdoptee)
+                .build();
+        certificat = certificatCreditRepository.save(certificat);
+
+        seedCertificatVisaDecision(certificat, Role.DGD, "dgd");
+        seedCertificatVisaDecision(certificat, Role.DGI, "dgi");
+    }
+
+    /** Remet à blanc les montants agrégés DGTCP sur le certificat démo (réparation seed). */
+    private void repairDemoCertificatSansMontantsDgtcp(CertificatCredit certificat) {
+        if (certificat == null) {
+            return;
+        }
+        certificat.setMontantCordon(null);
+        certificat.setMontantTVAInterieure(null);
+        certificat.setSoldeCordon(null);
+        certificat.setSoldeTVA(null);
+        certificat.setValeurDouaneFournitures(null);
+        certificat.setDroitsEtTaxesDouaneHorsTva(null);
+        certificat.setTvaImportationDouaneAccordee(null);
+        certificat.setTvaImportationDouane(null);
+        certificat.setMontantMarcheHt(null);
+        certificat.setTvaCollecteeTravaux(null);
+        if (certificat.getStatut() != StatutCertificat.EN_CONTROLE) {
+            certificat.setStatut(StatutCertificat.EN_CONTROLE);
+        }
+        certificatCreditRepository.save(certificat);
+    }
+
+    private void ensureCertificatVisasDgdDgiOnly(CertificatCredit certificat) {
+        if (certificat == null || certificat.getId() == null) {
+            return;
+        }
+        seedCertificatVisaDecision(certificat, Role.DGD, "dgd");
+        seedCertificatVisaDecision(certificat, Role.DGI, "dgi");
+    }
+
+    private DemandeCorrection ensureDemandeCorrectionAdopteeForCiVisasDemo() {
+        return demandeCorrectionRepository.findByNumero(DEMO_CI_VISAS_DC_NUMERO).orElseGet(() -> {
+            AutoriteContractante autoriteContractante = autoriteContractanteRepository.findByCode("AC_DEFAULT")
+                    .orElseThrow(() -> new IllegalStateException("Autorité Contractante par défaut manquante"));
+            Entreprise entreprise = entrepriseRepository.findByNif("NIF_DEFAULT")
+                    .orElseThrow(() -> new IllegalStateException("Entreprise par défaut manquante"));
+            Convention convention = conventionRepository.findByReference("CONV-DEFAULT")
+                    .orElseThrow(() -> new IllegalStateException("Convention par défaut manquante"));
+
+            Marche marche = Marche.builder()
+                    .numeroMarche(DEMO_CI_VISAS_MP_NUMERO)
+                    .dateSignature(LocalDate.now())
+                    .montantContratHt(BigDecimal.valueOf(720_000))
+                    .statut(StatutMarche.EN_COURS)
+                    .convention(convention)
+                    .build();
+            marche = marcheRepository.save(marche);
+
+            DemandeCorrection demande = DemandeCorrection.builder()
+                    .numero(DEMO_CI_VISAS_DC_NUMERO)
+                    .dateDepot(Instant.now())
+                    .statut(StatutDemande.ADOPTEE)
+                    .autoriteContractante(autoriteContractante)
+                    .entreprise(entreprise)
+                    .convention(convention)
+                    .build();
+
+            applyCommissionVisaFlags(demande);
+
+            ModeleFiscal modeleFiscal = ModeleFiscal.builder().demandeCorrection(demande).build();
+            Dqe dqe = Dqe.builder().demandeCorrection(demande).build();
+            demande.setModeleFiscal(modeleFiscal);
+            demande.setDqe(dqe);
+            demande = demandeCorrectionRepository.save(demande);
+
+            dossierGedService.ensureCreatedForDemandeCorrection(demande.getId());
+
+            marche.setDemandeCorrection(demande);
+            marche = marcheRepository.save(marche);
+            demande.setMarche(marche);
+            return demandeCorrectionRepository.save(demande);
+        });
+    }
+
+    private void applyCommissionVisaFlags(DemandeCorrection demande) {
+        demande.setValidationDgd(true);
+        demande.setValidationDgdDate(Instant.now());
+        demande.setValidationDgdUserId(userId("dgd"));
+        demande.setValidationDgtcp(true);
+        demande.setValidationDgtcpDate(Instant.now());
+        demande.setValidationDgtcpUserId(userId("dgtcp"));
+        demande.setValidationDgi(true);
+        demande.setValidationDgiDate(Instant.now());
+        demande.setValidationDgiUserId(userId("dgi"));
+        demande.setValidationDgb(true);
+        demande.setValidationDgbDate(Instant.now());
+        demande.setValidationDgbUserId(userId("dgb"));
+    }
+
+    private Long userId(String username) {
+        return utilisateurRepository.findByUsername(username).map(Utilisateur::getId).orElse(null);
+    }
+
+    private Utilisateur requireSeedUser(String username) {
+        return utilisateurRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalStateException("Utilisateur seed manquant: " + username));
+    }
+
+    private void seedCorrectionVisaDecision(DemandeCorrection demande, Role role, String username) {
+        if (demande == null || demande.getId() == null) {
+            return;
+        }
+        if (decisionCorrectionRepository.existsByDemandeCorrectionIdAndRoleAndDecision(
+                demande.getId(), role, DecisionCorrectionType.VISA)) {
+            return;
+        }
+        decisionCorrectionRepository.save(DecisionCorrection.builder()
+                .demandeCorrection(demande)
+                .role(role)
+                .decision(DecisionCorrectionType.VISA)
+                .dateDecision(Instant.now())
+                .rejetTempStatus(RejetTempStatus.RESOLU)
+                .rejetTempResolvedAt(Instant.now())
+                .utilisateur(requireSeedUser(username))
+                .build());
+    }
+
+    private void seedCertificatVisaDecision(CertificatCredit certificat, Role role, String username) {
+        if (certificat == null || certificat.getId() == null) {
+            return;
+        }
+        if (decisionCertificatCreditRepository.existsByCertificatCreditIdAndRoleAndDecision(
+                certificat.getId(), role, DecisionCorrectionType.VISA)) {
+            return;
+        }
+        decisionCertificatCreditRepository.save(DecisionCertificatCredit.builder()
+                .certificatCredit(certificat)
+                .role(role)
+                .decision(DecisionCorrectionType.VISA)
+                .dateDecision(Instant.now())
+                .rejetTempStatus(RejetTempStatus.RESOLU)
+                .rejetTempResolvedAt(Instant.now())
+                .utilisateur(requireSeedUser(username))
+                .build());
     }
 
     private static final String DEMO_CERTIFICAT_OUVERT_NUMERO = "CI-DEMO-OUVERT";
@@ -923,6 +1231,7 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("correction.dgi.queue.view", "Consulter les dossiers visa Impôts");
         createPermission("correction.dgi.visa", "Apposer le visa Impôts");
         createPermission("correction.dgi.reject", "Rejeter le visa Impôts");
+        createPermission("correction.dgi.document.upload", "Téléverser le document crédit intérieur (visa DGI)");
         createPermission("correction.dgb.queue.view", "Consulter les dossiers visa Budget");
         createPermission("correction.dgb.visa", "Apposer le visa Budget");
         createPermission("correction.dgb.reject", "Rejeter le visa Budget");
@@ -1294,6 +1603,7 @@ public class DataInitializer implements CommandLineRunner {
                 "correction.dgi.queue.view",
                 "correction.dgi.visa",
                 "correction.dgi.reject",
+                "correction.dgi.document.upload",
                 "correction.status.update",
                 "mise_en_place.dgi.queue.view",
                 "mise_en_place.dgi.validate",

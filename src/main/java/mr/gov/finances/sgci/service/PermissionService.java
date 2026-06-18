@@ -19,6 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PermissionService {
 
+    /** Au-delà, les permissions ne sont pas embarquées dans le JWT (rechargées côté filtre depuis la base). */
+    private static final int JWT_PERMISSION_EMBED_MAX = 50;
+
     private final PermissionRepository permissionRepository;
     private final RolePermissionRepository rolePermissionRepository;
 
@@ -33,6 +36,20 @@ public class PermissionService {
                 .stream()
                 .map(rp -> rp.getPermission().getCode())
                 .collect(Collectors.toSet());
+    }
+
+    /**
+     * Permissions à sérialiser dans le JWT. Les rôles avec beaucoup de droits (ex. PRESIDENT)
+     * renvoient une liste vide : {@link mr.gov.finances.sgci.security.JwtAuthenticationFilter}
+     * recharge les codes depuis la base à chaque requête.
+     */
+    @Transactional(readOnly = true)
+    public List<String> findPermissionCodesForJwt(Role role) {
+        Set<String> all = findPermissionCodesByRole(role);
+        if (all.size() > JWT_PERMISSION_EMBED_MAX) {
+            return List.of();
+        }
+        return new ArrayList<>(all);
     }
 
     @Transactional(readOnly = true)

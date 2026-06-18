@@ -16,6 +16,7 @@ import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
+import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
@@ -28,6 +29,7 @@ import mr.gov.finances.sgci.repository.TvaDeductibleStockRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.web.dto.CertificatCreditDto;
+import mr.gov.finances.sgci.web.dto.CertificatUtilisationEligibilityDto;
 import mr.gov.finances.sgci.web.dto.CreateCertificatCreditRequest;
 import mr.gov.finances.sgci.web.dto.UpdateCertificatCreditMontantsRequest;
 import mr.gov.finances.sgci.workflow.CertificatCreditWorkflow;
@@ -68,6 +70,7 @@ public class CertificatCreditService {
     private final DocumentRequirementValidator requirementValidator;
     private final DossierGedService dossierGedService;
     private final EffectiveIdentityService effectiveIdentityService;
+    private final UtilisationCreditEligibilityHelper utilisationEligibilityHelper;
 
     @Transactional(readOnly = true)
     public List<CertificatCreditDto> findAll(AuthenticatedUser user) {
@@ -78,10 +81,24 @@ public class CertificatCreditService {
     @Transactional(readOnly = true)
     public CertificatCreditDto findById(Long id, AuthenticatedUser user) {
         CertificatCredit c = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + id));
-        if (!canAccessCertificat(c.getId(), user)) {
+        if (user != null && !canAccessCertificat(id, user)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
         }
         return toDto(c);
+    }
+
+    @Transactional(readOnly = true)
+    public CertificatUtilisationEligibilityDto evaluateUtilisationEligibility(
+            Long certificatId, TypeUtilisation type, AuthenticatedUser user) {
+        if (type == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le type d'utilisation est obligatoire");
+        }
+        CertificatCredit c = repository.findById(certificatId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + certificatId));
+        if (user != null && !canAccessCertificat(certificatId, user)) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
+        }
+        return utilisationEligibilityHelper.evaluate(c, type, null);
     }
 
     @Transactional(readOnly = true)

@@ -24,4 +24,6 @@ public class DocumentDto {
     private Long taille;
     private Integer version;
     private Boolean actif;
+    /** {@code true} si c'est la version active ({@link #actif}). */
+    private Boolean versionCourante;
 }

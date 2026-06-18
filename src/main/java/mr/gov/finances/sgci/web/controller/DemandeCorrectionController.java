@@ -130,23 +130,27 @@ public class DemandeCorrectionController {
 
     /** Liste des documents attachés à une demande de correction (7 pièces P1, etc.) */
     @GetMapping("/{id}/documents")
-    @PreAuthorize("hasAnyAuthority('correction.dgd.queue.view', 'correction.offer.view', 'correction.visa.history.view', 'correction.view.audit')")
+    @PreAuthorize("hasAnyAuthority('correction.dgd.queue.view', 'correction.offer.view', 'correction.visa.history.view', 'correction.view.audit', 'correction.president.queue.view', 'correction.president.signature.upload')")
     public List<DocumentDto> getDocuments(@PathVariable Long id) {
         return documentService.findByDemandeCorrectionId(id);
     }
 
-    /** Upload d'un document pour une demande (type = LETTRE_SAISINE, PV_OUVERTURE, OFFRE_FINANCIERE, etc.) */
+    /** Upload d'un document pour une demande (codeDocument = LETTRE_SAISINE, OFFRE_FISCALE_CORRIGEE, CREDIT_INTERIEUR, etc.) */
     @PostMapping(value = "/{id}/documents", consumes = "multipart/form-data")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyAuthority('correction.offer.upload', 'correction.complement.add')")
+    @PreAuthorize("hasAnyAuthority('correction.offer.upload', 'correction.complement.add', 'correction.dgi.document.upload', 'correction.president.signature.upload')")
     public DocumentDto uploadDocument(
             @PathVariable Long id,
-            @RequestParam String codeDocument,
+            @RequestParam(value = "codeDocument", required = false) String codeDocument,
+            @RequestParam(value = "typeDocument", required = false) String typeDocument,
+            @RequestParam(value = "type", required = false) String type,
             @RequestParam(required = false) String message,
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return documentService.upload(id, codeDocument, message, file, user);
+        String resolved = mr.gov.finances.sgci.web.support.DocumentUploadParamResolver
+                .resolveCodeDocument(codeDocument, typeDocument, type);
+        return documentService.upload(id, resolved, message, file, user);
     }
 
     /** Réclamations sur une demande adoptée ou notifiée (dépôt AC / délégués / entreprise). */

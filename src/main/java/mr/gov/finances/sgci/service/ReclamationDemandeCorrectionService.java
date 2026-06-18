@@ -39,6 +39,7 @@ public class ReclamationDemandeCorrectionService {
     private final UtilisateurRepository utilisateurRepository;
     private final DemandeCorrectionWorkflow workflow;
     private final DemandeCorrectionService demandeCorrectionService;
+    private final DecisionCorrectionService decisionCorrectionService;
     private final DocumentService documentService;
     private final MinioService minioService;
     private final AuditService auditService;
@@ -175,6 +176,10 @@ public class ReclamationDemandeCorrectionService {
 
         documentService.archiveAdoptionEtOffresCorrigePourRouverture(demande.getId());
 
+        decisionCorrectionService.resetDecisionsForReclamationAcceptee(demande.getId());
+        if (demande.getDecisions() != null) {
+            demande.getDecisions().clear();
+        }
         resetParallelValidations(demande);
         demande.setStatut(StatutDemande.RECUE);
         demande.setMotifRejet(null);

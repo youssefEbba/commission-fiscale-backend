@@ -14,7 +14,8 @@ import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
+import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
+import mr.gov.finances.sgci.domain.document.DocumentCodeValidator;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.DecisionCertificatCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
@@ -29,7 +30,7 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -47,6 +48,7 @@ public class DecisionCertificatCreditService {
     private final UtilisateurRepository utilisateurRepository;
     private final AuditService auditService;
     private final WorkflowNotificationHelper workflowNotificationHelper;
+    private final DocumentRequirementValidator documentRequirementValidator;
 
     @Transactional
     public DecisionCreditDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
@@ -122,6 +124,15 @@ public class DecisionCertificatCreditService {
             if (documentsDemandes == null || documentsDemandes.isEmpty()) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La liste des documents demandés est obligatoire");
             }
+            Set<String> normalizedDocuments = documentsDemandes.stream()
+                    .map(DocumentCodeValidator::normalize)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toCollection(HashSet::new));
+            if (normalizedDocuments.isEmpty()) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La liste des documents demandés est obligatoire");
+            }
+            documentRequirementValidator.assertDocumentsConfiguredForProcessus(ProcessusDocument.MISE_EN_PLACE_CI, normalizedDocuments);
+            documentsDemandes = normalizedDocuments;
         }
 
         Utilisateur utilisateur = utilisateurRepository.findById(user.getUserId())
@@ -176,7 +187,9 @@ public class DecisionCertificatCreditService {
             tryAutoTransitionToPresident(certificat);
         }
 
-        workflowNotificationHelper.certificatDecision(certificat, decision.name(), user, motifRejet);
+        workflowNotificationHelper.certificatDecision(certificat, decision.name(), user, motifRejet,
+                decision == DecisionCorrectionType.REJET_TEMP ? entity.getDocumentsDemandes() : null,
+                entity.getId());
 
         auditService.log(AuditAction.UPDATE, "DecisionCertificatCredit",
                 String.valueOf(entity.getId()), toDto(entity));

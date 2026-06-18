@@ -95,6 +95,8 @@ public class TestWorkflowDataSeed implements CommandLineRunner {
                 .dateValidite(Instant.now().plusSeconds(365L * 24 * 3600))
                 .montantCordon(BigDecimal.valueOf(5_000_000))
                 .montantTVAInterieure(BigDecimal.valueOf(3_000_000))
+                .tvaImportationDouaneAccordee(BigDecimal.valueOf(3_000_000))
+                .tvaImportationDouane(BigDecimal.valueOf(3_000_000))
                 .soldeCordon(BigDecimal.valueOf(5_000_000))
                 .soldeTVA(BigDecimal.valueOf(3_000_000))
                 .statut(StatutCertificat.OUVERT)

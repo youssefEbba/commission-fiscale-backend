@@ -46,15 +46,19 @@ public class DocumentService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
 
-        requirementValidator.validateUpload(ProcessusDocument.CORRECTION_OFFRE_FISCALE, codeDocument, file);
         DemandeCorrection demande = demandeRepository.findById(demandeCorrectionId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + demandeCorrectionId));
+
+        assertRoleAllowedToUpload(user, codeDocument, demande);
+        requirementValidator.validateUpload(ProcessusDocument.CORRECTION_OFFRE_FISCALE, codeDocument, file);
 
         int nextVersion = 1;
         Document previous = documentRepository.findByDemandeCorrectionIdAndCodeDocumentAndActifTrue(demandeCorrectionId, codeDocument)
                 .orElse(null);
         if (previous != null) {
-            assertReplacementAllowed(demande, codeDocument, user);
+            if (!isPresidentLettreAdoptionReplacement(demande, codeDocument, user)) {
+                assertReplacementAllowed(demande, codeDocument, user);
+            }
             previous.setActif(false);
             nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
         } else {
@@ -138,6 +142,53 @@ public class DocumentService {
                 .map(Document::getCodeDocument)
                 .distinct()
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public void assertActiveDocumentPresent(Long demandeCorrectionId, String codeDocument) {
+        assertActiveDocumentPresent(demandeCorrectionId, codeDocument, "avant visa");
+    }
+
+    @Transactional(readOnly = true)
+    public void assertActiveDocumentPresent(Long demandeCorrectionId, String codeDocument, String context) {
+        if (demandeCorrectionId == null || codeDocument == null || codeDocument.isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Document requis manquant");
+        }
+        boolean present = documentRepository
+                .findByDemandeCorrectionIdAndCodeDocumentAndActifTrue(demandeCorrectionId, codeDocument)
+                .isPresent();
+        if (!present) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Document actif requis " + context + ": " + codeDocument);
+        }
+    }
+
+    private void assertRoleAllowedToUpload(AuthenticatedUser user, String codeDocument, DemandeCorrection demande) {
+        if (user == null || user.getRole() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        if (user.getRole() == Role.DGI && !"CREDIT_INTERIEUR".equals(codeDocument)) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Le DGI ne peut téléverser que le document CREDIT_INTERIEUR");
+        }
+        if (user.getRole() == Role.PRESIDENT) {
+            if (!"LETTRE_ADOPTION".equals(codeDocument)) {
+                throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                        "Le Président ne peut téléverser que le document LETTRE_ADOPTION");
+            }
+            if (demande == null || demande.getStatut() != StatutDemande.EN_VALIDATION) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "La lettre d'adoption ne peut être déposée qu'en statut EN_VALIDATION");
+            }
+        }
+    }
+
+    private static boolean isPresidentLettreAdoptionReplacement(
+            DemandeCorrection demande, String codeDocument, AuthenticatedUser user) {
+        return user != null && user.getRole() == Role.PRESIDENT
+                && "LETTRE_ADOPTION".equals(codeDocument)
+                && demande != null
+                && demande.getStatut() == StatutDemande.EN_VALIDATION;
     }
 
     /**

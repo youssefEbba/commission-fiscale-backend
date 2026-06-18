@@ -55,6 +55,7 @@ mr\gov\finances\sgci\repository\DemandeExplicationRepository.class
 mr\gov\finances\sgci\web\dto\DecisionCreditRequest.class
 mr\gov\finances\sgci\domain\entity\Entreprise.class
 mr\gov\finances\sgci\web\dto\TauxChangeResponse.class
+mr\gov\finances\sgci\service\UtilisationCreditEligibilityHelper$SoldesProposes.class
 mr\gov\finances\sgci\web\dto\LoginResponse$LoginResponseBuilder.class
 mr\gov\finances\sgci\web\dto\DemandeCorrectionDto$DemandeCorrectionDtoBuilder.class
 mr\gov\finances\sgci\web\controller\DemandeExplicationController.class
@@ -164,7 +165,9 @@ mr\gov\finances\sgci\web\controller\TransfertCreditController.class
 mr\gov\finances\sgci\service\ReportingService.class
 mr\gov\finances\sgci\web\dto\DocumentClotureCreditDto$DocumentClotureCreditDtoBuilder.class
 mr\gov\finances\sgci\domain\entity\LigneBulletinLiquidation$LigneBulletinLiquidationBuilder.class
+mr\gov\finances\sgci\service\UtilisationCreditEligibilityHelper.class
 mr\gov\finances\sgci\repository\ReferentielTaxeRepository.class
+mr\gov\finances\sgci\web\support\DocumentUploadParamResolver.class
 mr\gov\finances\sgci\web\dto\DeviseDto.class
 mr\gov\finances\sgci\web\dto\reporting\NamedCountDto$NamedCountDtoBuilder.class
 mr\gov\finances\sgci\domain\enums\StatutReclamationCorrection.class
@@ -178,6 +181,7 @@ mr\gov\finances\sgci\web\dto\SaisirChequeRequest$SaisirChequeRequestBuilder.clas
 mr\gov\finances\sgci\web\dto\CreateUtilisationCreditRequest$CreateUtilisationCreditRequestBuilder.class
 mr\gov\finances\sgci\web\dto\CreateReferentielProjetRequest$CreateReferentielProjetRequestBuilder.class
 mr\gov\finances\sgci\repository\SousTraitanceRepository.class
+mr\gov\finances\sgci\service\NotificationNavigationHelper$1.class
 mr\gov\finances\sgci\web\dto\DocumentProjetDto$DocumentProjetDtoBuilder.class
 mr\gov\finances\sgci\web\dto\AssignMarcheDelegueRequest.class
 mr\gov\finances\sgci\web\controller\CertificatCreditController.class
@@ -277,6 +281,7 @@ mr\gov\finances\sgci\web\controller\DecisionCorrectionController.class
 mr\gov\finances\sgci\repository\DecisionTransfertCreditRepository.class
 mr\gov\finances\sgci\domain\entity\DemandeCorrectionRejet.class
 mr\gov\finances\sgci\domain\entity\DecisionCorrection$DecisionCorrectionBuilder.class
+mr\gov\finances\sgci\web\dto\CertificatUtilisationEligibilityDto$CertificatUtilisationEligibilityDtoBuilder.class
 mr\gov\finances\sgci\web\dto\reporting\ReportingDemandeStatsDto$ReportingDemandeStatsDtoBuilder.class
 mr\gov\finances\sgci\domain\entity\Bailleur.class
 mr\gov\finances\sgci\repository\BailleurRepository.class
@@ -425,6 +430,7 @@ mr\gov\finances\sgci\web\dto\CreateClotureCreditRequest.class
 mr\gov\finances\sgci\web\dto\DocumentDto$DocumentDtoBuilder.class
 mr\gov\finances\sgci\web\controller\BailleurController.class
 mr\gov\finances\sgci\web\controller\ClotureCreditController.class
+mr\gov\finances\sgci\web\dto\CertificatUtilisationEligibilityDto.class
 mr\gov\finances\sgci\web\dto\DocumentCertificatCreditDto$DocumentCertificatCreditDtoBuilder.class
 mr\gov\finances\sgci\repository\DossierGedRepository.class
 mr\gov\finances\sgci\domain\entity\Marche.class
@@ -442,6 +448,7 @@ mr\gov\finances\sgci\repository\AuditLogRepository.class
 mr\gov\finances\sgci\domain\entity\Bailleur$BailleurBuilder.class
 mr\gov\finances\sgci\domain\enums\TypeAvenant.class
 mr\gov\finances\sgci\domain\entity\DemandeResetPassword$DemandeResetPasswordBuilder.class
+mr\gov\finances\sgci\service\NotificationNavigationHelper.class
 mr\gov\finances\sgci\web\dto\UpdateMyProfileRequest$UpdateMyProfileRequestBuilder.class
 mr\gov\finances\sgci\service\WorkflowNotificationHelper.class
 mr\gov\finances\sgci\domain\entity\Document$DocumentBuilder.class

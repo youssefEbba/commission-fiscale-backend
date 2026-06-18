@@ -4,8 +4,8 @@ import lombok.Builder;
 import lombok.Getter;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.service.NotificationNavigationHelper;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,12 +32,24 @@ public class WorkflowNotificationContext {
     private final Map<String, Object> extraPayload = Map.of();
     private final String messageOverride;
 
-    public Map<String, Object> buildPayload(String eventCode) {
+    public Map<String, Object> buildPayload(String eventCode, NotificationNavigationHelper navigationHelper) {
         Map<String, Object> payload = new HashMap<>();
         if (extraPayload != null) {
             payload.putAll(extraPayload);
         }
         payload.put("eventCode", eventCode);
+        if (entityType != null && !payload.containsKey("entityType")) {
+            payload.put("entityType", entityType);
+        }
+        if (entityId != null && !payload.containsKey("entityId")) {
+            payload.put("entityId", entityId);
+        }
+        if (navigationHelper != null && !payload.containsKey("redirectPath")) {
+            String path = navigationHelper.buildRedirectPath(entityType, entityId, certificatCreditId);
+            if (path != null) {
+                payload.put("redirectPath", path);
+            }
+        }
         if (dossierLabel != null) {
             payload.put("dossierLabel", dossierLabel);
         }

@@ -20,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -169,6 +171,9 @@ public class PasswordResetService {
         return toDto(demande);
     }
 
+    private static final DateTimeFormatter DATE_FMT =
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.of("Africa/Nouakchott"));
+
     private void notifyAdminsNewRequest(DemandeResetPassword demande, Utilisateur user) {
         List<Long> adminIds = findAdminUserIdsWithResetPermission();
         if (adminIds.isEmpty()) {
@@ -182,6 +187,22 @@ public class PasswordResetService {
                 "DemandeResetPassword", demande.getId(),
                 "Demande de réinitialisation de mot de passe pour " + user.getUsername(),
                 payload);
+
+        // Envoyer un e-mail à chaque admin ayant une adresse e-mail
+        String dateFormatted = DATE_FMT.format(demande.getDateCreation() != null ? demande.getDateCreation() : Instant.now());
+        utilisateurRepository.findByRoleInAndActifTrue(
+                Arrays.stream(mr.gov.finances.sgci.domain.enums.Role.values())
+                        .filter(role -> permissionService.findPermissionCodesByRole(role).contains(PERMISSION_RESET))
+                        .toList()
+        ).stream()
+                .filter(admin -> admin.getEmail() != null && !admin.getEmail().isBlank())
+                .distinct()
+                .forEach(admin -> emailService.sendPasswordResetRequestToAdmin(
+                        admin.getEmail(),
+                        user.getUsername(),
+                        demande.getEmail(),
+                        dateFormatted
+                ));
     }
 
     private List<Long> findAdminUserIdsWithResetPermission() {

@@ -21,13 +21,11 @@ import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.domain.enums.TypeAchat;
-import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.TvaDeductibleStockSource;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.LigneBulletinLiquidationRepository;
 import mr.gov.finances.sgci.repository.QuittanceTresorRepository;
-import mr.gov.finances.sgci.repository.TransfertCreditRepository;
 import mr.gov.finances.sgci.repository.DecisionUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.DocumentUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.EntrepriseRepository;
@@ -88,8 +86,8 @@ public class UtilisationCreditService {
     private final MinioService minioService;
     private final ObjectMapper objectMapper;
     private final TvaDeductibleStockRepository tvaStockRepository;
-    private final TransfertCreditRepository transfertCreditRepository;
     private final EffectiveIdentityService effectiveIdentityService;
+    private final UtilisationCreditEligibilityHelper eligibilityHelper;
 
     @Transactional(readOnly = true)
     public List<UtilisationCreditDto> findAll() {
@@ -308,9 +306,7 @@ public class UtilisationCreditService {
         boolean brouillon = Boolean.TRUE.equals(request.getBrouillon());
         CertificatCredit certificat = certificatRepository.findById(request.getCertificatCreditId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé"));
-        if (!brouillon && certificat.getStatut() != StatutCertificat.OUVERT) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le crédit doit être OUVERT pour créer une utilisation");
-        }
+        eligibilityHelper.assertCertificatEligible(certificat, request.getType());
         Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée"));
 
@@ -338,10 +334,6 @@ public class UtilisationCreditService {
             }
         }
 
-        if (request.getType() == TypeUtilisation.DOUANIER) {
-            assertPasTransfertExecutePourUtilisationsDouanieres(certificat.getId());
-        }
-
         UtilisationCredit entity;
         if (request.getType() == TypeUtilisation.DOUANIER) {
             UtilisationDouaniere d = new UtilisationDouaniere();
@@ -361,6 +353,7 @@ public class UtilisationCreditService {
 
             if (!brouillon) {
                 assertLignesBulletinAffectationEntreprise(request.getLignes(), true);
+                eligibilityHelper.assertSoldesDouaneProposes(certificat, request.getLignes());
             }
             // Save first to get the id, then attach lines
             entity = repository.save(d);
@@ -444,16 +437,16 @@ public class UtilisationCreditService {
                     "Soumission réservée aux brouillons (statut: " + entity.getStatut() + ")");
         }
         CertificatCredit certificat = entity.getCertificatCredit();
-        if (certificat == null || certificat.getStatut() != StatutCertificat.OUVERT) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                    "Le certificat doit être OUVERT pour soumettre l'utilisation");
+        if (certificat == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat manquant");
         }
+        eligibilityHelper.assertCertificatEligible(certificat, entity.getType());
         if (entity.getType() == TypeUtilisation.DOUANIER) {
-            assertPasTransfertExecutePourUtilisationsDouanieres(certificat.getId());
             UtilisationDouaniere douane = (UtilisationDouaniere) entity;
             List<LigneBulletinLiquidation> lignes = ligneBulletinRepository
                     .findByUtilisationDouaniere_IdOrderByTypeLigneAscIdAsc(douane.getId());
             assertLignesBulletinAffectationEntrepriseFromEntities(lignes, true);
+            eligibilityHelper.assertSoldesDouaneProposesFromEntities(certificat, lignes);
         }
         workflow.validateTransition(StatutUtilisation.BROUILLON, StatutUtilisation.DEMANDEE);
         entity.setStatut(StatutUtilisation.DEMANDEE);
@@ -462,30 +455,6 @@ public class UtilisationCreditService {
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
         notifyUtilisationStatutChange(entity, StatutUtilisation.DEMANDEE, user);
         return result;
-    }
-
-    /**
-     * Après validation DGTCP / Président, un transfert exécuté ({@link StatutTransfert#TRANSFERE}) vide le mécanisme
-     * cordon → intérieur : plus de nouvelles demandes d'utilisation <strong>douanière</strong> sur ce certificat.
-     * <p>
-     * On vérifie à la fois la ligne {@code transfert_credit} (statut {@code TRANSFERE}) et la trace fonctionnelle
-     * en stock TVA déductible d’origine transfert ({@link TvaDeductibleStockSource#TRANSFERT_CREDIT} ou, pour données
-     * anciennes, ligne sans utilisation douanière), pour éviter les trous si la ligne transfert est absente ou si le
-     * statut en base ne correspond plus à l'enum (données anciennes).
-     */
-    private void assertPasTransfertExecutePourUtilisationsDouanieres(Long certificatCreditId) {
-        if (certificatCreditId == null) {
-            return;
-        }
-        boolean transfertExecute = transfertCreditRepository.existsByCertificatCreditIdAndStatut(
-                certificatCreditId, StatutTransfert.TRANSFERE);
-        boolean traceStockTransfert = tvaStockRepository.existsByCertificatCreditIdAndSource(
-                        certificatCreditId, TvaDeductibleStockSource.TRANSFERT_CREDIT)
-                || tvaStockRepository.existsByCertificatCreditIdAndUtilisationDouaneIsNull(certificatCreditId);
-        if (transfertExecute || traceStockTransfert) {
-            throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                    "Un transfert de crédit a été exécuté sur ce certificat : les demandes d'utilisation douanière ne sont plus possibles.");
-        }
     }
 
     @Transactional
@@ -501,9 +470,7 @@ public class UtilisationCreditService {
 
         CertificatCredit certificat = certificatRepository.findById(request.getCertificatCreditId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé"));
-        if (entity.getStatut() != StatutUtilisation.BROUILLON && certificat.getStatut() != StatutCertificat.OUVERT) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le crédit doit être OUVERT");
-        }
+        eligibilityHelper.assertCertificatEligible(certificat, request.getType());
         Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée"));
 
@@ -533,7 +500,6 @@ public class UtilisationCreditService {
         entity.setMontant(request.getMontant());
 
         if (entity instanceof UtilisationDouaniere d) {
-            assertPasTransfertExecutePourUtilisationsDouanieres(certificat.getId());
             d.setNumeroDeclaration(request.getNumeroDeclaration());
             d.setNumeroBulletin(request.getNumeroBulletin());
             d.setDateDeclaration(request.getDateDeclaration());
@@ -543,6 +509,7 @@ public class UtilisationCreditService {
             if (request.getLignes() != null) {
                 if (entity.getStatut() == StatutUtilisation.DEMANDEE) {
                     assertLignesBulletinAffectationEntreprise(request.getLignes(), true);
+                    eligibilityHelper.assertSoldesDouaneProposes(certificat, request.getLignes());
                 }
                 d.getLignes().clear();
                 repository.save(d); // flush orphan removal before re-attaching
@@ -895,7 +862,7 @@ public class UtilisationCreditService {
                     "Le montant total pris en charge par le CI doit être > 0");
         }
 
-        // Upload du bulletin annoté dans le GED si fourni
+        // Stockage MinIO (bulletin optionnel) avant transition EN_CONTROLE_DGD
         if (file != null && !file.isEmpty()) {
             // Désactiver l'ancien bulletin annoté s'il existe
             documentUtilisationCreditRepository
@@ -960,9 +927,6 @@ public class UtilisationCreditService {
         d.setNumeroCheque(request.getNumeroCheque());
         d.setMontantCheque(request.getMontantCheque());
         d.setDateCheque(request.getDateCheque() != null ? request.getDateCheque() : Instant.now());
-        d.setStatut(StatutUtilisation.CHEQUE_SAISI);
-
-        entity = repository.save(d);
 
         // Désactiver l'éventuel document précédent du même type
         documentUtilisationCreditRepository
@@ -972,7 +936,7 @@ public class UtilisationCreditService {
                     documentUtilisationCreditRepository.save(prev);
                 });
 
-        // Enregistrer le nouveau document dans le GED
+        // Stockage MinIO avant transition de statut (rollback si indisponible)
         String fileUrl = minioService.uploadFile(file);
         mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit doc =
                 mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit.builder()
@@ -986,6 +950,9 @@ public class UtilisationCreditService {
                         .utilisationCredit(entity)
                         .build();
         documentUtilisationCreditRepository.save(doc);
+
+        d.setStatut(StatutUtilisation.CHEQUE_SAISI);
+        entity = repository.save(d);
 
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);

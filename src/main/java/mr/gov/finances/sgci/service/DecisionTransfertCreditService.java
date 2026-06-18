@@ -144,7 +144,8 @@ public class DecisionTransfertCreditService {
         entity = decisionRepository.save(entity);
         transfert.setStatut(StatutTransfert.INCOMPLETE);
         transfertRepository.save(transfert);
-        workflowNotificationHelper.transfert(transfert, WorkflowEventCode.TRANSFERT_REJET_TEMP, user);
+        workflowNotificationHelper.transfert(transfert, WorkflowEventCode.TRANSFERT_REJET_TEMP, user,
+                entity.getId(), entity.getDocumentsDemandes());
         return toDto(entity);
     }
 

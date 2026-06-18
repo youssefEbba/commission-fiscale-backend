@@ -53,6 +53,35 @@ public class DocumentRequirementValidator {
     }
 
     @Transactional(readOnly = true)
+    public void assertDocumentsConfiguredForProcessus(ProcessusDocument processus, Collection<String> codes) {
+        if (processus == null || codes == null || codes.isEmpty()) {
+            return;
+        }
+        List<DocumentRequirement> reqs = requirementRepository.findByProcessusOrderByOrdreAffichageAsc(processus);
+        Set<String> allowed = reqs.stream()
+                .map(DocumentRequirement::getCodeDocument)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        List<String> invalid = codes.stream()
+                .map(DocumentCodeValidator::normalize)
+                .filter(Objects::nonNull)
+                .filter(c -> !allowed.contains(c))
+                .distinct()
+                .collect(Collectors.toList());
+        if (!invalid.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Types de documents non paramétrés pour " + processus + ": " + invalid, invalid);
+        }
+        for (String code : codes) {
+            String normalized = DocumentCodeValidator.normalize(code);
+            if (!DocumentCodeValidator.isValid(normalized)) {
+                throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Code document invalide: " + code);
+            }
+            referentielTypeDocumentService.assertActive(normalized);
+        }
+    }
+
+    @Transactional(readOnly = true)
     public void assertRequiredDocumentsPresent(ProcessusDocument processus, Collection<String> presentActiveCodes) {
         if (processus == null) {
             return;

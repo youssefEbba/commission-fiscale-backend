@@ -8,9 +8,11 @@ import mr.gov.finances.sgci.service.CertificatCreditService;
 import mr.gov.finances.sgci.service.DocumentCertificatCreditService;
 import mr.gov.finances.sgci.service.UtilisationCreditService;
 import mr.gov.finances.sgci.web.dto.CertificatCreditDto;
+import mr.gov.finances.sgci.web.dto.CertificatUtilisationEligibilityDto;
 import mr.gov.finances.sgci.web.dto.CreateCertificatCreditRequest;
 import mr.gov.finances.sgci.web.dto.UpdateCertificatCreditMontantsRequest;
 import mr.gov.finances.sgci.web.dto.DocumentCertificatCreditDto;
+import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.web.dto.TvaDeductibleStockDto;
 import jakarta.validation.Valid;
 
@@ -43,6 +45,16 @@ public class CertificatCreditController {
     @PreAuthorize("hasAnyAuthority('mise_en_place.dgi.queue.view', 'mise_en_place.dgtcp.queue.view', 'mise_en_place.dgb.queue.view', 'mise_en_place.dgd.queue.view', 'mise_en_place.president.queue.view', 'mise_en_place.view', 'mise_en_place.entreprise.queue.view', 'archivage.view')")
     public CertificatCreditDto getById(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
         return service.findById(id, user);
+    }
+
+    @GetMapping("/{id}/eligibilite-utilisation")
+    @PreAuthorize("hasAnyAuthority('utilisation.douane.submit', 'utilisation.interieur.submit', 'mise_en_place.entreprise.queue.view', 'utilisation.douane.solde.view', 'utilisation.interieur.solde.view')")
+    public CertificatUtilisationEligibilityDto getEligibiliteUtilisation(
+            @PathVariable Long id,
+            @RequestParam TypeUtilisation type,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.evaluateUtilisationEligibility(id, type, user);
     }
 
     @GetMapping("/by-entreprise/{entrepriseId}")
@@ -141,11 +153,15 @@ public class CertificatCreditController {
     @PreAuthorize("hasAnyAuthority('mise_en_place.document.upload', 'mise_en_place.dgd.queue.view', 'mise_en_place.president.signature.upload', 'mise_en_place.president.document.generate')")
     public DocumentCertificatCreditDto uploadDocument(
             @PathVariable Long id,
-            @RequestParam String codeDocument,
+            @RequestParam(value = "codeDocument", required = false) String codeDocument,
+            @RequestParam(value = "typeDocument", required = false) String typeDocument,
+            @RequestParam(value = "type", required = false) String type,
             @RequestParam(required = false) String message,
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return documentService.upload(id, codeDocument, message, file, user);
+        String resolved = mr.gov.finances.sgci.web.support.DocumentUploadParamResolver
+                .resolveCodeDocument(codeDocument, typeDocument, type);
+        return documentService.upload(id, resolved, message, file, user);
     }
 }

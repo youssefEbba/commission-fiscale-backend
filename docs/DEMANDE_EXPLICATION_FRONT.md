@@ -96,8 +96,60 @@ Chaque message : `id`, `message`, `auteurId`, `auteurNom`, `roleAuteur`, `create
 
 ### 3.2 Notifications
 
-Type backend : `DEMANDE_EXPLICATION`. Payload : `explicationId`, `contexte`, `dossierId`, `roleDestinataire`, `statut`.  
-À l'ouverture et à chaque réponse, tous les utilisateurs actifs des rôles commission sont notifiés (sauf l'auteur du message). Lien deep-link vers la page détail + panneau discussion.
+Type backend : `DEMANDE_EXPLICATION`.
+
+**Important :** `entityId` sur la notification = id du **fil d'explication** (`DemandeExplication.id`), **pas** l'id du dossier parent. Pour rediriger vers le bon dossier, utiliser le **`payload`** :
+
+| Champ payload | Description |
+|---------------|-------------|
+| `explicationId` | Id du fil (identique à `entityId`) |
+| `contexte` | `CORRECTION` \| `CERTIFICAT` \| `UTILISATION` |
+| `dossierId` | Id de la demande / certificat / utilisation cible |
+| `roleDestinataire` | Rôle visé à l'ouverture |
+| `statut` | `OUVERTE` \| `FERMEE` |
+| `redirectPath` | Chemin front prêt à l'emploi (ex. `/dashboard/demandes/123`) |
+
+À l'ouverture et à chaque réponse, tous les utilisateurs actifs des rôles commission sont notifiés (sauf l'auteur du message).
+
+#### Redirection au clic (front)
+
+**Piège (bug corrigé) :** un fallback sur `entityId` ouvre `/dashboard/demandes/{idDuFil}` — id du **fil**, pas du dossier. La page charge une demande sans lien avec l'explication → panneau discussion vide.
+
+**Règle :**
+
+1. Priorité `payload.redirectPath` (fourni par le backend actuel).
+2. Sinon construire l'URL avec `payload.contexte` + `payload.dossierId`.
+3. Si le payload est absent ou illisible → **ne jamais** utiliser `entityId` pour la navigation. Rediriger vers une **liste** sûre (ex. `/dashboard/demandes`) plutôt qu'un id erroné.
+
+```typescript
+function resolveDemandeExplicationLink(notification: NotificationDto): string {
+  const payload = notification.payload;
+
+  if (payload?.redirectPath && typeof payload.redirectPath === "string") {
+    return payload.redirectPath;
+  }
+
+  const dossierId = payload?.dossierId;
+  const contexte = payload?.contexte;
+  if (dossierId != null && contexte) {
+    switch (contexte) {
+      case "CORRECTION":
+        return `/dashboard/demandes/${dossierId}`;
+      case "CERTIFICAT":
+        return `/dashboard/certificats/${dossierId}`;
+      case "UTILISATION":
+        return `/dashboard/utilisations/${dossierId}`;
+    }
+  }
+
+  // Payload manquant (anciennes notifications) : liste sûre, pas entityId
+  return "/dashboard/demandes";
+}
+```
+
+Sur la page détail, ouvrir ou scroller vers le panneau **Discussion commission** (query optionnelle : `?explication={explicationId}`).
+
+**Backend (depuis la version actuelle) :** chaque notification `DEMANDE_EXPLICATION` émise inclut `contexte`, `dossierId`, `explicationId` et `redirectPath`. Les **nouvelles** notifications ouvrent directement la bonne fiche. Les notifications **historiques** sans payload complet tombent sur le fallback liste.
 
 ### 3.3 i18n
 

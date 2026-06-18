@@ -19,6 +19,7 @@ public class WorkflowNotificationDispatcher {
     private final NotificationService notificationService;
     private final EmailService emailService;
     private final WorkflowRecipientResolver recipientResolver;
+    private final NotificationNavigationHelper navigationHelper;
 
     public void dispatch(WorkflowEventCode event, WorkflowNotificationContext ctx) {
         if (event == null || ctx == null || ctx.getEntityType() == null || ctx.getEntityId() == null) {
@@ -30,7 +31,7 @@ public class WorkflowNotificationDispatcher {
         }
         NotificationType type = mapNotificationType(event);
         String message = ctx.getMessageOverride() != null ? ctx.getMessageOverride() : buildMessage(event, ctx);
-        Map<String, Object> payload = ctx.buildPayload(event.name());
+        Map<String, Object> payload = ctx.buildPayload(event.name(), navigationHelper);
         notificationService.notifyUsers(userIds, type, ctx.getEntityType(), ctx.getEntityId(), message, payload);
 
         String subject = buildSubject(event, ctx);

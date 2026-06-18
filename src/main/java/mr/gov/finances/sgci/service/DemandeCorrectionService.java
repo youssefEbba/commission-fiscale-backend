@@ -24,6 +24,7 @@ import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
+import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.repository.AutoriteContractanteRepository;
@@ -561,6 +562,12 @@ public class DemandeCorrectionService {
 
         boolean finale = Boolean.TRUE.equals(decisionFinale);
         if (statut == StatutDemande.ADOPTEE) {
+            if (user != null && user.getRole() == Role.PRESIDENT) {
+                documentService.assertActiveDocumentPresent(
+                        entity.getId(),
+                        TypeDocument.LETTRE_ADOPTION.name(),
+                        "avant validation");
+            }
             applyParallelValidation(entity, user);
             if (finale) {
                 assertFinalDecisionRole(user);

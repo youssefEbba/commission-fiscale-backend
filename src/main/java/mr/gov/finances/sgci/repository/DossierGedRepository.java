@@ -23,4 +23,6 @@ public interface DossierGedRepository extends JpaRepository<DossierGed, Long> {
     List<DossierGed> findAllByDelegueId(@Param("delegueId") Long delegueId);
 
     List<DossierGed> findByEntrepriseId(Long entrepriseId);
+
+    boolean existsByReference(String reference);
 }

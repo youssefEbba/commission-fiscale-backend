@@ -248,28 +248,32 @@ public class RejetTempResponseService {
         if (decision == null || decision.getCertificatCredit() == null) {
             return;
         }
-        workflowNotificationHelper.certificatRejetTempReponse(decision.getCertificatCredit(), user, decision.getRole());
+        workflowNotificationHelper.certificatRejetTempReponse(decision.getCertificatCredit(), user, decision.getRole(),
+                codeDocument, decision.getId());
     }
 
     private void notifyUtilisationReponse(DecisionUtilisationCredit decision, AuthenticatedUser user, String codeDocument) {
         if (decision == null || decision.getUtilisationCredit() == null) {
             return;
         }
-        workflowNotificationHelper.utilisationRejetTempReponse(decision.getUtilisationCredit(), user, decision.getRole());
+        workflowNotificationHelper.utilisationRejetTempReponse(decision.getUtilisationCredit(), user, decision.getRole(),
+                decision.getId());
     }
 
     private void notifyCorrectionReponse(DecisionCorrection decision, AuthenticatedUser user, String codeDocument) {
         if (decision == null || decision.getDemandeCorrection() == null) {
             return;
         }
-        workflowNotificationHelper.correctionRejetTempReponse(decision.getDemandeCorrection(), user, decision.getRole(), codeDocument);
+        workflowNotificationHelper.correctionRejetTempReponse(decision.getDemandeCorrection(), user, decision.getRole(),
+                codeDocument, decision.getId());
     }
 
     private void notifyTransfertReponse(DecisionTransfertCredit decision, AuthenticatedUser user) {
         if (decision == null || decision.getTransfertCredit() == null) {
             return;
         }
-        workflowNotificationHelper.transfert(decision.getTransfertCredit(), WorkflowEventCode.TRANSFERT_REJET_TEMP_REPONSE, user);
+        workflowNotificationHelper.transfert(decision.getTransfertCredit(), WorkflowEventCode.TRANSFERT_REJET_TEMP_REPONSE,
+                user, decision.getId(), decision.getDocumentsDemandes());
     }
 
     private void assertDecisionOpenRejetTemp(DecisionCorrectionType decision, RejetTempStatus status) {

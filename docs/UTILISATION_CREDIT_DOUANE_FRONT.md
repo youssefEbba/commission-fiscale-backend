@@ -1,7 +1,9 @@
-# Documentation Frontend — Demande d'Utilisation de Crédit d'Impôt Extérieur (Douanière)
+# Documentation Frontend ? Demande d'Utilisation de Cr�dit d'Imp�t Ext�rieur (Douani�re)
 
-> **Destinataire** : Équipe Frontend  
-> **Mise à jour** : Mai 2026
+> **Destinataire** : �quipe Frontend  
+> **Mise � jour** : Juin 2026
+
+**Validation pr�-soumission (certificat �ligible, soldes, transfert)** : voir [UTILISATION_CREDIT_VALIDATION_FRONT.md](./UTILISATION_CREDIT_VALIDATION_FRONT.md).
 
 ---
 
@@ -9,39 +11,39 @@
 
 ```
 ENTREPRISE / COMMISSION RELAIS        DGD                          DGTCP
-──────────────────────────────────────────────────────────────────────────
-1. Crée la demande + saisit les                                      
+??????????????????????????????????????????????????????????????????????????
+1. Cr�e la demande + saisit les                                      
    lignes du bulletin                                                
-   [statut → DEMANDEE]                                               
+   [statut ? DEMANDEE]                                               
                                                                      
-2. Dépose les documents requis                                       
+2. D�pose les documents requis                                       
    (facultatif avant visa DGD)                                       
                                                                      
                               3a. (Optionnel) Prend en charge       
-                                  [statut → EN_VERIFICATION]        
+                                  [statut ? EN_VERIFICATION]        
                                                                      
                               3b. Annote chaque ligne du           
                                   bulletin : AU_CI ou A_PAYER       
                                   POST /{id}/visa-dgd               
-                                  [statut → VISE]                   
+                                  [statut ? VISE]                   
                                                                      
-                                                    4. Exécute la liquidation
+                                                    4. Ex�cute la liquidation
                                                        POST /{id}/liquidation-douane
-                                                       • débite soldeCordon de
+                                                       ? d�bite soldeCordon de
                                                          (totalPrisEnCharge - TVA)
-                                                       • décrémente quota TVA importation
-                                                       • alimente stock TVA d�ductible TVA
-                                                       [statut → LIQUIDEE]
+                                                       ? d�cr�mente quota TVA importation
+                                                       ? alimente stock TVA d?ductible TVA
+                                                       [statut ? LIQUIDEE]
 ```
 
-### Règle financière fondamentale
+### R�gle financi�re fondamentale
 
-| Opération | Formule |
+| Op�ration | Formule |
 |---|---|
-| Débit solde cordon | `totalPrisEnCharge – TVA_AU_CI` |
-| Débit quota TVA importation douane | `TVA_AU_CI` (lignes codées "TVA" avec affectation AU_CI) |
-| Alimentation stock TVA d�ductible TVA déductible | `TVA_AU_CI` |
-| Montant à payer comptant | `totalAPayer` (affiché, pas de débit CI) |
+| D�bit solde cordon | `totalPrisEnCharge ? TVA_AU_CI` |
+| D�bit quota TVA importation douane | `TVA_AU_CI` (lignes cod�es "TVA" avec affectation AU_CI) |
+| Alimentation stock TVA d?ductible TVA d�ductible | `TVA_AU_CI` |
+| Montant � payer comptant | `totalAPayer` (affich�, pas de d�bit CI) |
 
 ---
 
@@ -51,22 +53,22 @@ ENTREPRISE / COMMISSION RELAIS        DGD                          DGTCP
 |---|---|---|
 | `DEMANDEE` | Entreprise | Demande soumise, en attente DGD |
 | `BROUILLON` | Entreprise | Brouillon non soumis (optionnel) |
-| `INCOMPLETE` | Services | Pièces complémentaires demandées |
-| `A_RECONTROLER` | Système | Toutes les réponses au rejet temporaire fournies |
+| `INCOMPLETE` | Services | Pi�ces compl�mentaires demand�es |
+| `A_RECONTROLER` | Syst�me | Toutes les r�ponses au rejet temporaire fournies |
 | `EN_VERIFICATION` | DGD | DGD a pris en charge (optionnel) |
-| `VISE` | DGD | DGD a annoté les lignes et visé |
-| `LIQUIDEE` | DGTCP | Liquidation financière exécutée |
-| `REJETEE` | DGD / DGTCP | Demande refusée définitivement |
+| `VISE` | DGD | DGD a annot� les lignes et vis� |
+| `LIQUIDEE` | DGTCP | Liquidation financi�re ex�cut�e |
+| `REJETEE` | DGD / DGTCP | Demande refus�e d�finitivement |
 
-### Transitions autorisées
+### Transitions autoris�es
 
 ```
-DEMANDEE ──────────────────────────────► EN_VERIFICATION
-DEMANDEE ──────────────────────────────► VISE  (DGD peut passer directement)
-DEMANDEE / EN_VERIFICATION / A_RECONTROLER ──► INCOMPLETE
-EN_VERIFICATION ───────────────────────► VISE
-VISE ───────────────────────────────────► LIQUIDEE  (DGTCP uniquement)
-VISE / EN_VERIFICATION ────────────────► REJETEE
+DEMANDEE ??????????????????????????????? EN_VERIFICATION
+DEMANDEE ??????????????????????????????? VISE  (DGD peut passer directement)
+DEMANDEE / EN_VERIFICATION / A_RECONTROLER ??? INCOMPLETE
+EN_VERIFICATION ???????????????????????? VISE
+VISE ???????????????????????????????????? LIQUIDEE  (DGTCP uniquement)
+VISE / EN_VERIFICATION ????????????????? REJETEE
 ```
 
 ---
@@ -76,14 +78,14 @@ VISE / EN_VERIFICATION ────────────────► REJET
 ### `TypeLigneTaxe`
 | Valeur | Section du bulletin |
 |---|---|
-| `GLOBALE` | Taxes en en-tête (ex. Taxe sur Tonnage, Redevance Informatique) |
+| `GLOBALE` | Taxes en en-t�te (ex. Taxe sur Tonnage, Redevance Informatique) |
 | `ARTICLE` | Taxes par ligne de marchandise (ex. DD, TVA, RS, PSC, IMF) |
 
-### `AffectationTaxe` (décision DGD)
+### `AffectationTaxe` (d�cision DGD)
 | Valeur | Signification |
 |---|---|
-| `AU_CI` | Pris en charge par le crédit d'impôt extérieur |
-| `A_PAYER` | À payer comptant par l'entreprise |
+| `AU_CI` | Pris en charge par le cr�dit d'imp�t ext�rieur |
+| `A_PAYER` | � payer comptant par l'entreprise |
 
 ---
 
@@ -93,7 +95,7 @@ VISE / EN_VERIFICATION ────────────────► REJET
 
 ---
 
-### 4.1 Créer une demande (ENTREPRISE / COMMISSION RELAIS)
+### 4.1 Cr�er une demande (ENTREPRISE / COMMISSION RELAIS)
 
 **POST** `/api/utilisations-credit`  
 **Permission** : `utilisation.douane.submit`
@@ -111,7 +113,7 @@ VISE / EN_VERIFICATION ────────────────► REJET
   "lignes": [
     {
       "codeTaxe": "TST",
-      "denominationTaxe": "Taxe sur Tonnage Importé",
+      "denominationTaxe": "Taxe sur Tonnage Import�",
       "typeLigne": "GLOBALE",
       "valeurTaxe": 3919.90
     },
@@ -135,7 +137,7 @@ VISE / EN_VERIFICATION ────────────────► REJET
     },
     {
       "codeTaxe": "PC",
-      "denominationTaxe": "Prélèvement Communautaire",
+      "denominationTaxe": "Pr�l�vement Communautaire",
       "typeLigne": "ARTICLE",
       "valeurTaxe": 1346.93
     },
@@ -147,13 +149,13 @@ VISE / EN_VERIFICATION ────────────────► REJET
     },
     {
       "codeTaxe": "IMF",
-      "denominationTaxe": "Impôt Minimum Forfaitaire",
+      "denominationTaxe": "Imp�t Minimum Forfaitaire",
       "typeLigne": "ARTICLE",
       "valeurTaxe": 6599.54
     },
     {
       "codeTaxe": "TVA",
-      "denominationTaxe": "Taxe sur Valeur Ajoutée",
+      "denominationTaxe": "Taxe sur Valeur Ajout�e",
       "typeLigne": "ARTICLE",
       "valeurTaxe": 52796.32
     }
@@ -161,7 +163,7 @@ VISE / EN_VERIFICATION ────────────────► REJET
 }
 ```
 
-**Réponse** : `201 Created` → `UtilisationCreditDto` (voir §6)
+**R�ponse** : `201 Created` ? `UtilisationCreditDto` (voir �6)
 
 ---
 
@@ -170,7 +172,7 @@ VISE / EN_VERIFICATION ────────────────► REJET
 **PUT** `/api/utilisations-credit/{id}`  
 **Permission** : `utilisation.douane.submit`
 
-Même corps que la création. Remplace toutes les lignes.
+M�me corps que la cr�ation. Remplace toutes les lignes.
 
 ---
 
@@ -181,22 +183,22 @@ Même corps que la création. Remplace toutes les lignes.
 
 ---
 
-### 4.4 Changer le statut (DGD — prise en charge optionnelle)
+### 4.4 Changer le statut (DGD ? prise en charge optionnelle)
 
 **PATCH** `/api/utilisations-credit/{id}/statut?statut=EN_VERIFICATION`  
 **Permission** : `utilisation.douane.dgd.verify`
 
-> Étape facultative. Le DGD peut passer directement à `visa-dgd` sans EN_VERIFICATION.
+> �tape facultative. Le DGD peut passer directement � `visa-dgd` sans EN_VERIFICATION.
 
 ---
 
-### 4.5 ⭐ Visa DGD — annotation des lignes + visa
+### 4.5 ? Visa DGD ? annotation des lignes + visa
 
 **POST** `/api/utilisations-credit/{id}/visa-dgd`  
 **Permission** : `utilisation.douane.dgd.quittance.visa`  
-**Statut résultant** : `VISE`
+**Statut r�sultant** : `VISE`
 
-Le DGD soumet ses décisions ligne par ligne. **Toutes les lignes doivent être couvertes.**
+Le DGD soumet ses d�cisions ligne par ligne. **Toutes les lignes doivent �tre couvertes.**
 
 ```json
 {
@@ -214,29 +216,29 @@ Le DGD soumet ses décisions ligne par ligne. **Toutes les lignes doivent être 
 ```
 
 > **Exemple du bulletin :**  
-> - DD + RS + PSC + PC + TVA → `AU_CI` (totalPrisEnCharge = 153 404,61)  
-> - IMF + TST + RI → `A_PAYER` (totalAPayer = 10 819,44)
+> - DD + RS + PSC + PC + TVA ? `AU_CI` (totalPrisEnCharge = 153 404,61)  
+> - IMF + TST + RI ? `A_PAYER` (totalAPayer = 10 819,44)
 
-**Réponse** : `200 OK` → `UtilisationCreditDto` avec `statut: "VISE"`, `totalPrisEnCharge` et `totalAPayer` renseignés.
+**R�ponse** : `200 OK` ? `UtilisationCreditDto` avec `statut: "VISE"`, `totalPrisEnCharge` et `totalAPayer` renseign�s.
 
-> **Aucune opération financière à cette étape.** Les valeurs sont juste calculées et sauvegardées.
+> **Aucune op�ration financi�re � cette �tape.** Les valeurs sont juste calcul�es et sauvegard�es.
 
 ---
 
-### 4.6 ⭐ Liquidation DGTCP — exécution financière
+### 4.6 ? Liquidation DGTCP ? ex�cution financi�re
 
 **POST** `/api/utilisations-credit/{id}/liquidation-douane`  
 **Permission** : `utilisation.douane.dgtcp.impute` ou `utilisation.douane.dgtcp.solde.update`  
-**Prérequis** : statut `VISE` (visa DGD obligatoire)  
-**Statut résultant** : `LIQUIDEE`  
+**Pr�requis** : statut `VISE` (visa DGD obligatoire)  
+**Statut r�sultant** : `LIQUIDEE`  
 **Corps** : aucun (pas de body)
 
-Le DGTCP exécute automatiquement :
-1. Débite `soldeCordon` du certificat de `totalPrisEnCharge - TVA_AU_CI`
-2. Décrémente `tvaImportationDouane` du certificat de `TVA_AU_CI`
-3. Crée une entrée dans le stock TVA d�ductible de TVA déductible de `TVA_AU_CI`
+Le DGTCP ex�cute automatiquement :
+1. D�bite `soldeCordon` du certificat de `totalPrisEnCharge - TVA_AU_CI`
+2. D�cr�mente `tvaImportationDouane` du certificat de `TVA_AU_CI`
+3. Cr�e une entr�e dans le stock TVA d?ductible de TVA d�ductible de `TVA_AU_CI`
 
-**Réponse** : `200 OK` → `UtilisationCreditDto` avec `statut: "LIQUIDEE"`.
+**R�ponse** : `200 OK` ? `UtilisationCreditDto` avec `statut: "LIQUIDEE"`.
 
 ---
 
@@ -258,7 +260,7 @@ Le DGTCP exécute automatiquement :
   {
     "id": 107,
     "codeTaxe": "IMF",
-    "denominationTaxe": "Impôt Minimum Forfaitaire",
+    "denominationTaxe": "Imp�t Minimum Forfaitaire",
     "typeLigne": "ARTICLE",
     "valeurTaxe": 6599.54,
     "affectation": "A_PAYER"
@@ -277,24 +279,24 @@ Les lignes sont incluses dans le champ `lignes` du DTO.
 
 ---
 
-## 5. Permissions par rôle
+## 5. Permissions par r�le
 
-| Rôle | Permissions |
+| R�le | Permissions |
 |---|---|
-| **ENTREPRISE / COMMISSION RELAIS** | `utilisation.douane.submit` (créer, modifier, soumettre) |
+| **ENTREPRISE / COMMISSION RELAIS** | `utilisation.douane.submit` (cr�er, modifier, soumettre) |
 | **DGD** | `utilisation.douane.dgd.verify` (EN_VERIFICATION), `utilisation.douane.dgd.quittance.visa` (visa-dgd), `utilisation.douane.dgd.reject` (rejeter), `utilisation.douane.dgd.queue.view` (consulter) |
 | **DGTCP** | `utilisation.douane.dgtcp.impute` (liquidation-douane), `utilisation.douane.dgtcp.queue.view` (consulter) |
 
 ---
 
-## 6. DTO de retour — `UtilisationCreditDto`
+## 6. DTO de retour ? `UtilisationCreditDto`
 
 ```typescript
 interface UtilisationCreditDto {
   id: number;
   type: "DOUANIER" | "TVA_INTERIEURE";
   dateDemande: string;           // ISO-8601
-  montant: number | null;        // Montant débité du solde cordon (après liquidation)
+  montant: number | null;        // Montant d�bit� du solde cordon (apr�s liquidation)
   statut: StatutUtilisation;
   dateLiquidation: string | null;
   certificatCreditId: number;
@@ -303,30 +305,30 @@ interface UtilisationCreditDto {
   certificatTitulaireRaisonSociale: string | null;
   demandeurEstSousTraitant: boolean;
 
-  // ── Champs DOUANIER ─────────────────────────────────────────────────
+  // ?? Champs DOUANIER ?????????????????????????????????????????????????
   numeroDeclaration: string | null;
   numeroBulletin: string | null;
   dateDeclaration: string | null;
   enregistreeSYDONIA: boolean | null;
-  soldeCordonAvant: number | null;   // Renseigné après liquidation DGTCP
-  soldeCordonApres: number | null;   // Renseigné après liquidation DGTCP
+  soldeCordonAvant: number | null;   // Renseign� apr�s liquidation DGTCP
+  soldeCordonApres: number | null;   // Renseign� apr�s liquidation DGTCP
 
-  /** Lignes du bulletin — présentes dès la création */
+  /** Lignes du bulletin ? pr�sentes d�s la cr�ation */
   lignes: LigneBulletinDto[];
 
-  /** Somme des lignes AU_CI — renseigné après visa DGD */
+  /** Somme des lignes AU_CI ? renseign� apr�s visa DGD */
   totalPrisEnCharge: number | null;
 
-  /** Somme des lignes A_PAYER — renseigné après visa DGD */
+  /** Somme des lignes A_PAYER ? renseign� apr�s visa DGD */
   totalAPayer: number | null;
 
   /** Part TVA des lignes AU_CI (pour info comptable) */
   montantTVADouane: number | null;
 
-  /** Part hors-TVA des lignes AU_CI (= montant débité solde cordon) */
+  /** Part hors-TVA des lignes AU_CI (= montant d�bit� solde cordon) */
   montantDroits: number | null;
 
-  // ── Champs TVA_INTERIEURE ────────────────────────────────────────────
+  // ?? Champs TVA_INTERIEURE ????????????????????????????????????????????
   typeAchat: "ACHAT_LOCAL" | "DECOMPTE" | null;
   numeroFacture: string | null;
   dateFacture: string | null;
@@ -353,138 +355,138 @@ interface LigneBulletinDto {
 
 ---
 
-## 7. Guide UI — composants à implémenter
+## 7. Guide UI ? composants � impl�menter
 
-### 7.1 Formulaire de création (ENTREPRISE / COMMISSION RELAIS)
+### 7.1 Formulaire de cr�ation (ENTREPRISE / COMMISSION RELAIS)
 
-**Partie A — En-tête**
+**Partie A ? En-t�te**
 
 | Champ | Type | Obligatoire |
 |---|---|---|
-| Certificat de crédit | Sélecteur | Oui |
-| Numéro de déclaration | Texte | Non |
-| Numéro de bulletin | Texte | Non |
-| Date de déclaration | Date | Non |
-| Enregistrée SYDONIA | Checkbox | Non |
+| Certificat de cr�dit | S�lecteur | Oui |
+| Num�ro de d�claration | Texte | Non |
+| Num�ro de bulletin | Texte | Non |
+| Date de d�claration | Date | Non |
+| Enregistr�e SYDONIA | Checkbox | Non |
 
-**Partie B — Tableau des lignes (dynamique)**
+**Partie B ? Tableau des lignes (dynamique)**
 
 | Colonne | Type | Obligatoire |
 |---|---|---|
-| Code taxe | Texte court (≤20 car.) | Oui |
-| Dénomination | Texte (≤120 car.) | Oui |
+| Code taxe | Texte court (?20 car.) | Oui |
+| D�nomination | Texte (?120 car.) | Oui |
 | Type | Radio : `GLOBALE` / `ARTICLE` | Oui |
-| Valeur (MRU) | Numérique ≥ 0 | Oui |
-| _(Supprimer)_ | Bouton | — |
+| Valeur (MRU) | Num�rique ? 0 | Oui |
+| _(Supprimer)_ | Bouton | ? |
 
 Bouton **"+ Ajouter une ligne"**  
-Afficher le **Total** en temps réel (somme des valeurTaxe).
+Afficher le **Total** en temps r�el (somme des valeurTaxe).
 
-**Codes courants** (suggestion auto-complétion) :
+**Codes courants** (suggestion auto-compl�tion) :
 
-| Code | Libellé | Type habituel |
+| Code | Libell� | Type habituel |
 |---|---|---|
 | `DD` | Droit de Douane | ARTICLE |
-| `TVA` | Taxe sur Valeur Ajoutée | ARTICLE |
+| `TVA` | Taxe sur Valeur Ajout�e | ARTICLE |
 | `RS` | Redevance Statistique | ARTICLE |
 | `PSC` | Promotion Sports et Culture | ARTICLE |
-| `PC` | Prélèvement Communautaire | ARTICLE |
-| `IMF` | Impôt Minimum Forfaitaire | ARTICLE |
-| `TST` | Taxe sur Tonnage Importé | GLOBALE |
+| `PC` | Pr�l�vement Communautaire | ARTICLE |
+| `IMF` | Imp�t Minimum Forfaitaire | ARTICLE |
+| `TST` | Taxe sur Tonnage Import� | GLOBALE |
 | `RI` | Redevance Informatique | GLOBALE |
 
 ---
 
-### 7.2 Vue DGD — Annotation du bulletin (POST visa-dgd)
+### 7.2 Vue DGD ? Annotation du bulletin (POST visa-dgd)
 
-Afficher le tableau du bulletin avec une colonne de décision pour chaque ligne :
+Afficher le tableau du bulletin avec une colonne de d�cision pour chaque ligne :
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  BULLETIN DE LIQUIDATION — Visa DGD                                     │
-├────────────────────────┬──────────────┬───────────────────────────────  │
-│ Taxe                   │ Valeur (MRU) │ Décision DGD                    │
-├────────────────────────┼──────────────┼─────────────────────────────── ─│
-│ [Section GLOBALES]                                                       │
-│ Taxe sur Tonnage       │   3 919,90   │  ○ AU_CI    ● A_PAYER           │
-│ Redevance Informatique │     300,00   │  ○ AU_CI    ● A_PAYER           │
-├────────────────────────┼──────────────┼──────────────────────────────── │
-│ [Section ARTICLE]                                                        │
-│ Droit de Douane        │  93 873,98   │  ● AU_CI    ○ A_PAYER           │
-│ Promotion Sports       │   2 693,69   │  ● AU_CI    ○ A_PAYER           │
-│ Prélèvement Comm.      │   1 346,93   │  ● AU_CI    ○ A_PAYER           │
-│ Redevance Statistique  │   2 693,69   │  ● AU_CI    ○ A_PAYER           │
-│ IMF                    │   6 599,54   │  ○ AU_CI    ● A_PAYER           │
-│ TVA                    │  52 796,32   │  ● AU_CI    ○ A_PAYER           │
-├────────────────────────┼──────────────┼─────────────────────────────────│
-│ Total AU_CI (Cordon CI)│ 153 404,61   │                                  │
-│ Total À PAYER (Comptant│  10 819,44   │                                  │
-└────────────────────────┴──────────────┴─────────────────────────────────┘
+???????????????????????????????????????????????????????????????????????????
+?  BULLETIN DE LIQUIDATION ? Visa DGD                                     ?
+????????????????????????????????????????????????????????????????????????  ?
+? Taxe                   ? Valeur (MRU) ? D�cision DGD                    ?
+???????????????????????????????????????????????????????????????????????? ??
+? [Section GLOBALES]                                                       ?
+? Taxe sur Tonnage       ?   3 919,90   ?  ? AU_CI    ? A_PAYER           ?
+? Redevance Informatique ?     300,00   ?  ? AU_CI    ? A_PAYER           ?
+????????????????????????????????????????????????????????????????????????? ?
+? [Section ARTICLE]                                                        ?
+? Droit de Douane        ?  93 873,98   ?  ? AU_CI    ? A_PAYER           ?
+? Promotion Sports       ?   2 693,69   ?  ? AU_CI    ? A_PAYER           ?
+? Pr�l�vement Comm.      ?   1 346,93   ?  ? AU_CI    ? A_PAYER           ?
+? Redevance Statistique  ?   2 693,69   ?  ? AU_CI    ? A_PAYER           ?
+? IMF                    ?   6 599,54   ?  ? AU_CI    ? A_PAYER           ?
+? TVA                    ?  52 796,32   ?  ? AU_CI    ? A_PAYER           ?
+???????????????????????????????????????????????????????????????????????????
+? Total AU_CI (Cordon CI)? 153 404,61   ?                                  ?
+? Total � PAYER (Comptant?  10 819,44   ?                                  ?
+???????????????????????????????????????????????????????????????????????????
                                               [ Confirmer le Visa ]
 ```
 
-- Bloquer le bouton "Confirmer" si une ligne n'a pas de décision sélectionnée.
-- Afficher un résumé AU_CI / A_PAYER mis à jour en temps réel.
+- Bloquer le bouton "Confirmer" si une ligne n'a pas de d�cision s�lectionn�e.
+- Afficher un r�sum� AU_CI / A_PAYER mis � jour en temps r�el.
 
 Appel : `POST /{id}/visa-dgd` avec la liste `decisions`.
 
 ---
 
-### 7.3 Vue DGTCP — Exécution de la liquidation (POST liquidation-douane)
+### 7.3 Vue DGTCP ? Ex�cution de la liquidation (POST liquidation-douane)
 
 Afficher en lecture seule :
-1. Le tableau des lignes avec les affectations DGD (récupérées via `GET /{id}` ou `GET /{id}/lignes-bulletin`)
-2. Le résumé financier :
+1. Le tableau des lignes avec les affectations DGD (r�cup�r�es via `GET /{id}` ou `GET /{id}/lignes-bulletin`)
+2. Le r�sum� financier :
 
 ```
 Total pris en charge AU_CI  : 153 404,61 MRU
-  dont TVA (cordon douanier): 52 796,32 MRU  → alimentera le stock TVA d�ductible
-  dont hors-TVA             : 100 608,29 MRU → débitéra le solde cordon
-Total à payer comptant      :  10 819,44 MRU
+  dont TVA (cordon douanier): 52 796,32 MRU  ? alimentera le stock TVA d?ductible
+  dont hors-TVA             : 100 608,29 MRU ? d�bit�ra le solde cordon
+Total � payer comptant      :  10 819,44 MRU
 ```
 
-Bouton **"Exécuter la liquidation"** → `POST /{id}/liquidation-douane` (pas de body)
+Bouton **"Ex�cuter la liquidation"** ? `POST /{id}/liquidation-douane` (pas de body)
 
-Après exécution, afficher :
+Apr�s ex�cution, afficher :
 - `soldeCordonAvant` / `soldeCordonApres`
-- Confirmation de l'alimentation du stock TVA d�ductible TVA
+- Confirmation de l'alimentation du stock TVA d?ductible TVA
 
 ---
 
-### 7.4 Vue récapitulatif de liquidation (statut LIQUIDEE)
+### 7.4 Vue r�capitulatif de liquidation (statut LIQUIDEE)
 
 Afficher :
-1. **En-tête** : numéro déclaration, numéro bulletin, date, bureau de douane
-2. **Tableau** des lignes groupées (GLOBALES puis ARTICLE) avec la colonne `affectation` DGD
-3. **Récapitulatif final** :
+1. **En-t�te** : num�ro d�claration, num�ro bulletin, date, bureau de douane
+2. **Tableau** des lignes group�es (GLOBALES puis ARTICLE) avec la colonne `affectation` DGD
+3. **R�capitulatif final** :
 
-| Catégorie | Montant (MRU) |
+| Cat�gorie | Montant (MRU) |
 |---|---|
 | Pris en charge par CI (AU_CI) | `totalPrisEnCharge` |
-| — dont TVA (stock TVA d�ductible) | `montantTVADouane` |
-| — dont hors-TVA (solde cordon) | `montantDroits` |
-| À payer comptant | `totalAPayer` |
+| ? dont TVA (stock TVA d?ductible) | `montantTVADouane` |
+| ? dont hors-TVA (solde cordon) | `montantDroits` |
+| � payer comptant | `totalAPayer` |
 | **Total bulletin** | `totalPrisEnCharge + totalAPayer` |
 
 ---
 
-## 8. Codes d'erreur fréquents
+## 8. Codes d'erreur fr�quents
 
 | HTTP | `errorCode` | Cause |
 |---|---|---|
-| `400` | `VALIDATION_FAILED` | Décision manquante pour une ligne, liste vide |
-| `400` | `BUSINESS_RULE_VIOLATION` | Aucune ligne trouvée ; total AU_CI = 0 ; visa DGD manquant avant liquidation |
+| `400` | `VALIDATION_FAILED` | D�cision manquante pour une ligne, liste vide |
+| `400` | `BUSINESS_RULE_VIOLATION` | Aucune ligne trouv�e ; total AU_CI = 0 ; visa DGD manquant avant liquidation |
 | `400` | `BUSINESS_RULE_VIOLATION` | Solde cordon insuffisant ; quota TVA insuffisant |
-| `403` | `ROLE_FORBIDDEN` | Rôle non autorisé pour cette action |
-| `409` | `WORKFLOW` | Transition de statut invalide (ex. DEMANDEE → LIQUIDEE sans visa) |
+| `403` | `ROLE_FORBIDDEN` | R�le non autoris� pour cette action |
+| `409` | `WORKFLOW` | Transition de statut invalide (ex. DEMANDEE ? LIQUIDEE sans visa) |
 
 ---
 
-## 9. Règles métier — vérifications côté front
+## 9. R�gles m�tier ? v�rifications c�t� front
 
 1. Au moins une ligne est requise pour soumettre une demande `DOUANIER`.
 2. Lors du visa DGD : toutes les lignes doivent avoir une affectation (bloquer le bouton si une ligne n'en a pas).
-3. `totalPrisEnCharge` doit être > 0 (sinon le backend rejette avec 400).
-4. Après le visa, les lignes ne sont plus modifiables par l'entreprise.
+3. `totalPrisEnCharge` doit �tre > 0 (sinon le backend rejette avec 400).
+4. Apr�s le visa, les lignes ne sont plus modifiables par l'entreprise.
 5. La liquidation DGTCP n'est possible que si statut = `VISE`.
-6. Si erreur "Solde cordon insuffisant", afficher le solde disponible (récupérable via le certificat de crédit).
+6. Si erreur "Solde cordon insuffisant", afficher le solde disponible (r�cup�rable via le certificat de cr�dit).

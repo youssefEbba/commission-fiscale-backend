@@ -96,11 +96,15 @@ public class TransfertCreditController {
     @PreAuthorize("hasAuthority('transfert.submit')")
     public DocumentTransfertCreditDto uploadDocument(
             @PathVariable Long id,
-            @RequestParam String codeDocument,
+            @RequestParam(value = "codeDocument", required = false) String codeDocument,
+            @RequestParam(value = "typeDocument", required = false) String typeDocument,
+            @RequestParam(value = "type", required = false) String type,
             @RequestParam(value = "message", required = false) String message,
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return documentService.upload(id, codeDocument, message, file, user);
+        String resolved = mr.gov.finances.sgci.web.support.DocumentUploadParamResolver
+                .resolveCodeDocument(codeDocument, typeDocument, type);
+        return documentService.upload(id, resolved, message, file, user);
     }
 }
