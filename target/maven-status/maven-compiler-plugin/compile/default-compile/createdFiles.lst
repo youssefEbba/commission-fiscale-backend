@@ -324,6 +324,7 @@ mr\gov\finances\sgci\domain\entity\Utilisateur$UtilisateurBuilder.class
 mr\gov\finances\sgci\config\WsPathCorsFilter.class
 mr\gov\finances\sgci\web\dto\CreateDemandeCorrectionRequest.class
 mr\gov\finances\sgci\repository\MarcheRepository.class
+mr\gov\finances\sgci\service\DossierReferenceGenerator.class
 mr\gov\finances\sgci\web\dto\EntrepriseDto$EntrepriseDtoBuilder.class
 mr\gov\finances\sgci\domain\entity\DemandeExplicationMessage$DemandeExplicationMessageBuilder.class
 mr\gov\finances\sgci\domain\entity\DocumentTransfertCredit.class

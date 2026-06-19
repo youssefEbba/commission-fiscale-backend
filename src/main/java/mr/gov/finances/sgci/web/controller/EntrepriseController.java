@@ -2,11 +2,13 @@ package mr.gov.finances.sgci.web.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.EntrepriseService;
 import mr.gov.finances.sgci.web.dto.EntrepriseDto;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,10 +27,16 @@ public class EntrepriseController {
         return service.findAll();
     }
 
+    @GetMapping("/me")
+    @PreAuthorize("hasAuthority('entreprise.view.own')")
+    public EntrepriseDto getMyEntreprise(@AuthenticationPrincipal AuthenticatedUser user) {
+        return service.findMyEntreprise(user);
+    }
+
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('entreprise.list')")
-    public EntrepriseDto getById(@PathVariable Long id) {
-        return service.findById(id);
+    @PreAuthorize("hasAnyAuthority('entreprise.list', 'entreprise.view.own')")
+    public EntrepriseDto getById(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.findById(id, user);
     }
 
     @PostMapping

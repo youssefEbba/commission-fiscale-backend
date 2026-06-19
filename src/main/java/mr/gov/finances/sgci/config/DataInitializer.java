@@ -1385,6 +1385,7 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("document.types.view", "Consulter le référentiel des types de documents GED");
         createPermission("document.types.manage", "Gérer le référentiel et les exigences documentaires par processus");
         createPermission("entreprise.list", "Consulter la liste des entreprises");
+        createPermission("entreprise.view.own", "Consulter sa propre entreprise");
         createPermission("entreprise.create", "Créer une entreprise");
         createPermission("entreprise.update", "Modifier une entreprise");
         createPermission("entreprise.delete", "Supprimer une entreprise");
@@ -1523,6 +1524,7 @@ public class DataInitializer implements CommandLineRunner {
                 "correction.reclamation.annuler",
                 "mise_en_place.entreprise.queue.view",
                 "document.requirements.view",
+                "entreprise.view.own",
                 "utilisation.douane.submit",
                 "utilisation.douane.document.upload",
                 "utilisation.douane.solde.view",
@@ -1550,6 +1552,7 @@ public class DataInitializer implements CommandLineRunner {
 
         assign(Role.SOUS_TRAITANT,
                 "document.requirements.view",
+                "entreprise.view.own",
                 "utilisation.douane.submit",
                 "utilisation.douane.document.upload",
                 "utilisation.douane.solde.view",
@@ -1571,6 +1574,7 @@ public class DataInitializer implements CommandLineRunner {
                 "document.requirements.view",
                 "convention.view.all",
                 "marche.view",
+                "entreprise.list",
                 "correction.dgd.queue.view",
                 "correction.offer.view",
                 "correction.offer.upload",
@@ -1649,6 +1653,7 @@ public class DataInitializer implements CommandLineRunner {
                 "convention.validate",
                 "convention.reject",
                 "marche.view",
+                "entreprise.list",
                 "projet.validate",
                 "projet.reject",
                 "projet.view",
@@ -1767,7 +1772,25 @@ public class DataInitializer implements CommandLineRunner {
             "entreprise.delete",
             "reporting.view"
     );
-}
+
+        seedReferentielReadPermissions();
+    }
+
+    /**
+     * Référentiels métier (entreprise, convention, marché, projet) : lecture partagée pour tous les rôles.
+     * Les autorités contractantes sont déjà lisibles via {@code GET /api/autorites-contractantes} (authentifié).
+     */
+    private void seedReferentielReadPermissions() {
+        String[] readReferentiel = {
+                "entreprise.list",
+                "convention.view.all",
+                "marche.view",
+                "projet.view.all"
+        };
+        for (Role role : Role.values()) {
+            assign(role, readReferentiel);
+        }
+    }
 
 private void createPermission(String code, String description) {
     if (!permissionRepository.existsByCode(code)) {

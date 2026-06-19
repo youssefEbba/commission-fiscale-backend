@@ -52,8 +52,14 @@ final class DossierReferenceGenerator {
             return "X";
         }
         if (ac.getCode() != null && !ac.getCode().isBlank()) {
-            for (int i = 0; i < ac.getCode().length(); i++) {
-                char c = Character.toUpperCase(ac.getCode().charAt(i));
+            String code = ac.getCode().trim();
+            if (code.regionMatches(true, 0, "AC_", 0, 3)) {
+                code = code.substring(3);
+            } else if (code.regionMatches(true, 0, "AC-", 0, 3)) {
+                code = code.substring(3);
+            }
+            for (int i = 0; i < code.length(); i++) {
+                char c = Character.toUpperCase(code.charAt(i));
                 if (Character.isLetter(c)) {
                     return String.valueOf(c);
                 }

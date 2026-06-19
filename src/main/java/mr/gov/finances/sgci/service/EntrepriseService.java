@@ -7,8 +7,13 @@ import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.repository.EntrepriseRepository;
+import mr.gov.finances.sgci.repository.UtilisateurRepository;
+import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.EntrepriseDto;
 
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +25,8 @@ import java.util.stream.Collectors;
 public class EntrepriseService {
 
     private final EntrepriseRepository repository;
+    private final UtilisateurRepository utilisateurRepository;
+    private final EffectiveIdentityService effectiveIdentityService;
     private final AuditService auditService;
 
     @Transactional(readOnly = true)
@@ -28,8 +35,24 @@ public class EntrepriseService {
     }
 
     @Transactional(readOnly = true)
-    public EntrepriseDto findById(Long id) {
+    public EntrepriseDto findById(Long id, AuthenticatedUser user) {
+        assertCanViewEntreprise(id, user);
         return repository.findById(id).map(this::toDto).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée: " + id));
+    }
+
+    @Transactional(readOnly = true)
+    public EntrepriseDto findMyEntreprise(AuthenticatedUser user) {
+        if (user == null || user.getUserId() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        Long entrepriseId = effectiveIdentityService.resolveEntrepriseId(
+                user,
+                utilisateurRepository.findById(user.getUserId()).orElse(null)
+        );
+        if (entrepriseId == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune entreprise liée à l'utilisateur");
+        }
+        return findById(entrepriseId, user);
     }
 
     @Transactional
@@ -75,6 +98,32 @@ public class EntrepriseService {
         }
         auditService.log(AuditAction.DELETE, "Entreprise", String.valueOf(id), null);
         repository.deleteById(id);
+    }
+
+    private void assertCanViewEntreprise(Long entrepriseId, AuthenticatedUser user) {
+        if (hasAuthority("entreprise.list")) {
+            return;
+        }
+        if (user == null || user.getUserId() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        Long effectiveEntrepriseId = effectiveIdentityService.resolveEntrepriseId(
+                user,
+                utilisateurRepository.findById(user.getUserId()).orElse(null)
+        );
+        if (effectiveEntrepriseId != null && effectiveEntrepriseId.equals(entrepriseId)) {
+            return;
+        }
+        throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: entreprise hors périmètre");
+    }
+
+    private static boolean hasAuthority(String authority) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getAuthorities() == null) {
+            return false;
+        }
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> authority.equals(a.getAuthority()));
     }
 
     private EntrepriseDto toDto(Entreprise e) {

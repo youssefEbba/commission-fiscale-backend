@@ -292,8 +292,13 @@ export interface UpdateUtilisateurRequest {
 | Inscription publique | `POST /api/auth/register` — compte créé `actif=false` |
 | Reset mot de passe | [RESET_PASSWORD_FRONT.md](RESET_PASSWORD_FRONT.md) |
 | Délégués AC (UPM/UEP) | `PATCH /api/delegues/{id}` — périmètre AC, pas admin global |
-| Référentiel entreprises | `GET /api/entreprises` (permission `entreprise.list`) |
-| Référentiel autorités | selon endpoints convention / AC existants |
+| Référentiel entreprises | `GET /api/entreprises`, `GET /api/entreprises/{id}`, `GET /api/entreprises/me` — permission `entreprise.list` (**tous les rôles**) |
+| Référentiel autorités contractantes | `GET /api/autorites-contractantes` — tout utilisateur **authentifié** |
+| Référentiel conventions | `GET /api/conventions` — `convention.view` ou `convention.view.all` (**tous les rôles**) |
+| Référentiel marchés | `GET /api/marches` — `marche.view` (**tous les rôles**) |
+| Référentiel projets | `GET /api/referentiels-projet` — `projet.view` ou `projet.view.all` (**tous les rôles**) |
+
+> **Règle métier** : entreprise, AC, convention, marché et référentiel projet sont **visibles en lecture par tous les rôles** connectés (listes déroulantes, en-têtes de dossier DGD/DGTCP/entreprise, etc.). Seules les **actions** (création, visa, upload) restent limitées par rôle.
 
 ---
 

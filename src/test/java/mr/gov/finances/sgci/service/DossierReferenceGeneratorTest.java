@@ -26,7 +26,7 @@ class DossierReferenceGeneratorTest {
                 .build();
 
         assertThat(DossierReferenceGenerator.buildReference(dc))
-                .isEqualTo("DOSS-A-20260617-SCENA");
+                .isEqualTo("DOSS-D-20260617-SCENA");
     }
 
     @Test
@@ -51,12 +51,12 @@ class DossierReferenceGeneratorTest {
     @Test
     void ensureUnique_ajouteSuffixeSiCollision() {
         Set<String> existing = new HashSet<>();
-        existing.add("DOSS-A-20260617-SCENA");
+        existing.add("DOSS-D-20260617-SCENA");
 
         String unique = DossierReferenceGenerator.ensureUnique(
-                "DOSS-A-20260617-SCENA",
+                "DOSS-D-20260617-SCENA",
                 existing::contains);
 
-        assertThat(unique).isEqualTo("DOSS-A-20260617-SCENA-02");
+        assertThat(unique).isEqualTo("DOSS-D-20260617-SCENA-02");
     }
 }
