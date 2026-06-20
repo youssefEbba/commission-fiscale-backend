@@ -1,0 +1,36 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Deploy backend locally
+        run: |
+          set -e
+
+          cd /home/mf/commission-fiscale-backend
+
+          # Sauvegarder les fichiers locaux du serveur
+          cp src/main/resources/application-prod.properties /home/mf/application-prod.properties.server || true
+          cp Dockerfile /home/mf/Dockerfile.backend.server || true
+
+          # Mettre à jour le code depuis GitHub
+          git fetch origin main
+          git reset --hard origin/main
+
+          # Remettre la configuration locale serveur
+          cp /home/mf/application-prod.properties.server src/main/resources/application-prod.properties || true
+          cp /home/mf/Dockerfile.backend.server Dockerfile || true
+
+          # Rebuild et redémarrage backend
+          cd /home/mf/commission-fiscale-deploy
+          sudo docker compose up -d --build backend
+
+          sudo docker ps
+          sudo docker logs --tail=80 commission-backend
