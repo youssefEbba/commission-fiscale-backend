@@ -16,17 +16,19 @@ jobs:
 
           cd /home/mf/commission-fiscale-backend
 
-          # Sauvegarder les fichiers locaux du serveur
-          cp src/main/resources/application-prod.properties /home/mf/application-prod.properties.server || true
-          cp Dockerfile /home/mf/Dockerfile.backend.server || true
+          mkdir -p /home/mf/deploy-backups
 
-          # Mettre à jour le code depuis GitHub
-          git fetch origin main
-          git reset --hard origin/main
+          # Sauvegarder les fichiers locaux du serveur
+          cp src/main/resources/application-prod.properties /home/mf/deploy-backups/application-prod.properties.server || true
+          cp Dockerfile /home/mf/deploy-backups/Dockerfile.backend.server || true
+
+          # Mettre à jour le code depuis GitHub avec token
+          git fetch https://x-access-token:${{ secrets.GH_PAT }}@github.com/youssefEbba/commission-fiscale-backend.git main
+          git reset --hard FETCH_HEAD
 
           # Remettre la configuration locale serveur
-          cp /home/mf/application-prod.properties.server src/main/resources/application-prod.properties || true
-          cp /home/mf/Dockerfile.backend.server Dockerfile || true
+          cp /home/mf/deploy-backups/application-prod.properties.server src/main/resources/application-prod.properties || true
+          cp /home/mf/deploy-backups/Dockerfile.backend.server Dockerfile || true
 
           # Rebuild et redémarrage backend
           cd /home/mf/commission-fiscale-deploy
