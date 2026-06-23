@@ -17,6 +17,8 @@ public final class CorsAllowedOrigins {
     public static final List<String> FRONTEND = List.of(
             "https://e6e2ee9f-7068-4371-95aa-8f4613a60836.lovableproject.com",
             "https://id-preview--e6e2ee9f-7068-4371-95aa-8f4613a60836.lovable.app",
+            "https://commission-fiscale.lovable.app",
+            "https://e6b3-197-231-5-85.ngrok-free.app",
             "http://localhost:8081",
             "http://127.0.0.1:8081",
             "http://localhost:5173",

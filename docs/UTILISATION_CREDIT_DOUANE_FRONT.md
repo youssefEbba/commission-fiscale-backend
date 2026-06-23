@@ -1,9 +1,9 @@
-# Documentation Frontend ? Demande d'Utilisation de Crédit d'Impôt Extérieur (Douanière)
+# Documentation Frontend â€” Demande d'Utilisation de CrÃ©dit d'ImpÃ´t ExtÃ©rieur (DouaniÃ¨re)
 
-> **Destinataire** : Équipe Frontend  
-> **Mise à jour** : Juin 2026
+> **Destinataire** : Ã‰quipe Frontend  
+> **Mise Ã  jour** : Juin 2026
 
-**Validation pré-soumission (certificat éligible, soldes, transfert)** : voir [UTILISATION_CREDIT_VALIDATION_FRONT.md](./UTILISATION_CREDIT_VALIDATION_FRONT.md).
+**Validation prÃ©-soumission (certificat Ã©ligible, soldes, transfert)** : voir [UTILISATION_CREDIT_VALIDATION_FRONT.md](./UTILISATION_CREDIT_VALIDATION_FRONT.md).
 
 ---
 
@@ -12,11 +12,11 @@
 ```
 ENTREPRISE / COMMISSION RELAIS        DGD                          DGTCP
 ??????????????????????????????????????????????????????????????????????????
-1. Crée la demande + saisit les                                      
+1. Crï¿½e la demande + saisit les                                      
    lignes du bulletin                                                
    [statut ? DEMANDEE]                                               
                                                                      
-2. Dépose les documents requis                                       
+2. Dï¿½pose les documents requis                                       
    (facultatif avant visa DGD)                                       
                                                                      
                               3a. (Optionnel) Prend en charge       
@@ -27,23 +27,23 @@ ENTREPRISE / COMMISSION RELAIS        DGD                          DGTCP
                                   POST /{id}/visa-dgd               
                                   [statut ? VISE]                   
                                                                      
-                                                    4. Exécute la liquidation
+                                                    4. Exï¿½cute la liquidation
                                                        POST /{id}/liquidation-douane
-                                                       ? débite soldeCordon de
+                                                       ? dï¿½bite soldeCordon de
                                                          (totalPrisEnCharge - TVA)
-                                                       ? décrémente quota TVA importation
+                                                       ? dï¿½crï¿½mente quota TVA importation
                                                        ? alimente stock TVA d?ductible TVA
                                                        [statut ? LIQUIDEE]
 ```
 
-### Règle financière fondamentale
+### Rï¿½gle financiï¿½re fondamentale
 
-| Opération | Formule |
+| Opï¿½ration | Formule |
 |---|---|
-| Débit solde cordon | `totalPrisEnCharge ? TVA_AU_CI` |
-| Débit quota TVA importation douane | `TVA_AU_CI` (lignes codées "TVA" avec affectation AU_CI) |
-| Alimentation stock TVA d?ductible TVA déductible | `TVA_AU_CI` |
-| Montant à payer comptant | `totalAPayer` (affiché, pas de débit CI) |
+| Dï¿½bit solde cordon | `totalPrisEnCharge ? TVA_AU_CI` |
+| Dï¿½bit quota TVA importation douane | `TVA_AU_CI` (lignes codï¿½es "TVA" avec affectation AU_CI) |
+| Alimentation stock TVA d?ductible TVA dï¿½ductible | `TVA_AU_CI` |
+| Montant ï¿½ payer comptant | `totalAPayer` (affichï¿½, pas de dï¿½bit CI) |
 
 ---
 
@@ -53,14 +53,14 @@ ENTREPRISE / COMMISSION RELAIS        DGD                          DGTCP
 |---|---|---|
 | `DEMANDEE` | Entreprise | Demande soumise, en attente DGD |
 | `BROUILLON` | Entreprise | Brouillon non soumis (optionnel) |
-| `INCOMPLETE` | Services | Pièces complémentaires demandées |
-| `A_RECONTROLER` | Système | Toutes les réponses au rejet temporaire fournies |
+| `INCOMPLETE` | Services | Piï¿½ces complï¿½mentaires demandï¿½es |
+| `A_RECONTROLER` | Systï¿½me | Toutes les rï¿½ponses au rejet temporaire fournies |
 | `EN_VERIFICATION` | DGD | DGD a pris en charge (optionnel) |
-| `VISE` | DGD | DGD a annoté les lignes et visé |
-| `LIQUIDEE` | DGTCP | Liquidation financière exécutée |
-| `REJETEE` | DGD / DGTCP | Demande refusée définitivement |
+| `VISE` | DGD | DGD a annotï¿½ les lignes et visï¿½ |
+| `LIQUIDEE` | DGTCP | Liquidation financiï¿½re exï¿½cutï¿½e |
+| `REJETEE` | DGD / DGTCP | Demande refusï¿½e dï¿½finitivement |
 
-### Transitions autorisées
+### Transitions autorisï¿½es
 
 ```
 DEMANDEE ??????????????????????????????? EN_VERIFICATION
@@ -78,14 +78,14 @@ VISE / EN_VERIFICATION ????????????????? REJETEE
 ### `TypeLigneTaxe`
 | Valeur | Section du bulletin |
 |---|---|
-| `GLOBALE` | Taxes en en-tête (ex. Taxe sur Tonnage, Redevance Informatique) |
+| `GLOBALE` | Taxes en en-tï¿½te (ex. Taxe sur Tonnage, Redevance Informatique) |
 | `ARTICLE` | Taxes par ligne de marchandise (ex. DD, TVA, RS, PSC, IMF) |
 
-### `AffectationTaxe` (décision DGD)
+### `AffectationTaxe` (dï¿½cision DGD)
 | Valeur | Signification |
 |---|---|
-| `AU_CI` | Pris en charge par le crédit d'impôt extérieur |
-| `A_PAYER` | À payer comptant par l'entreprise |
+| `AU_CI` | Pris en charge par le crï¿½dit d'impï¿½t extï¿½rieur |
+| `A_PAYER` | ï¿½ payer comptant par l'entreprise |
 
 ---
 
@@ -95,7 +95,7 @@ VISE / EN_VERIFICATION ????????????????? REJETEE
 
 ---
 
-### 4.1 Créer une demande (ENTREPRISE / COMMISSION RELAIS)
+### 4.1 Crï¿½er une demande (ENTREPRISE / COMMISSION RELAIS)
 
 **POST** `/api/utilisations-credit`  
 **Permission** : `utilisation.douane.submit`
@@ -113,7 +113,7 @@ VISE / EN_VERIFICATION ????????????????? REJETEE
   "lignes": [
     {
       "codeTaxe": "TST",
-      "denominationTaxe": "Taxe sur Tonnage Importé",
+      "denominationTaxe": "Taxe sur Tonnage Importï¿½",
       "typeLigne": "GLOBALE",
       "valeurTaxe": 3919.90
     },
@@ -137,7 +137,7 @@ VISE / EN_VERIFICATION ????????????????? REJETEE
     },
     {
       "codeTaxe": "PC",
-      "denominationTaxe": "Prélèvement Communautaire",
+      "denominationTaxe": "Prï¿½lï¿½vement Communautaire",
       "typeLigne": "ARTICLE",
       "valeurTaxe": 1346.93
     },
@@ -149,13 +149,13 @@ VISE / EN_VERIFICATION ????????????????? REJETEE
     },
     {
       "codeTaxe": "IMF",
-      "denominationTaxe": "Impôt Minimum Forfaitaire",
+      "denominationTaxe": "Impï¿½t Minimum Forfaitaire",
       "typeLigne": "ARTICLE",
       "valeurTaxe": 6599.54
     },
     {
       "codeTaxe": "TVA",
-      "denominationTaxe": "Taxe sur Valeur Ajoutée",
+      "denominationTaxe": "Taxe sur Valeur Ajoutï¿½e",
       "typeLigne": "ARTICLE",
       "valeurTaxe": 52796.32
     }
@@ -163,7 +163,7 @@ VISE / EN_VERIFICATION ????????????????? REJETEE
 }
 ```
 
-**Réponse** : `201 Created` ? `UtilisationCreditDto` (voir §6)
+**Rï¿½ponse** : `201 Created` ? `UtilisationCreditDto` (voir ï¿½6)
 
 ---
 
@@ -172,7 +172,7 @@ VISE / EN_VERIFICATION ????????????????? REJETEE
 **PUT** `/api/utilisations-credit/{id}`  
 **Permission** : `utilisation.douane.submit`
 
-Même corps que la création. Remplace toutes les lignes.
+Mï¿½me corps que la crï¿½ation. Remplace toutes les lignes.
 
 ---
 
@@ -188,7 +188,7 @@ Même corps que la création. Remplace toutes les lignes.
 **PATCH** `/api/utilisations-credit/{id}/statut?statut=EN_VERIFICATION`  
 **Permission** : `utilisation.douane.dgd.verify`
 
-> Étape facultative. Le DGD peut passer directement à `visa-dgd` sans EN_VERIFICATION.
+> ï¿½tape facultative. Le DGD peut passer directement ï¿½ `visa-dgd` sans EN_VERIFICATION.
 
 ---
 
@@ -196,9 +196,9 @@ Même corps que la création. Remplace toutes les lignes.
 
 **POST** `/api/utilisations-credit/{id}/visa-dgd`  
 **Permission** : `utilisation.douane.dgd.quittance.visa`  
-**Statut résultant** : `VISE`
+**Statut rï¿½sultant** : `VISE`
 
-Le DGD soumet ses décisions ligne par ligne. **Toutes les lignes doivent être couvertes.**
+Le DGD soumet ses dï¿½cisions ligne par ligne. **Toutes les lignes doivent ï¿½tre couvertes.**
 
 ```json
 {
@@ -219,26 +219,26 @@ Le DGD soumet ses décisions ligne par ligne. **Toutes les lignes doivent être co
 > - DD + RS + PSC + PC + TVA ? `AU_CI` (totalPrisEnCharge = 153 404,61)  
 > - IMF + TST + RI ? `A_PAYER` (totalAPayer = 10 819,44)
 
-**Réponse** : `200 OK` ? `UtilisationCreditDto` avec `statut: "VISE"`, `totalPrisEnCharge` et `totalAPayer` renseignés.
+**Rï¿½ponse** : `200 OK` ? `UtilisationCreditDto` avec `statut: "VISE"`, `totalPrisEnCharge` et `totalAPayer` renseignï¿½s.
 
-> **Aucune opération financière à cette étape.** Les valeurs sont juste calculées et sauvegardées.
+> **Aucune opï¿½ration financiï¿½re ï¿½ cette ï¿½tape.** Les valeurs sont juste calculï¿½es et sauvegardï¿½es.
 
 ---
 
-### 4.6 ? Liquidation DGTCP ? exécution financière
+### 4.6 ? Liquidation DGTCP ? exï¿½cution financiï¿½re
 
 **POST** `/api/utilisations-credit/{id}/liquidation-douane`  
 **Permission** : `utilisation.douane.dgtcp.impute` ou `utilisation.douane.dgtcp.solde.update`  
-**Prérequis** : statut `VISE` (visa DGD obligatoire)  
-**Statut résultant** : `LIQUIDEE`  
+**Prï¿½requis** : statut `VISE` (visa DGD obligatoire)  
+**Statut rï¿½sultant** : `LIQUIDEE`  
 **Corps** : aucun (pas de body)
 
-Le DGTCP exécute automatiquement :
-1. Débite `soldeCordon` du certificat de `totalPrisEnCharge - TVA_AU_CI`
-2. Décrémente `tvaImportationDouane` du certificat de `TVA_AU_CI`
-3. Crée une entrée dans le stock TVA d?ductible de TVA déductible de `TVA_AU_CI`
+Le DGTCP exï¿½cute automatiquement :
+1. Dï¿½bite `soldeCordon` du certificat de `totalPrisEnCharge - TVA_AU_CI`
+2. Dï¿½crï¿½mente `tvaImportationDouane` du certificat de `TVA_AU_CI`
+3. Crï¿½e une entrï¿½e dans le stock TVA d?ductible de TVA dï¿½ductible de `TVA_AU_CI`
 
-**Réponse** : `200 OK` ? `UtilisationCreditDto` avec `statut: "LIQUIDEE"`.
+**Rï¿½ponse** : `200 OK` ? `UtilisationCreditDto` avec `statut: "LIQUIDEE"`.
 
 ---
 
@@ -260,7 +260,7 @@ Le DGTCP exécute automatiquement :
   {
     "id": 107,
     "codeTaxe": "IMF",
-    "denominationTaxe": "Impôt Minimum Forfaitaire",
+    "denominationTaxe": "Impï¿½t Minimum Forfaitaire",
     "typeLigne": "ARTICLE",
     "valeurTaxe": 6599.54,
     "affectation": "A_PAYER"
@@ -279,11 +279,11 @@ Les lignes sont incluses dans le champ `lignes` du DTO.
 
 ---
 
-## 5. Permissions par rôle
+## 5. Permissions par rï¿½le
 
-| Rôle | Permissions |
+| Rï¿½le | Permissions |
 |---|---|
-| **ENTREPRISE / COMMISSION RELAIS** | `utilisation.douane.submit` (créer, modifier, soumettre) |
+| **ENTREPRISE / COMMISSION RELAIS** | `utilisation.douane.submit` (crï¿½er, modifier, soumettre) |
 | **DGD** | `utilisation.douane.dgd.verify` (EN_VERIFICATION), `utilisation.douane.dgd.quittance.visa` (visa-dgd), `utilisation.douane.dgd.reject` (rejeter), `utilisation.douane.dgd.queue.view` (consulter) |
 | **DGTCP** | `utilisation.douane.dgtcp.impute` (liquidation-douane), `utilisation.douane.dgtcp.queue.view` (consulter) |
 
@@ -296,7 +296,7 @@ interface UtilisationCreditDto {
   id: number;
   type: "DOUANIER" | "TVA_INTERIEURE";
   dateDemande: string;           // ISO-8601
-  montant: number | null;        // Montant débité du solde cordon (après liquidation)
+  montant: number | null;        // Montant dï¿½bitï¿½ du solde cordon (aprï¿½s liquidation)
   statut: StatutUtilisation;
   dateLiquidation: string | null;
   certificatCreditId: number;
@@ -310,22 +310,22 @@ interface UtilisationCreditDto {
   numeroBulletin: string | null;
   dateDeclaration: string | null;
   enregistreeSYDONIA: boolean | null;
-  soldeCordonAvant: number | null;   // Renseigné après liquidation DGTCP
-  soldeCordonApres: number | null;   // Renseigné après liquidation DGTCP
+  soldeCordonAvant: number | null;   // Renseignï¿½ aprï¿½s liquidation DGTCP
+  soldeCordonApres: number | null;   // Renseignï¿½ aprï¿½s liquidation DGTCP
 
-  /** Lignes du bulletin ? présentes dès la création */
+  /** Lignes du bulletin ? prï¿½sentes dï¿½s la crï¿½ation */
   lignes: LigneBulletinDto[];
 
-  /** Somme des lignes AU_CI ? renseigné après visa DGD */
+  /** Somme des lignes AU_CI ? renseignï¿½ aprï¿½s visa DGD */
   totalPrisEnCharge: number | null;
 
-  /** Somme des lignes A_PAYER ? renseigné après visa DGD */
+  /** Somme des lignes A_PAYER ? renseignï¿½ aprï¿½s visa DGD */
   totalAPayer: number | null;
 
   /** Part TVA des lignes AU_CI (pour info comptable) */
   montantTVADouane: number | null;
 
-  /** Part hors-TVA des lignes AU_CI (= montant débité solde cordon) */
+  /** Part hors-TVA des lignes AU_CI (= montant dï¿½bitï¿½ solde cordon) */
   montantDroits: number | null;
 
   // ?? Champs TVA_INTERIEURE ????????????????????????????????????????????
@@ -355,57 +355,57 @@ interface LigneBulletinDto {
 
 ---
 
-## 7. Guide UI ? composants à implémenter
+## 7. Guide UI ? composants ï¿½ implï¿½menter
 
-### 7.1 Formulaire de création (ENTREPRISE / COMMISSION RELAIS)
+### 7.1 Formulaire de crï¿½ation (ENTREPRISE / COMMISSION RELAIS)
 
-**Partie A ? En-tête**
+**Partie A ? En-tï¿½te**
 
 | Champ | Type | Obligatoire |
 |---|---|---|
-| Certificat de crédit | Sélecteur | Oui |
-| Numéro de déclaration | Texte | Non |
-| Numéro de bulletin | Texte | Non |
-| Date de déclaration | Date | Non |
-| Enregistrée SYDONIA | Checkbox | Non |
+| Certificat de crï¿½dit | Sï¿½lecteur | Oui |
+| Numï¿½ro de dï¿½claration | Texte | Non |
+| Numï¿½ro de bulletin | Texte | Non |
+| Date de dï¿½claration | Date | Non |
+| Enregistrï¿½e SYDONIA | Checkbox | Non |
 
 **Partie B ? Tableau des lignes (dynamique)**
 
 | Colonne | Type | Obligatoire |
 |---|---|---|
 | Code taxe | Texte court (?20 car.) | Oui |
-| Dénomination | Texte (?120 car.) | Oui |
+| Dï¿½nomination | Texte (?120 car.) | Oui |
 | Type | Radio : `GLOBALE` / `ARTICLE` | Oui |
-| Valeur (MRU) | Numérique ? 0 | Oui |
+| Valeur (MRU) | Numï¿½rique ? 0 | Oui |
 | _(Supprimer)_ | Bouton | ? |
 
 Bouton **"+ Ajouter une ligne"**  
-Afficher le **Total** en temps réel (somme des valeurTaxe).
+Afficher le **Total** en temps rï¿½el (somme des valeurTaxe).
 
-**Codes courants** (suggestion auto-complétion) :
+**Codes courants** (suggestion auto-complï¿½tion) :
 
-| Code | Libellé | Type habituel |
+| Code | Libellï¿½ | Type habituel |
 |---|---|---|
 | `DD` | Droit de Douane | ARTICLE |
-| `TVA` | Taxe sur Valeur Ajoutée | ARTICLE |
+| `TVA` | Taxe sur Valeur Ajoutï¿½e | ARTICLE |
 | `RS` | Redevance Statistique | ARTICLE |
 | `PSC` | Promotion Sports et Culture | ARTICLE |
-| `PC` | Prélèvement Communautaire | ARTICLE |
-| `IMF` | Impôt Minimum Forfaitaire | ARTICLE |
-| `TST` | Taxe sur Tonnage Importé | GLOBALE |
+| `PC` | Prï¿½lï¿½vement Communautaire | ARTICLE |
+| `IMF` | Impï¿½t Minimum Forfaitaire | ARTICLE |
+| `TST` | Taxe sur Tonnage Importï¿½ | GLOBALE |
 | `RI` | Redevance Informatique | GLOBALE |
 
 ---
 
 ### 7.2 Vue DGD ? Annotation du bulletin (POST visa-dgd)
 
-Afficher le tableau du bulletin avec une colonne de décision pour chaque ligne :
+Afficher le tableau du bulletin avec une colonne de dï¿½cision pour chaque ligne :
 
 ```
 ???????????????????????????????????????????????????????????????????????????
 ?  BULLETIN DE LIQUIDATION ? Visa DGD                                     ?
 ????????????????????????????????????????????????????????????????????????  ?
-? Taxe                   ? Valeur (MRU) ? Décision DGD                    ?
+? Taxe                   ? Valeur (MRU) ? Dï¿½cision DGD                    ?
 ???????????????????????????????????????????????????????????????????????? ??
 ? [Section GLOBALES]                                                       ?
 ? Taxe sur Tonnage       ?   3 919,90   ?  ? AU_CI    ? A_PAYER           ?
@@ -414,79 +414,79 @@ Afficher le tableau du bulletin avec une colonne de décision pour chaque ligne :
 ? [Section ARTICLE]                                                        ?
 ? Droit de Douane        ?  93 873,98   ?  ? AU_CI    ? A_PAYER           ?
 ? Promotion Sports       ?   2 693,69   ?  ? AU_CI    ? A_PAYER           ?
-? Prélèvement Comm.      ?   1 346,93   ?  ? AU_CI    ? A_PAYER           ?
+? Prï¿½lï¿½vement Comm.      ?   1 346,93   ?  ? AU_CI    ? A_PAYER           ?
 ? Redevance Statistique  ?   2 693,69   ?  ? AU_CI    ? A_PAYER           ?
 ? IMF                    ?   6 599,54   ?  ? AU_CI    ? A_PAYER           ?
 ? TVA                    ?  52 796,32   ?  ? AU_CI    ? A_PAYER           ?
 ???????????????????????????????????????????????????????????????????????????
 ? Total AU_CI (Cordon CI)? 153 404,61   ?                                  ?
-? Total À PAYER (Comptant?  10 819,44   ?                                  ?
+? Total ï¿½ PAYER (Comptant?  10 819,44   ?                                  ?
 ???????????????????????????????????????????????????????????????????????????
                                               [ Confirmer le Visa ]
 ```
 
-- Bloquer le bouton "Confirmer" si une ligne n'a pas de décision sélectionnée.
-- Afficher un résumé AU_CI / A_PAYER mis à jour en temps réel.
+- Bloquer le bouton "Confirmer" si une ligne n'a pas de dï¿½cision sï¿½lectionnï¿½e.
+- Afficher un rï¿½sumï¿½ AU_CI / A_PAYER mis ï¿½ jour en temps rï¿½el.
 
 Appel : `POST /{id}/visa-dgd` avec la liste `decisions`.
 
 ---
 
-### 7.3 Vue DGTCP ? Exécution de la liquidation (POST liquidation-douane)
+### 7.3 Vue DGTCP ? Exï¿½cution de la liquidation (POST liquidation-douane)
 
 Afficher en lecture seule :
-1. Le tableau des lignes avec les affectations DGD (récupérées via `GET /{id}` ou `GET /{id}/lignes-bulletin`)
-2. Le résumé financier :
+1. Le tableau des lignes avec les affectations DGD (rï¿½cupï¿½rï¿½es via `GET /{id}` ou `GET /{id}/lignes-bulletin`)
+2. Le rï¿½sumï¿½ financier :
 
 ```
 Total pris en charge AU_CI  : 153 404,61 MRU
   dont TVA (cordon douanier): 52 796,32 MRU  ? alimentera le stock TVA d?ductible
-  dont hors-TVA             : 100 608,29 MRU ? débitéra le solde cordon
-Total à payer comptant      :  10 819,44 MRU
+  dont hors-TVA             : 100 608,29 MRU ? dï¿½bitï¿½ra le solde cordon
+Total ï¿½ payer comptant      :  10 819,44 MRU
 ```
 
-Bouton **"Exécuter la liquidation"** ? `POST /{id}/liquidation-douane` (pas de body)
+Bouton **"Exï¿½cuter la liquidation"** ? `POST /{id}/liquidation-douane` (pas de body)
 
-Après exécution, afficher :
+Aprï¿½s exï¿½cution, afficher :
 - `soldeCordonAvant` / `soldeCordonApres`
 - Confirmation de l'alimentation du stock TVA d?ductible TVA
 
 ---
 
-### 7.4 Vue récapitulatif de liquidation (statut LIQUIDEE)
+### 7.4 Vue rï¿½capitulatif de liquidation (statut LIQUIDEE)
 
 Afficher :
-1. **En-tête** : numéro déclaration, numéro bulletin, date, bureau de douane
-2. **Tableau** des lignes groupées (GLOBALES puis ARTICLE) avec la colonne `affectation` DGD
-3. **Récapitulatif final** :
+1. **En-tï¿½te** : numï¿½ro dï¿½claration, numï¿½ro bulletin, date, bureau de douane
+2. **Tableau** des lignes groupï¿½es (GLOBALES puis ARTICLE) avec la colonne `affectation` DGD
+3. **Rï¿½capitulatif final** :
 
-| Catégorie | Montant (MRU) |
+| Catï¿½gorie | Montant (MRU) |
 |---|---|
 | Pris en charge par CI (AU_CI) | `totalPrisEnCharge` |
 | ? dont TVA (stock TVA d?ductible) | `montantTVADouane` |
 | ? dont hors-TVA (solde cordon) | `montantDroits` |
-| À payer comptant | `totalAPayer` |
+| ï¿½ payer comptant | `totalAPayer` |
 | **Total bulletin** | `totalPrisEnCharge + totalAPayer` |
 
 ---
 
-## 8. Codes d'erreur fréquents
+## 8. Codes d'erreur frï¿½quents
 
 | HTTP | `errorCode` | Cause |
 |---|---|---|
-| `400` | `VALIDATION_FAILED` | Décision manquante pour une ligne, liste vide |
-| `400` | `BUSINESS_RULE_VIOLATION` | Aucune ligne trouvée ; total AU_CI = 0 ; visa DGD manquant avant liquidation |
+| `400` | `VALIDATION_FAILED` | Dï¿½cision manquante pour une ligne, liste vide |
+| `400` | `BUSINESS_RULE_VIOLATION` | Aucune ligne trouvï¿½e ; total AU_CI = 0 ; visa DGD manquant avant liquidation |
 | `400` | `BUSINESS_RULE_VIOLATION` | Solde cordon insuffisant ; quota TVA insuffisant |
-| `403` | `ROLE_FORBIDDEN` | Rôle non autorisé pour cette action |
+| `403` | `ROLE_FORBIDDEN` | Rï¿½le non autorisï¿½ pour cette action |
 | `409` | `WORKFLOW` | Transition de statut invalide (ex. DEMANDEE ? LIQUIDEE sans visa) |
 
 ---
 
-## 9. Règles métier ? vérifications côté front
+## 9. Rï¿½gles mï¿½tier ? vï¿½rifications cï¿½tï¿½ front
 
 1. Au moins une ligne est requise pour soumettre une demande `DOUANIER`.
 2. Lors du visa DGD : toutes les lignes doivent avoir une affectation (bloquer le bouton si une ligne n'en a pas).
-3. `totalPrisEnCharge` doit être > 0 (sinon le backend rejette avec 400).
-4. Après le visa, les lignes ne sont plus modifiables par l'entreprise.
+3. `totalPrisEnCharge` doit ï¿½tre > 0 (sinon le backend rejette avec 400).
+4. Aprï¿½s le visa, les lignes ne sont plus modifiables par l'entreprise.
 5. La liquidation DGTCP n'est possible que si statut = `VISE`.
-6. Si erreur "Solde cordon insuffisant", afficher le solde disponible (récupérable via le certificat de crédit).
+6. Si erreur "Solde cordon insuffisant", afficher le solde disponible (rï¿½cupï¿½rable via le certificat de crï¿½dit).
