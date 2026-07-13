@@ -1,4 +1,57 @@
+# =============================================================================
+# SGCI backend — ignorer tout ce qui n'est pas le code source Java / build Maven
+# (conservé : src/, pom.xml, README.md, docker-compose.minio.yml)
+# =============================================================================
+
+# --- Front local (copie de travail Cursor, non versionnée) ---
 cs-front-for-cursor/
 
-# Config locale (mot de passe MySQL, mail SMTP, etc.)
+# --- Documentation & livrables rédactionnels ---
+docs/
+*.pdf
+*.docx
+*.doc
+*.xlsx
+*.pptx
+~$*
+
+# Markdown racine (guides API, manuels de test, rapports…) — pas README.md
+/API-ENDPOINTS.md
+/NOTIFICATIONS_EXECUTION_REPORT.md
+/TEST_MANUEL_COMPLET.md
+/UTILISATION_CREDIT_API.md
+/VERIFICATION-DOCUMENTS.md
+/Manuel_Utilisation*.docx
+/manuel_utilisation.pdf
+/Manuex.pdf
+
+# --- Scripts utilitaires (SQL ad hoc, génération PDF/diagrammes, tests manuels) ---
+scripts/
+/test-api.ps1
+
+# --- Données runtime / uploads locaux ---
+uploads/
+
+# --- Build & IDE ---
+target/
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# --- Config locale (secrets : DB, SMTP, MinIO, JWT…) ---
 src/main/resources/application-local.properties
+.env
+.env.*
+
+# --- Logs & caches ---
+*.log
+logs/
+.cache/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
