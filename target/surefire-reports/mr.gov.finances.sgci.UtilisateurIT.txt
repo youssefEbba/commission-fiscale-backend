@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: mr.gov.finances.sgci.UtilisateurIT
--------------------------------------------------------------------------------
-Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 25.94 s -- in mr.gov.finances.sgci.UtilisateurIT

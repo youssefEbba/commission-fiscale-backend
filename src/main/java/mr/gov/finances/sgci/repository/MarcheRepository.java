@@ -38,4 +38,7 @@ public interface MarcheRepository extends JpaRepository<Marche, Long> {
     @Query("SELECT m FROM Marche m WHERE LOWER(m.numeroMarche) LIKE LOWER(CONCAT('%', :q, '%')) "
             + "OR (m.intitule IS NOT NULL AND LOWER(m.intitule) LIKE LOWER(CONCAT('%', :q, '%')))")
     List<Marche> searchByNumeroOrIntitule(@Param("q") String q);
+
+    @Query("SELECT m FROM Marche m WHERE LOWER(m.numeroMarche) = LOWER(:numeroMarche)")
+    Optional<Marche> findFirstByNumeroMarcheIgnoreCase(@Param("numeroMarche") String numeroMarche);
 }

@@ -3,5 +3,6 @@ package mr.gov.finances.sgci.domain.enums;
 public enum AuditAction {
     CREATE,
     UPDATE,
-    DELETE
+    DELETE,
+    LEGACY_INJECT
 }

@@ -25,6 +25,8 @@ public final class ApiErrorCode {
     public static final String OBJECT_STORAGE_UNAVAILABLE = "OBJECT_STORAGE_UNAVAILABLE";
     /** API de change (open.er-api, exchangerate.host, etc.) injoignable ou en erreur (HTTP 503). */
     public static final String EXTERNAL_EXCHANGE_SERVICE_UNAVAILABLE = "EXTERNAL_EXCHANGE_SERVICE_UNAVAILABLE";
+    /** Fonctionnalité désactivée par configuration (HTTP 503). */
+    public static final String FEATURE_DISABLED = "FEATURE_DISABLED";
 
     /** Marché déjà lié à une demande de correction non annulée. */
     public static final String MARCHE_DEMANDE_ACTIVE = "MARCHE_DEMANDE_ACTIVE";

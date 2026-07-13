@@ -3,9 +3,10 @@ generate_diagrams.py
 Generates 3 flow diagrams as PNG files and inserts them into the Word document.
 
 Diagrams:
-  - diag6_circuit_correction.png   → §4.4 after "circuit de visa"
-  - diag13_flux_convention.png     → §15.1 after the ASCII block
-  - diag14_flux_douane.png         → §15.2 after the ASCII block
+  - diag6_circuit_correction.png        → §4.4 after "circuit de visa"
+  - diag_flux_correction_certificat.png → correction → mise en place → OUVERT
+  - diag13_flux_convention.png          → §15.1 after the ASCII block
+  - diag14_flux_douane.png              → §15.2 after the ASCII block
 """
 
 import shutil
@@ -149,6 +150,158 @@ def make_diag6():
 
     fig.tight_layout(pad=0.3)
     return _save(fig, "diag6_circuit_correction.png")
+
+
+def _draw_pipeline_row(ax, stages, y_box, box_w, box_h, gap, x0, step_offset=0):
+    """Draw a horizontal pipeline row; status chips are placed below each card."""
+    xs = []
+    status_y = y_box - 0.62
+    for i, (color, actor, action, status) in enumerate(stages):
+        x = x0 + i * (box_w + gap)
+        xs.append(x)
+        cx = x + box_w / 2
+
+        # Step badge — top-right inside the card (does not float above)
+        badge = plt.Circle((x + box_w - 0.22, y_box + box_h - 0.22), 0.17,
+                           color=DGRAY, zorder=6)
+        ax.add_patch(badge)
+        ax.text(x + box_w - 0.22, y_box + box_h - 0.22, str(step_offset + i + 1),
+                ha="center", va="center", fontsize=7.5, fontweight="bold",
+                color=WHITE, zorder=7)
+
+        box = FancyBboxPatch((x, y_box), box_w, box_h,
+                             boxstyle="round,pad=0.1",
+                             facecolor=color, edgecolor=WHITE, linewidth=1.8,
+                             zorder=3)
+        ax.add_patch(box)
+
+        ax.text(cx, y_box + box_h * 0.72, actor,
+                ha="center", va="center", fontsize=8, fontweight="bold",
+                color=WHITE, linespacing=1.2, zorder=4)
+        ax.text(cx, y_box + box_h * 0.38, action,
+                ha="center", va="center", fontsize=7.5, color=WHITE,
+                linespacing=1.2, zorder=4)
+
+        # Status chip below the card (always visible, not clipped)
+        chip_w = box_w - 0.08
+        chip = FancyBboxPatch((x + 0.04, status_y), chip_w, 0.52,
+                              boxstyle="round,pad=0.04",
+                              facecolor=WHITE, edgecolor=color,
+                              linewidth=1.2, zorder=4)
+        ax.add_patch(chip)
+        ax.text(cx, status_y + 0.26, status,
+                ha="center", va="center", fontsize=6.8, fontweight="bold",
+                color=color, linespacing=1.15, zorder=5)
+
+        if i < len(stages) - 1:
+            y_mid = y_box + box_h / 2
+            ax.annotate("", xy=(x + box_w + gap, y_mid),
+                        xytext=(x + box_w, y_mid),
+                        arrowprops=dict(arrowstyle="-|>", color=NAVY,
+                                        lw=1.8, mutation_scale=16),
+                        zorder=2)
+    return xs
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DIAGRAM — Flux correction → mise en place → certificat OUVERT
+# ─────────────────────────────────────────────────────────────────────────────
+def make_diag_flux_correction_certificat():
+    fig, ax = plt.subplots(figsize=(16, 9.5), facecolor=LGRAY)
+    ax.set_xlim(0, 16)
+    ax.set_ylim(0, 9.5)
+    ax.axis("off")
+
+    ax.text(8, 9.05,
+            "Flux : Demande de correction → Mise en place → Certificat de crédit (OUVERT)",
+            ha="center", va="center", fontsize=12, fontweight="bold", color=NAVY)
+
+    box_w, box_h, gap = 2.15, 1.75, 0.45
+
+    phase1 = [
+        (GREEN,  "AC / UPM / UEP", "Crée et soumet\nla correction", "BROUILLON → RECUE"),
+        (BLUE,   "DGD → DGTCP\n→ DGI → DGB", "Visas séquentiels\n(rejet temp. possible)", "EN_EVALUATION\n→ EN_VALIDATION"),
+        (RED,    "Président", "Adopte la demande", "ADOPTEE"),
+        (GREEN,  "Système", "Notification\naux parties", "NOTIFIEE"),
+    ]
+    phase2 = [
+        (GREEN,  "AC / UPM / UEP", "Crée le certificat\n(lié à la correction)", "BROUILLON → ENVOYEE"),
+        (TEAL,   "DGI / DGD / DGTCP", "Prise en charge\n+ visas (3 acteurs)", "EN_CONTROLE"),
+        (RED,    "Président", "Valide et signe", "EN_VALIDATION_PRESIDENT\n→ VALIDE_PRESIDENT"),
+        (NAVY,   "DGTCP", "Fixe montants\n+ ouvre le crédit", "EN_OUVERTURE_DGTCP\n→ OUVERT"),
+    ]
+
+    n = len(phase1)
+    total_w = n * box_w + (n - 1) * gap
+    x0 = (16 - total_w) / 2
+
+    # Phase headers — above each row, never overlapping cards
+    y1_header, y1_boxes = 6.55, 4.55
+    y2_header, y2_boxes = 2.05, 1.05
+
+    for y_hdr, label, color in [
+        (y1_header, "1. Demande de correction douanière", ORANGE),
+        (y2_header, "2. Demande de mise en place du certificat de crédit", TEAL),
+    ]:
+        hdr = FancyBboxPatch((x0 - 0.15, y_hdr - 0.18), total_w + 0.3, 0.36,
+                             boxstyle="round,pad=0.04",
+                             facecolor=color, edgecolor="none", alpha=0.15, zorder=1)
+        ax.add_patch(hdr)
+        ax.text(x0, y_hdr, label,
+                ha="left", va="center", fontsize=9.5, fontweight="bold", color=color)
+
+    xs1 = _draw_pipeline_row(ax, phase1, y1_boxes, box_w, box_h, gap, x0, step_offset=0)
+    xs2 = _draw_pipeline_row(ax, phase2, y2_boxes, box_w, box_h, gap, x0, step_offset=4)
+
+    # Bridge: NOTIFIEE (step 4) → step 5 — vertical corridor between rows
+    x_last = xs1[-1] + box_w / 2
+    x_first = xs2[0] + box_w / 2
+    bridge_x = (x_last + x_first) / 2
+    y_top = y1_boxes
+    y_bot = y2_boxes + box_h
+    ax.plot([bridge_x, bridge_x], [y_top, y_bot], color=PURPLE, lw=2, zorder=2)
+    ax.annotate("", xy=(bridge_x, y_bot), xytext=(bridge_x, y_top),
+                arrowprops=dict(arrowstyle="-|>", color=PURPLE, lw=2.2, mutation_scale=18),
+                zorder=2)
+    ax.text(bridge_x + 0.15, (y_top + y_bot) / 2,
+            "Demande adoptée\n→ mise en place",
+            ha="left", va="center", fontsize=8.5, color=PURPLE,
+            fontweight="bold", linespacing=1.25,
+            bbox=dict(boxstyle="round,pad=0.35", facecolor=WHITE,
+                      edgecolor=PURPLE, alpha=0.95))
+
+    # Rejet temporaire — arcs and labels below status chips, not under cards
+    def _rejet_arc(xs, y_boxes, label):
+        y_arc = y_boxes - 0.95
+        ax.annotate("", xy=(xs[0] + 0.1, y_boxes),
+                    xytext=(xs[-1] + box_w - 0.1, y_boxes),
+                    arrowprops=dict(arrowstyle="-|>", color=RED, lw=1.2,
+                                    connectionstyle="arc3,rad=-0.55", mutation_scale=12))
+        ax.text(x0 + total_w / 2, y_arc, label,
+                ha="center", va="center", fontsize=7.5, color=RED, style="italic",
+                bbox=dict(boxstyle="round,pad=0.25", facecolor=WHITE,
+                          edgecolor=RED, alpha=0.85, linewidth=0.8))
+
+    _rejet_arc(xs1, y1_boxes,
+               "Rejet temporaire / compléments : INCOMPLETE → A_RECONTROLER")
+    _rejet_arc(xs2, y2_boxes,
+               "Rejet temporaire certificat : INCOMPLETE → A_RECONTROLER")
+
+    # Final outcome — right of last card, aligned with phase 2
+    out_x = xs2[-1] + box_w + 0.25
+    out_y = y2_boxes + box_h / 2
+    out = FancyBboxPatch((out_x, out_y - 0.45), 1.65, 0.9,
+                         boxstyle="round,pad=0.06",
+                         facecolor=NAVY, edgecolor=WHITE, linewidth=1.5, zorder=3)
+    ax.add_patch(out)
+    ax.text(out_x + 0.825, out_y, "Certificat\nOUVERT",
+            ha="center", va="center", fontsize=9, fontweight="bold",
+            color=WHITE, linespacing=1.2)
+    ax.annotate("", xy=(out_x, out_y), xytext=(xs2[-1] + box_w, out_y),
+                arrowprops=dict(arrowstyle="-|>", color=NAVY, lw=1.8, mutation_scale=16))
+
+    fig.tight_layout(pad=0.4)
+    return _save(fig, "diag_flux_correction_certificat.png", dpi=200)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -433,10 +586,29 @@ def insert_into_docx(diag_paths):
 
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    import sys
+
+    only = sys.argv[1] if len(sys.argv) > 1 else None
+
     print("Generating diagrams...")
-    p6  = make_diag6()
-    p13 = make_diag13()
-    p14 = make_diag14()
-    print("\nInserting into Word document...")
-    insert_into_docx({"diag6": p6, "diag13": p13, "diag14": p14})
+    generated = {}
+    if only in (None, "correction-certificat", "all"):
+        generated["correction_certificat"] = make_diag_flux_correction_certificat()
+    if only in (None, "all", "6"):
+        generated["diag6"] = make_diag6()
+    if only in (None, "all", "13"):
+        generated["diag13"] = make_diag13()
+    if only in (None, "all", "14"):
+        generated["diag14"] = make_diag14()
+
+    if only is None and SRC_DOCX.exists():
+        print("\nInserting into Word document...")
+        insert_into_docx({
+            "diag6": generated.get("diag6"),
+            "diag13": generated.get("diag13"),
+            "diag14": generated.get("diag14"),
+        })
+    elif only is None and not SRC_DOCX.exists():
+        print(f"\nSkip Word insert — source not found: {SRC_DOCX.name}")
+
     print("\nDone.")

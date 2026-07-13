@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: mr.gov.finances.sgci.UtilisationCreditMinioFailFastIT
--------------------------------------------------------------------------------
-Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 24.52 s -- in mr.gov.finances.sgci.UtilisationCreditMinioFailFastIT
