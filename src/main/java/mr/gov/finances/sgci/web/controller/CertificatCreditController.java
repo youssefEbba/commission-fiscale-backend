@@ -5,9 +5,11 @@ import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.CertificatCreditService;
+import mr.gov.finances.sgci.service.CertificatVerificationService;
 import mr.gov.finances.sgci.service.DocumentCertificatCreditService;
 import mr.gov.finances.sgci.service.UtilisationCreditService;
 import mr.gov.finances.sgci.web.dto.CertificatCreditDto;
+import mr.gov.finances.sgci.web.dto.CertificatVerificationDto;
 import mr.gov.finances.sgci.web.dto.CertificatUtilisationEligibilityDto;
 import mr.gov.finances.sgci.web.dto.CreateCertificatCreditRequest;
 import mr.gov.finances.sgci.web.dto.UpdateCertificatCreditMontantsRequest;
@@ -32,6 +34,7 @@ import java.io.IOException;
 public class CertificatCreditController {
 
     private final CertificatCreditService service;
+    private final CertificatVerificationService verificationService;
     private final DocumentCertificatCreditService documentService;
     private final UtilisationCreditService utilisationService;
 
@@ -39,6 +42,16 @@ public class CertificatCreditController {
     @PreAuthorize("hasAnyAuthority('mise_en_place.dgi.queue.view', 'mise_en_place.dgtcp.queue.view', 'mise_en_place.dgb.queue.view', 'mise_en_place.dgd.queue.view', 'mise_en_place.president.queue.view', 'mise_en_place.view', 'mise_en_place.entreprise.queue.view', 'archivage.view')")
     public List<CertificatCreditDto> getAll(@AuthenticationPrincipal AuthenticatedUser user) {
         return service.findAll(user);
+    }
+
+    /**
+     * Vérification par scan du code-barres (valeur = {@code certificat.numero}).
+     * Réponse toujours 200 avec {@code trouve=false} si inconnu (UX scanner).
+     */
+    @GetMapping("/verification")
+    @PreAuthorize("hasAuthority('certificat.verification.scan')")
+    public CertificatVerificationDto verifyByNumero(@RequestParam String numero) {
+        return verificationService.verifyByNumero(numero);
     }
 
     @GetMapping("/{id}")

@@ -1,5 +1,7 @@
 package mr.gov.finances.sgci.web.exception;
 
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
 
@@ -21,6 +24,7 @@ import mr.gov.finances.sgci.workflow.WorkflowTransitionException;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     private static ResponseEntity<ErrorResponse> body(ErrorResponse body) {
@@ -122,12 +126,73 @@ public class GlobalExceptionHandler {
                 null));
     }
 
+    @ExceptionHandler(UnexpectedRollbackException.class)
+    public ResponseEntity<ErrorResponse> handleUnexpectedRollback(UnexpectedRollbackException ex) {
+        ResponseEntity<ErrorResponse> mapped = mapKnownCause(ex);
+        if (mapped != null) {
+            return mapped;
+        }
+        log.warn("Rollback transactionnel sans cause métier explicite", ex);
+        String root = rootCauseMessage(ex);
+        return body(ErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                "Opération annulée (incohérence transactionnelle). Vérifiez les données ou réessayez.",
+                root));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex) {
+        ResponseEntity<ErrorResponse> mapped = mapKnownCause(ex);
+        if (mapped != null) {
+            return mapped;
+        }
+        log.warn("Violation contrainte base de données", ex);
+        return body(ErrorResponse.of(
+                HttpStatus.CONFLICT.value(),
+                ApiErrorCode.CONFLICT,
+                "Conflit de données (référence ou contrainte unique). Vérifiez les identifiants et numéros saisis.",
+                null));
+    }
+
+    private static String rootCauseMessage(Throwable ex) {
+        Throwable root = ex;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        return root.getMessage();
+    }
+
+    private static ResponseEntity<ErrorResponse> mapKnownCause(Throwable ex) {
+        Throwable cause = ex;
+        while (cause != null) {
+            if (cause instanceof ApiException api) {
+                return body(ErrorResponse.of(api.getStatus(), api.getCode(), api.getMessage(), api.getDetails()));
+            }
+            if (cause instanceof DataIntegrityViolationException dive) {
+                String msg = dive.getMostSpecificCause() != null
+                        ? dive.getMostSpecificCause().getMessage()
+                        : dive.getMessage();
+                return body(ErrorResponse.of(
+                        HttpStatus.CONFLICT.value(),
+                        ApiErrorCode.CONFLICT,
+                        "Conflit de données (référence ou contrainte unique).",
+                        msg));
+            }
+            cause = cause.getCause();
+        }
+        return null;
+    }
+
     /**
      * Erreurs métier historiques : HTTP 400 + code générique.
      * Préférer {@link ApiException} avec un code plus fin lors des évolutions.
      */
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ErrorResponse> handleRuntime(RuntimeException ex) {
+        if (ex instanceof UnexpectedRollbackException ur) {
+            return handleUnexpectedRollback(ur);
+        }
         return body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(),
                 ApiErrorCode.BUSINESS_RULE_VIOLATION,

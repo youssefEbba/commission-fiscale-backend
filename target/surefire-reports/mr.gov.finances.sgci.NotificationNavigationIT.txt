@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: mr.gov.finances.sgci.NotificationNavigationIT
--------------------------------------------------------------------------------
-Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 56.20 s -- in mr.gov.finances.sgci.NotificationNavigationIT

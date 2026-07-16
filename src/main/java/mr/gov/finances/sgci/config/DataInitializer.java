@@ -1282,6 +1282,9 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("mise_en_place.president.reject", "Rejeter le certificat");
         createPermission("mise_en_place.president.resolve", "Résoudre un rejet temporaire Président");
 
+        createPermission("certificat.verification.scan",
+                "Vérifier un certificat de crédit par scan du code-barres (numéro)");
+
         createPermission("utilisation.douane.submit", "Soumettre une demande d'utilisation Douane");
         createPermission("utilisation.douane.document.upload", "Déposer les pièces import");
         createPermission("utilisation.douane.solde.view", "Consulter le solde Douane");
@@ -1448,6 +1451,7 @@ public class DataInitializer implements CommandLineRunner {
                 "modification.document.upload",
                 "modification.view",
                 "utilisation.ac.view",
+                "certificat.verification.scan",
                 "reporting.view"
         );
 
@@ -1480,6 +1484,7 @@ public class DataInitializer implements CommandLineRunner {
                 "modification.submit",
                 "modification.document.upload",
                 "modification.view",
+                "certificat.verification.scan",
                 "reporting.view"
         );
 
@@ -1514,6 +1519,7 @@ public class DataInitializer implements CommandLineRunner {
                 "modification.document.upload",
                 "modification.view",
                 "utilisation.ac.view",
+                "certificat.verification.scan",
                 "reporting.view"
         );
 
@@ -1547,6 +1553,7 @@ public class DataInitializer implements CommandLineRunner {
                 "sous_traitance.submit",
                 "sous_traitance.solde.view",
                 "sous_traitant.list",
+                "certificat.verification.scan",
                 "reporting.view"
         );
 
@@ -1567,6 +1574,7 @@ public class DataInitializer implements CommandLineRunner {
                 "sous_traitance.submit",
                 "sous_traitance.solde.view",
                 "sous_traitant.list",
+                "certificat.verification.scan",
                 "reporting.view"
         );
 
@@ -1598,7 +1606,8 @@ public class DataInitializer implements CommandLineRunner {
                 "demande.explication.view",
                 "demande.explication.create",
                 "demande.explication.reply",
-                "demande.explication.close"
+                "demande.explication.close",
+                "certificat.verification.scan"
         );
 
         assign(Role.DGI,
@@ -1644,7 +1653,8 @@ public class DataInitializer implements CommandLineRunner {
                 "demande.explication.view",
                 "demande.explication.create",
                 "demande.explication.reply",
-                "demande.explication.close"
+                "demande.explication.close",
+                "certificat.verification.scan"
         );
 
         assign(Role.DGB,
@@ -1665,7 +1675,8 @@ public class DataInitializer implements CommandLineRunner {
                 "demande.explication.view",
                 "demande.explication.create",
                 "demande.explication.reply",
-                "demande.explication.close");
+                "demande.explication.close",
+                "certificat.verification.scan");
 
         // Président : accès complet (toutes les permissions enregistrées)
         assignAllPermissions(Role.PRESIDENT);
@@ -1722,7 +1733,8 @@ public class DataInitializer implements CommandLineRunner {
                 "demande.explication.view",
                 "demande.explication.create",
                 "demande.explication.reply",
-                "demande.explication.close"
+                "demande.explication.close",
+                "certificat.verification.scan"
         );
 
         assign(Role.COMMISSION_RELAIS,
@@ -1770,10 +1782,12 @@ public class DataInitializer implements CommandLineRunner {
             "entreprise.create",
             "entreprise.update",
             "entreprise.delete",
-            "reporting.view"
+            "reporting.view",
+            "certificat.verification.scan"
     );
 
         seedReferentielReadPermissions();
+        seedCertificatVerificationScanPermission();
     }
 
     /**
@@ -1789,6 +1803,13 @@ public class DataInitializer implements CommandLineRunner {
         };
         for (Role role : Role.values()) {
             assign(role, readReferentiel);
+        }
+    }
+
+    /** Scan / vérification code-barres certificat : tous les rôles (y compris bases déjà initialisées). */
+    private void seedCertificatVerificationScanPermission() {
+        for (Role role : Role.values()) {
+            assign(role, "certificat.verification.scan");
         }
     }
 
