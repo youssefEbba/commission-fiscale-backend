@@ -30,6 +30,8 @@ public interface DemandeCorrectionRepository extends JpaRepository<DemandeCorrec
 
     List<DemandeCorrection> findByEntrepriseIdOrderByDateDepotDescIdDesc(Long entrepriseId);
 
+    boolean existsByGroupementId(Long groupementId);
+
     List<DemandeCorrection> findAllByOrderByDateDepotDescIdDesc();
 
     @Query("select distinct dc from DemandeCorrection dc join dc.marche m join m.delegues md where md.delegue.id = :delegueId order by dc.dateDepot desc, dc.id desc")

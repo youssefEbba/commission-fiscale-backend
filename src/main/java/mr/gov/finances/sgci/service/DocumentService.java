@@ -102,6 +102,61 @@ public class DocumentService {
         return result;
     }
 
+    /**
+     * Remplacement d'un document par un administrateur (ADMIN_SI), à tout moment quel que soit le
+     * statut de la demande (ex: le document initialement uploadé ne correspond pas à ce qui était
+     * demandé, constaté après le visa). Motif obligatoire, journalisé dans l'audit sous
+     * {@link AuditAction#ADMIN_CORRECTION}. L'ancienne version est désactivée (historique conservé),
+     * pas supprimée.
+     */
+    @Transactional
+    public DocumentDto adminReplace(Long demandeCorrectionId, String codeDocument, String motif, MultipartFile file, AuthenticatedUser user) throws IOException {
+        if (user == null || user.getRole() != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Correction administrateur réservée à l'administrateur système");
+        }
+        if (motif == null || motif.isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de la correction administrateur est obligatoire");
+        }
+        if (file == null || file.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
+        }
+
+        DemandeCorrection demande = demandeRepository.findById(demandeCorrectionId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + demandeCorrectionId));
+
+        Document previous = documentRepository.findByDemandeCorrectionIdAndCodeDocumentAndActifTrue(demandeCorrectionId, codeDocument)
+                .orElse(null);
+        int nextVersion = 1;
+        if (previous != null) {
+            previous.setActif(false);
+            documentRepository.save(previous);
+            nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
+        } else {
+            nextVersion = documentRepository
+                    .findTopByDemandeCorrection_IdAndCodeDocumentOrderByVersionDesc(demandeCorrectionId, codeDocument)
+                    .map(d -> d.getVersion() != null ? d.getVersion() + 1 : 1)
+                    .orElse(1);
+        }
+
+        String originalFilename = file.getOriginalFilename();
+        String fileUrl = minioService.uploadFile(file);
+
+        Document doc = Document.builder()
+                .codeDocument(codeDocument)
+                .nomFichier(originalFilename != null ? originalFilename : file.getName())
+                .chemin(fileUrl)
+                .dateUpload(Instant.now())
+                .taille(file.getSize())
+                .version(nextVersion)
+                .actif(true)
+                .demandeCorrection(demande)
+                .build();
+        doc = documentRepository.save(doc);
+        DocumentDto result = toDto(doc);
+        auditService.log(AuditAction.ADMIN_CORRECTION, "Document", String.valueOf(doc.getId()), result, motif);
+        return result;
+    }
+
     private void assertReplacementAllowed(DemandeCorrection demande, String codeDocument, AuthenticatedUser user) {
         if (demande == null || demande.getId() == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Demande de correction invalide");

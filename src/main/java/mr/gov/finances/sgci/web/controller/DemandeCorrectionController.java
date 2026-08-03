@@ -9,6 +9,7 @@ import mr.gov.finances.sgci.service.DemandeCorrectionService;
 import mr.gov.finances.sgci.service.DocumentService;
 import mr.gov.finances.sgci.service.ReclamationDemandeCorrectionService;
 import mr.gov.finances.sgci.web.dto.ReclamationDemandeCorrectionDto;
+import mr.gov.finances.sgci.web.dto.AdminCorrectionDemandeCorrectionRequest;
 import mr.gov.finances.sgci.web.dto.CreateDemandeCorrectionRequest;
 import mr.gov.finances.sgci.web.dto.UpdateDemandeCorrectionRequest;
 import mr.gov.finances.sgci.web.dto.DemandeCorrectionDto;
@@ -117,7 +118,7 @@ public class DemandeCorrectionController {
     }
 
     @PatchMapping("/{id}/statut")
-    @PreAuthorize("hasAnyAuthority('correction.submit', 'correction.demande.reactivate', 'correction.dgd.save', 'correction.dgd.transmit', 'correction.dgtcp.visa', 'correction.dgtcp.reject', 'correction.dgtcp.request_complements', 'correction.dgi.visa', 'correction.dgi.reject', 'correction.dgb.visa', 'correction.dgb.reject', 'correction.president.validate', 'correction.president.reject', 'correction.president.letter.generate', 'correction.president.signature.upload')")
+    @PreAuthorize("hasAnyAuthority('correction.submit', 'correction.demande.reactivate', 'correction.demande.reactivate_rejetee', 'correction.dgd.save', 'correction.dgd.transmit', 'correction.dgtcp.visa', 'correction.dgtcp.reject', 'correction.dgtcp.request_complements', 'correction.dgi.visa', 'correction.dgi.reject', 'correction.dgb.visa', 'correction.dgb.reject', 'correction.president.validate', 'correction.president.reject', 'correction.president.letter.generate', 'correction.president.signature.upload')")
     public DemandeCorrectionDto updateStatut(
             @PathVariable Long id,
             @RequestParam StatutDemande statut,
@@ -151,6 +152,31 @@ public class DemandeCorrectionController {
         String resolved = mr.gov.finances.sgci.web.support.DocumentUploadParamResolver
                 .resolveCodeDocument(codeDocument, typeDocument, type);
         return documentService.upload(id, resolved, message, file, user);
+    }
+
+    /** Correction administrateur d'informations, à tout moment (ADMIN_SI, motif obligatoire). */
+    @PatchMapping("/{id}/admin-correction")
+    @PreAuthorize("hasAuthority('correction.admin_override')")
+    public DemandeCorrectionDto adminCorrectInfo(
+            @PathVariable Long id,
+            @RequestParam String motif,
+            @RequestBody AdminCorrectionDemandeCorrectionRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.adminCorrectInfo(id, request, motif, user);
+    }
+
+    /** Remplacement administrateur d'un document, à tout moment (ADMIN_SI, motif obligatoire). */
+    @PostMapping(value = "/{id}/documents/admin-correction", consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('correction.admin_override')")
+    public DocumentDto adminReplaceDocument(
+            @PathVariable Long id,
+            @RequestParam String codeDocument,
+            @RequestParam String motif,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) throws IOException {
+        return documentService.adminReplace(id, codeDocument, motif, file, user);
     }
 
     /** Réclamations sur une demande adoptée ou notifiée (dépôt AC / délégués / entreprise). */

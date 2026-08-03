@@ -57,7 +57,8 @@ public class EntrepriseService {
 
     @Transactional
     public EntrepriseDto create(EntrepriseDto dto) {
-        if (dto.getNif() != null && repository.existsByNif(dto.getNif())) {
+        assertIdentificationCoherente(dto);
+        if (dto.getNif() != null && !dto.getNif().isBlank() && repository.existsByNif(dto.getNif())) {
             throw ApiException.conflict(ApiErrorCode.CONFLICT, "Une entreprise avec ce NIF existe déjà");
         }
         Entreprise entity = Entreprise.builder()
@@ -68,6 +69,8 @@ public class EntrepriseService {
                 .nif(dto.getNif())
                 .adresse(dto.getAdresse())
                 .situationFiscale(dto.getSituationFiscale())
+                .entrepriseEtrangere(dto.isEntrepriseEtrangere())
+                .registreCommerceEtranger(dto.getRegistreCommerceEtranger())
                 .build();
         entity = repository.save(entity);
         EntrepriseDto result = toDto(entity);
@@ -78,6 +81,7 @@ public class EntrepriseService {
     @Transactional
     public EntrepriseDto update(Long id, EntrepriseDto dto) {
         Entreprise entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée: " + id));
+        assertIdentificationCoherente(dto);
         entity.setRaisonSociale(dto.getRaisonSociale());
         entity.setNomCommercial(dto.getNomCommercial());
         entity.setActivite(dto.getActivite());
@@ -85,10 +89,35 @@ public class EntrepriseService {
         entity.setNif(dto.getNif());
         entity.setAdresse(dto.getAdresse());
         entity.setSituationFiscale(dto.getSituationFiscale());
+        entity.setEntrepriseEtrangere(dto.isEntrepriseEtrangere());
+        entity.setRegistreCommerceEtranger(dto.getRegistreCommerceEtranger());
         entity = repository.save(entity);
         EntrepriseDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "Entreprise", String.valueOf(id), result);
         return result;
+    }
+
+    /**
+     * Règles d'identification :
+     * <ul>
+     *   <li>entreprise étrangère → NIF facultatif, {@code registreCommerceEtranger} obligatoire ;</li>
+     *   <li>sinon → NIF obligatoire.</li>
+     * </ul>
+     * Les groupements sont gérés via l'entité {@code Groupement} (NIF = NIF du chef de file).
+     */
+    private void assertIdentificationCoherente(EntrepriseDto dto) {
+        boolean nifRenseigne = dto.getNif() != null && !dto.getNif().isBlank();
+        if (dto.isEntrepriseEtrangere()) {
+            if (dto.getRegistreCommerceEtranger() == null || dto.getRegistreCommerceEtranger().isBlank()) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Le registre de commerce étranger est obligatoire pour une entreprise étrangère");
+            }
+            return;
+        }
+        if (!nifRenseigne) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Le NIF est obligatoire pour une entreprise locale");
+        }
     }
 
     @Transactional
@@ -136,6 +165,8 @@ public class EntrepriseService {
                 .nif(e.getNif())
                 .adresse(e.getAdresse())
                 .situationFiscale(e.getSituationFiscale())
+                .entrepriseEtrangere(e.isEntrepriseEtrangere())
+                .registreCommerceEtranger(e.getRegistreCommerceEtranger())
                 .build();
     }
 }

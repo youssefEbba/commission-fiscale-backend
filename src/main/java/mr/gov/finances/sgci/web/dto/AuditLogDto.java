@@ -22,4 +22,5 @@ public class AuditLogDto {
     private String entityType;
     private String entityId;
     private String objectSnapshot;
+    private String motif;
 }

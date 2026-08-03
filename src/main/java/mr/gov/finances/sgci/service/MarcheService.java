@@ -50,6 +50,7 @@ public class MarcheService {
     private final UtilisateurRepository utilisateurRepository;
     private final DocumentMarcheRepository documentMarcheRepository;
     private final MinioService minioService;
+    private final ReferenceSequenceGenerator referenceSequenceGenerator;
 
     @Transactional(readOnly = true)
     public MarcheDto findById(Long id, AuthenticatedUser user) {
@@ -459,6 +460,7 @@ public class MarcheService {
 
         Marche marche = Marche.builder()
                 .numeroMarche(request.getNumeroMarche())
+                .reference(referenceSequenceGenerator.next(ReferenceSequenceGenerator.PREFIX_MARCHE))
                 .intitule(request.getIntitule())
                 .dateSignature(request.getDateSignature())
                 .montantContratHt(request.getMontantContratHt())
@@ -503,6 +505,7 @@ public class MarcheService {
                 .conventionId(marche.getConvention() != null ? marche.getConvention().getId() : null)
                 .demandeCorrectionId(marche.getDemandeCorrection() != null ? marche.getDemandeCorrection().getId() : null)
                 .numeroMarche(marche.getNumeroMarche())
+                .reference(marche.getReference())
                 .intitule(marche.getIntitule())
                 .dateSignature(marche.getDateSignature())
                 .montantContratHt(marche.getMontantContratHt())

@@ -38,6 +38,15 @@ public class AuditService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public void log(AuditAction action, String entityType, String entityId, Object objectSnapshot) {
+        log(action, entityType, entityId, objectSnapshot, null);
+    }
+
+    /**
+     * Variante avec motif obligatoire pour {@link AuditAction#ADMIN_CORRECTION} — corrections manuelles
+     * d'un administrateur système sur un document ou une information, en dehors du workflow normal.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public void log(AuditAction action, String entityType, String entityId, Object objectSnapshot, String motif) {
         String username = "system";
         Long userId = null;
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -70,6 +79,7 @@ public class AuditService {
                     .entityType(entityType)
                     .entityId(entityId)
                     .objectSnapshot(snapshotJson)
+                    .motif(motif)
                     .build();
             repository.save(entry);
         } catch (Exception e) {

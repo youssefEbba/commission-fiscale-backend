@@ -17,8 +17,12 @@ public class CertificatCreditDto {
 
     private Long id;
     private String numero;
+    /** Référence lisible standardisée (ex. CR-01/2025). */
+    private String reference;
     private Instant dateEmission;
     private Instant dateValidite;
+    /** Date de mise en place effective (passage OUVERT). */
+    private Instant dateMiseEnPlace;
     private BigDecimal montantCordon;
     private BigDecimal montantTVAInterieure;
     private BigDecimal soldeCordon;
@@ -49,4 +53,10 @@ public class CertificatCreditDto {
 
     private Long demandeCorrectionId;
     private Long marcheId;
+
+    private String autoriteContractanteNom;
+    /** Nom du ministère de tutelle de l'autorité contractante (affichage en-tête / PDF). */
+    private String autoriteContractanteMinistereTutelleNom;
+    /** Code du ministère de tutelle de l'autorité contractante. */
+    private String autoriteContractanteMinistereTutelleCode;
 }

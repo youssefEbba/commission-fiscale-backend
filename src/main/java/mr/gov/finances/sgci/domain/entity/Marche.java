@@ -41,6 +41,10 @@ public class Marche {
     @Column(nullable = false)
     private String numeroMarche;
 
+    /** Référence lisible standardisée (ex. DM-001-01/2025). */
+    @Column(unique = true)
+    private String reference;
+
     /** Libellé descriptif (affichage, recherche). */
     @Column(length = 500)
     private String intitule;

@@ -93,6 +93,55 @@ public class DocumentCertificatCreditService {
         return result;
     }
 
+    /**
+     * Remplacement d'un document par un administrateur (ADMIN_SI), à tout moment quel que soit le
+     * statut du certificat. Motif obligatoire, journalisé dans l'audit sous
+     * {@link AuditAction#ADMIN_CORRECTION}. L'ancienne version est désactivée (historique
+     * conservé), pas supprimée.
+     */
+    @Transactional
+    public DocumentCertificatCreditDto adminReplace(Long certificatCreditId, String codeDocument, String motif, MultipartFile file, AuthenticatedUser user) throws IOException {
+        if (user == null || user.getRole() != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Correction administrateur réservée à l'administrateur système");
+        }
+        if (motif == null || motif.isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de la correction administrateur est obligatoire");
+        }
+        if (file == null || file.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
+        }
+
+        CertificatCredit certificat = certificatRepository.findById(certificatCreditId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + certificatCreditId));
+
+        DocumentCertificatCredit previous = repository.findByCertificatCreditIdAndCodeDocumentAndActifTrue(certificatCreditId, codeDocument)
+                .orElse(null);
+        int nextVersion = 1;
+        if (previous != null) {
+            previous.setActif(false);
+            repository.save(previous);
+            nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
+        }
+
+        String originalFilename = file.getOriginalFilename();
+        String fileUrl = minioService.uploadFile(file);
+
+        DocumentCertificatCredit doc = DocumentCertificatCredit.builder()
+                .codeDocument(codeDocument)
+                .nomFichier(originalFilename != null ? originalFilename : file.getName())
+                .chemin(fileUrl)
+                .dateUpload(Instant.now())
+                .taille(file.getSize())
+                .version(nextVersion)
+                .actif(true)
+                .certificatCredit(certificat)
+                .build();
+        doc = repository.save(doc);
+        DocumentCertificatCreditDto result = toDto(doc);
+        auditService.log(AuditAction.ADMIN_CORRECTION, "DocumentCertificatCredit", String.valueOf(doc.getId()), result, motif);
+        return result;
+    }
+
     private void assertReplacementAllowed(CertificatCredit certificat, String codeDocument, AuthenticatedUser user) {
         if (certificat == null || certificat.getId() == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat invalide");

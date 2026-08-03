@@ -19,6 +19,8 @@ import java.util.List;
 public class UtilisationCreditDto {
 
     private Long id;
+    /** Référence lisible standardisée (ex. DU-01/2025). */
+    private String reference;
     private TypeUtilisation type;
     private Instant dateDemande;
     private BigDecimal montant;

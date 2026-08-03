@@ -25,6 +25,10 @@ public abstract class UtilisationCredit {
     @Column(name = "type_utilisation", insertable = false, updatable = false)
     private TypeUtilisation type;
 
+    /** Référence lisible standardisée (ex. DU-001-01/2025). */
+    @Column(unique = true)
+    private String reference;
+
     private Instant dateDemande;
 
     @Column(precision = 19, scale = 4)

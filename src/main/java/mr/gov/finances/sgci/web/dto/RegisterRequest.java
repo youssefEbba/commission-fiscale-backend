@@ -39,4 +39,7 @@ public class RegisterRequest {
     private String acAdresse;
     private String acTelephone;
     private String acEmail;
+    /** Ministère de tutelle de l'AC (facultatif à l'inscription). */
+    private String acMinistereTutelleNom;
+    private String acMinistereTutelleCode;
 }

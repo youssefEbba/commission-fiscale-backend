@@ -39,6 +39,14 @@ public class Entreprise {
 
     private String situationFiscale;
 
+    /** {@code true} si l'entreprise est étrangère : le NIF devient facultatif et {@link #registreCommerceEtranger} obligatoire. */
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean entrepriseEtrangere = false;
+
+    /** Numéro de registre de commerce étranger (obligatoire pour une entreprise étrangère sans NIF local). */
+    private String registreCommerceEtranger;
+
     @OneToMany(mappedBy = "entreprise", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<CertificatCredit> certificats = new ArrayList<>();

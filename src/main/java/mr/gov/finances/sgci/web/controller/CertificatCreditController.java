@@ -8,22 +8,28 @@ import mr.gov.finances.sgci.service.CertificatCreditService;
 import mr.gov.finances.sgci.service.CertificatVerificationService;
 import mr.gov.finances.sgci.service.DocumentCertificatCreditService;
 import mr.gov.finances.sgci.service.UtilisationCreditService;
+import mr.gov.finances.sgci.web.dto.AdminCorrectionCertificatRequest;
 import mr.gov.finances.sgci.web.dto.CertificatCreditDto;
+import mr.gov.finances.sgci.web.dto.CertificatCreditFicheDto;
+import mr.gov.finances.sgci.web.dto.CertificatCreditJournalDto;
 import mr.gov.finances.sgci.web.dto.CertificatVerificationDto;
 import mr.gov.finances.sgci.web.dto.CertificatUtilisationEligibilityDto;
 import mr.gov.finances.sgci.web.dto.CreateCertificatCreditRequest;
+import mr.gov.finances.sgci.web.dto.PageResponse;
 import mr.gov.finances.sgci.web.dto.UpdateCertificatCreditMontantsRequest;
 import mr.gov.finances.sgci.web.dto.DocumentCertificatCreditDto;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.web.dto.TvaDeductibleStockDto;
 import jakarta.validation.Valid;
 
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Instant;
 import java.util.List;
 import java.io.IOException;
 
@@ -68,6 +74,51 @@ public class CertificatCreditController {
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return service.evaluateUtilisationEligibility(id, type, user);
+    }
+
+    /**
+     * Recherche multi-critères des crédits d'impôt (périmètre du rôle), paginée.
+     * Tous les paramètres sont optionnels ; les critères texte sont insensibles à la casse (contient).
+     */
+    @GetMapping("/search")
+    @PreAuthorize("hasAnyAuthority('mise_en_place.dgi.queue.view', 'mise_en_place.dgtcp.queue.view', 'mise_en_place.dgb.queue.view', 'mise_en_place.dgd.queue.view', 'mise_en_place.president.queue.view', 'mise_en_place.view', 'mise_en_place.entreprise.queue.view', 'archivage.view')")
+    public PageResponse<CertificatCreditDto> search(
+            @RequestParam(required = false) String nif,
+            @RequestParam(required = false) String numeroMarche,
+            @RequestParam(required = false) String conventionRef,
+            @RequestParam(required = false) String projet,
+            @RequestParam(required = false) Long autoriteContractanteId,
+            @RequestParam(required = false) StatutCertificat statut,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.search(nif, numeroMarche, conventionRef, projet, autoriteContractanteId, statut, from, to, page, size, user);
+    }
+
+    /** Journal daté des crédits mis en place (OUVERT / MODIFIE / CLOTURE) + agrégats financiers. */
+    @GetMapping("/journal")
+    @PreAuthorize("hasAnyAuthority('mise_en_place.dgi.queue.view', 'mise_en_place.dgtcp.queue.view', 'mise_en_place.dgb.queue.view', 'mise_en_place.dgd.queue.view', 'mise_en_place.president.queue.view', 'mise_en_place.view', 'mise_en_place.entreprise.queue.view', 'archivage.view')")
+    public CertificatCreditJournalDto journal(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.journal(from, to, page, size, user);
+    }
+
+    /**
+     * Fiche consolidée d'un crédit d'impôt par référence lisible (ex. {@code CR-01/2025}).
+     * La référence contenant un « / », elle est passée en paramètre de requête plutôt qu'en segment d'URL.
+     */
+    @GetMapping("/fiche")
+    @PreAuthorize("hasAnyAuthority('mise_en_place.dgi.queue.view', 'mise_en_place.dgtcp.queue.view', 'mise_en_place.dgb.queue.view', 'mise_en_place.dgd.queue.view', 'mise_en_place.president.queue.view', 'mise_en_place.view', 'mise_en_place.entreprise.queue.view', 'archivage.view')")
+    public CertificatCreditFicheDto getFiche(@RequestParam String reference, @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.getFicheByReference(reference, user);
     }
 
     @GetMapping("/by-entreprise/{entrepriseId}")
@@ -176,5 +227,30 @@ public class CertificatCreditController {
         String resolved = mr.gov.finances.sgci.web.support.DocumentUploadParamResolver
                 .resolveCodeDocument(codeDocument, typeDocument, type);
         return documentService.upload(id, resolved, message, file, user);
+    }
+
+    /** Correction administrateur d'informations, à tout moment y compris après ouverture (ADMIN_SI, motif obligatoire). */
+    @PatchMapping("/{id}/admin-correction")
+    @PreAuthorize("hasAuthority('certificat.admin_override')")
+    public CertificatCreditDto adminCorrectInfo(
+            @PathVariable Long id,
+            @RequestParam String motif,
+            @RequestBody AdminCorrectionCertificatRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.adminCorrectInfo(id, request, motif, user);
+    }
+
+    /** Remplacement administrateur d'un document, à tout moment (ADMIN_SI, motif obligatoire). */
+    @PostMapping(value = "/{id}/documents/admin-correction", consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('certificat.admin_override')")
+    public DocumentCertificatCreditDto adminReplaceDocument(
+            @PathVariable Long id,
+            @RequestParam String codeDocument,
+            @RequestParam String motif,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) throws IOException {
+        return documentService.adminReplace(id, codeDocument, motif, file, user);
     }
 }

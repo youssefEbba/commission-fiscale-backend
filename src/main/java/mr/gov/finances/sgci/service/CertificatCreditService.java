@@ -4,6 +4,7 @@ import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
 import mr.gov.finances.sgci.domain.entity.LettreCorrection;
@@ -28,9 +29,18 @@ import mr.gov.finances.sgci.repository.LettreCorrectionRepository;
 import mr.gov.finances.sgci.repository.TvaDeductibleStockRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
+import mr.gov.finances.sgci.web.dto.AdminCorrectionCertificatRequest;
+import mr.gov.finances.sgci.web.dto.AutoriteContractanteDto;
 import mr.gov.finances.sgci.web.dto.CertificatCreditDto;
+import mr.gov.finances.sgci.web.dto.CertificatCreditFicheDto;
+import mr.gov.finances.sgci.web.dto.CertificatCreditJournalDto;
 import mr.gov.finances.sgci.web.dto.CertificatUtilisationEligibilityDto;
+import mr.gov.finances.sgci.web.dto.ConventionDto;
 import mr.gov.finances.sgci.web.dto.CreateCertificatCreditRequest;
+import mr.gov.finances.sgci.web.dto.EntrepriseDto;
+import mr.gov.finances.sgci.web.dto.GroupementDto;
+import mr.gov.finances.sgci.web.dto.MarcheDto;
+import mr.gov.finances.sgci.web.dto.PageResponse;
 import mr.gov.finances.sgci.web.dto.UpdateCertificatCreditMontantsRequest;
 import mr.gov.finances.sgci.workflow.CertificatCreditWorkflow;
 
@@ -40,9 +50,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -71,6 +85,9 @@ public class CertificatCreditService {
     private final DossierGedService dossierGedService;
     private final EffectiveIdentityService effectiveIdentityService;
     private final UtilisationCreditEligibilityHelper utilisationEligibilityHelper;
+    private final VisaRequirementResolver visaRequirementResolver;
+    private final ReferenceSequenceGenerator referenceSequenceGenerator;
+    private final GroupementService groupementService;
 
     @Transactional(readOnly = true)
     public List<CertificatCreditDto> findAll(AuthenticatedUser user) {
@@ -99,6 +116,230 @@ public class CertificatCreditService {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
         }
         return utilisationEligibilityHelper.evaluate(c, type, null);
+    }
+
+    /** Statuts considérés comme « mis en place » pour le journal des crédits. */
+    private static final Set<StatutCertificat> STATUTS_MIS_EN_PLACE = EnumSet.of(
+            StatutCertificat.OUVERT, StatutCertificat.MODIFIE, StatutCertificat.CLOTURE);
+
+    /**
+     * Recherche multi-critères des crédits d'impôt, dans le périmètre du rôle appelant, paginée.
+     * Tous les critères sont optionnels et combinés en ET. Les critères texte sont insensibles à la casse (contient).
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<CertificatCreditDto> search(String nif, String numeroMarche, String conventionRef,
+                                                    String projet, Long autoriteContractanteId,
+                                                    StatutCertificat statut, Instant from, Instant to,
+                                                    int page, int size, AuthenticatedUser user) {
+        List<CertificatCredit> scoped = resolveCertificatList(user, null);
+        List<CertificatCreditDto> filtered = scoped.stream()
+                .filter(c -> matchesText(nif, c.getEntreprise() != null ? c.getEntreprise().getNif() : null))
+                .filter(c -> matchesText(numeroMarche, marcheNumero(c)))
+                .filter(c -> matchesText(conventionRef, conventionReference(c)))
+                .filter(c -> matchesText(projet, conventionProjet(c)))
+                .filter(c -> autoriteContractanteId == null
+                        || autoriteContractanteId.equals(autoriteContractanteId(c)))
+                .filter(c -> statut == null || c.getStatut() == statut)
+                .filter(c -> withinPeriod(c.getDateEmission(), from, to))
+                .map(this::toDto)
+                .collect(Collectors.toList());
+        return PageResponse.of(filtered, page, size);
+    }
+
+    /**
+     * Journal daté des crédits mis en place (statut OUVERT / MODIFIE / CLOTURE) sur une période, paginé,
+     * avec agrégats financiers. Le filtre porte sur {@code dateMiseEnPlace} (fallback {@code dateEmission}).
+     */
+    @Transactional(readOnly = true)
+    public CertificatCreditJournalDto journal(Instant from, Instant to, int page, int size, AuthenticatedUser user) {
+        List<CertificatCredit> scoped = resolveCertificatList(user, null);
+        List<CertificatCredit> misEnPlace = scoped.stream()
+                .filter(c -> STATUTS_MIS_EN_PLACE.contains(c.getStatut()))
+                .filter(c -> withinPeriod(journalDate(c), from, to))
+                .sorted(Comparator.comparing(this::journalDate,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .collect(Collectors.toList());
+
+        BigDecimal totalCordon = BigDecimal.ZERO;
+        BigDecimal totalTVA = BigDecimal.ZERO;
+        BigDecimal totalSoldeCordon = BigDecimal.ZERO;
+        BigDecimal totalSoldeTVA = BigDecimal.ZERO;
+        for (CertificatCredit c : misEnPlace) {
+            totalCordon = totalCordon.add(nz(c.getMontantCordon()));
+            totalTVA = totalTVA.add(nz(c.getMontantTVAInterieure()));
+            totalSoldeCordon = totalSoldeCordon.add(nz(c.getSoldeCordon()));
+            totalSoldeTVA = totalSoldeTVA.add(nz(c.getSoldeTVA()));
+        }
+
+        List<CertificatCreditDto> dtos = misEnPlace.stream().map(this::toDto).collect(Collectors.toList());
+        return CertificatCreditJournalDto.builder()
+                .from(from)
+                .to(to)
+                .certificats(PageResponse.of(dtos, page, size))
+                .nombreCredits(misEnPlace.size())
+                .totalMontantCordon(totalCordon)
+                .totalMontantTVAInterieure(totalTVA)
+                .totalSoldeCordon(totalSoldeCordon)
+                .totalSoldeTVA(totalSoldeTVA)
+                .build();
+    }
+
+    /** Fiche consolidée d'un crédit d'impôt par sa référence lisible (ex. CR-01/2025). */
+    @Transactional(readOnly = true)
+    public CertificatCreditFicheDto getFicheByReference(String reference, AuthenticatedUser user) {
+        CertificatCredit c = repository.findByReference(reference)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
+                        "Certificat de crédit non trouvé pour la référence: " + reference));
+        if (user != null && !canAccessCertificat(c.getId(), user)) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: certificat hors périmètre");
+        }
+        return buildFiche(c, user);
+    }
+
+    private CertificatCreditFicheDto buildFiche(CertificatCredit c, AuthenticatedUser user) {
+        DemandeCorrection demande = c.getDemandeCorrection();
+        mr.gov.finances.sgci.domain.entity.Convention convention = demande != null ? demande.getConvention() : null;
+        mr.gov.finances.sgci.domain.entity.Marche marche = demande != null ? demande.getMarche() : null;
+        mr.gov.finances.sgci.domain.entity.AutoriteContractante autorite = demande != null
+                ? demande.getAutoriteContractante() : null;
+
+        GroupementDto groupementDto = null;
+        if (demande != null && demande.getGroupement() != null && demande.getGroupement().getId() != null) {
+            groupementDto = groupementService.findById(demande.getGroupement().getId());
+        }
+        return CertificatCreditFicheDto.builder()
+                .certificat(toDto(c))
+                .entreprise(toEntrepriseFicheDto(c.getEntreprise()))
+                .groupement(groupementDto)
+                .convention(toConventionFicheDto(convention))
+                .marche(toMarcheFicheDto(marche))
+                .autoriteContractante(toAutoriteFicheDto(autorite))
+                .intituleMarche(demande != null ? demande.getIntituleMarche() : null)
+                .documents(documentService.findByCertificatCreditId(c.getId()))
+                .utilisations(utilisationCreditService.findByCertificatCreditId(c.getId(), user))
+                .tvaStock(utilisationCreditService.findTvaStockByCertificat(c.getId()))
+                .build();
+    }
+
+    private static BigDecimal nz(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
+    }
+
+    private static boolean matchesText(String criterion, String value) {
+        if (criterion == null || criterion.isBlank()) {
+            return true;
+        }
+        return value != null && value.toLowerCase().contains(criterion.toLowerCase());
+    }
+
+    private static boolean withinPeriod(Instant date, Instant from, Instant to) {
+        if (from == null && to == null) {
+            return true;
+        }
+        if (date == null) {
+            return false;
+        }
+        if (from != null && date.isBefore(from)) {
+            return false;
+        }
+        return to == null || !date.isAfter(to);
+    }
+
+    private Instant journalDate(CertificatCredit c) {
+        return c.getDateMiseEnPlace() != null ? c.getDateMiseEnPlace() : c.getDateEmission();
+    }
+
+    private static String marcheNumero(CertificatCredit c) {
+        return c.getDemandeCorrection() != null && c.getDemandeCorrection().getMarche() != null
+                ? c.getDemandeCorrection().getMarche().getNumeroMarche() : null;
+    }
+
+    private static String conventionReference(CertificatCredit c) {
+        return c.getDemandeCorrection() != null && c.getDemandeCorrection().getConvention() != null
+                ? c.getDemandeCorrection().getConvention().getReference() : null;
+    }
+
+    private static String conventionProjet(CertificatCredit c) {
+        return c.getDemandeCorrection() != null && c.getDemandeCorrection().getConvention() != null
+                ? c.getDemandeCorrection().getConvention().getProjectReference() : null;
+    }
+
+    private static Long autoriteContractanteId(CertificatCredit c) {
+        return c.getDemandeCorrection() != null && c.getDemandeCorrection().getAutoriteContractante() != null
+                ? c.getDemandeCorrection().getAutoriteContractante().getId() : null;
+    }
+
+    private EntrepriseDto toEntrepriseFicheDto(Entreprise e) {
+        if (e == null) {
+            return null;
+        }
+        return EntrepriseDto.builder()
+                .id(e.getId())
+                .raisonSociale(e.getRaisonSociale())
+                .nomCommercial(e.getNomCommercial())
+                .activite(e.getActivite())
+                .autre(e.getAutre())
+                .nif(e.getNif())
+                .adresse(e.getAdresse())
+                .situationFiscale(e.getSituationFiscale())
+                .entrepriseEtrangere(e.isEntrepriseEtrangere())
+                .registreCommerceEtranger(e.getRegistreCommerceEtranger())
+                .build();
+    }
+
+    private ConventionDto toConventionFicheDto(mr.gov.finances.sgci.domain.entity.Convention convention) {
+        if (convention == null) {
+            return null;
+        }
+        return ConventionDto.builder()
+                .id(convention.getId())
+                .reference(convention.getReference())
+                .projectReference(convention.getProjectReference())
+                .intitule(convention.getIntitule())
+                .bailleurId(convention.getBailleur() != null ? convention.getBailleur().getId() : null)
+                .bailleurNom(convention.getBailleur() != null ? convention.getBailleur().getNom() : null)
+                .dateSignature(convention.getDateSignature())
+                .dateFin(convention.getDateFin())
+                .montantDevise(convention.getMontantDevise())
+                .montantMru(convention.getMontantMru())
+                .deviseOrigine(convention.getDeviseOrigine())
+                .tauxChange(convention.getTauxChange())
+                .statut(convention.getStatut())
+                .autoriteContractanteId(convention.getAutoriteContractante() != null ? convention.getAutoriteContractante().getId() : null)
+                .autoriteContractanteNom(convention.getAutoriteContractante() != null ? convention.getAutoriteContractante().getNom() : null)
+                .dateCreation(convention.getDateCreation())
+                .build();
+    }
+
+    private MarcheDto toMarcheFicheDto(mr.gov.finances.sgci.domain.entity.Marche marche) {
+        if (marche == null) {
+            return null;
+        }
+        return MarcheDto.builder()
+                .id(marche.getId())
+                .conventionId(marche.getConvention() != null ? marche.getConvention().getId() : null)
+                .demandeCorrectionId(marche.getDemandeCorrection() != null ? marche.getDemandeCorrection().getId() : null)
+                .numeroMarche(marche.getNumeroMarche())
+                .reference(marche.getReference())
+                .intitule(marche.getIntitule())
+                .dateSignature(marche.getDateSignature())
+                .montantContratHt(marche.getMontantContratHt())
+                .statut(marche.getStatut())
+                .build();
+    }
+
+    private AutoriteContractanteDto toAutoriteFicheDto(mr.gov.finances.sgci.domain.entity.AutoriteContractante a) {
+        if (a == null) {
+            return null;
+        }
+        return AutoriteContractanteDto.builder()
+                .id(a.getId())
+                .nom(a.getNom())
+                .code(a.getCode())
+                .contact(a.getContact())
+                .ministereTutelleNom(a.getMinistereTutelleNom())
+                .ministereTutelleCode(a.getMinistereTutelleCode())
+                .build();
     }
 
     @Transactional(readOnly = true)
@@ -276,6 +517,7 @@ public class CertificatCreditService {
         StatutCertificat initialStatut = brouillon ? StatutCertificat.BROUILLON : StatutCertificat.ENVOYEE;
         CertificatCredit entity = CertificatCredit.builder()
                 .numero(numero)
+                .reference(referenceSequenceGenerator.next(ReferenceSequenceGenerator.PREFIX_CERTIFICAT))
                 .dateEmission(Instant.now())
                 .dateValidite(request.getDateValidite())
                 .montantCordon(request.getMontantCordon())
@@ -396,6 +638,68 @@ public class CertificatCreditService {
     }
 
     /**
+     * Correction administrateur (ADMIN_SI) d'informations d'un certificat de crédit, à tout moment
+     * quel que soit le statut (y compris après ouverture). Patch partiel, motif obligatoire,
+     * journalisée dans l'audit sous {@link AuditAction#ADMIN_CORRECTION}.
+     * <p>
+     * Sécurité financière : la correction de montantCordon/montantTVAInterieure est refusée dès
+     * qu'une demande d'utilisation existe déjà sur ce certificat, pour ne jamais désynchroniser un
+     * solde déjà engagé. Les autres champs (récapitulatif, date de validité) restent corrigeables
+     * sans cette contrainte.
+     */
+    @Transactional
+    public CertificatCreditDto adminCorrectInfo(Long id, AdminCorrectionCertificatRequest request, String motif, AuthenticatedUser user) {
+        assertAdminOverride(user, motif);
+        CertificatCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + id));
+
+        boolean touchesMontants = request.getMontantCordon() != null || request.getMontantTVAInterieure() != null;
+        if (touchesMontants && !utilisationCreditRepository.findByCertificatCreditId(id).isEmpty()) {
+            throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Correction du montant cordon / TVA intérieure impossible : des demandes d'utilisation existent déjà sur ce certificat (risque de désynchronisation des soldes)");
+        }
+
+        if (request.getDateValidite() != null) {
+            entity.setDateValidite(request.getDateValidite());
+        }
+        if (request.getMontantCordon() != null) {
+            entity.setMontantCordon(request.getMontantCordon());
+        }
+        if (request.getMontantTVAInterieure() != null) {
+            entity.setMontantTVAInterieure(request.getMontantTVAInterieure());
+        }
+        if (request.getValeurDouaneFournitures() != null) {
+            entity.setValeurDouaneFournitures(request.getValeurDouaneFournitures());
+        }
+        if (request.getDroitsEtTaxesDouaneHorsTva() != null) {
+            entity.setDroitsEtTaxesDouaneHorsTva(request.getDroitsEtTaxesDouaneHorsTva());
+        }
+        if (request.getTvaImportationDouane() != null) {
+            entity.setTvaImportationDouane(request.getTvaImportationDouane());
+        }
+        if (request.getMontantMarcheHt() != null) {
+            entity.setMontantMarcheHt(request.getMontantMarcheHt());
+        }
+        if (request.getTvaCollecteeTravaux() != null) {
+            entity.setTvaCollecteeTravaux(request.getTvaCollecteeTravaux());
+        }
+
+        entity = repository.save(entity);
+        CertificatCreditDto result = toDto(entity);
+        auditService.log(AuditAction.ADMIN_CORRECTION, "CertificatCredit", String.valueOf(id), result, motif);
+        return result;
+    }
+
+    private void assertAdminOverride(AuthenticatedUser user, String motif) {
+        if (user == null || user.getRole() != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Correction administrateur réservée à l'administrateur système");
+        }
+        if (motif == null || motif.isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de la correction administrateur est obligatoire");
+        }
+    }
+
+    /**
      * Suppression définitive d'un brouillon uniquement. Les certificats déjà en circuit se gèrent par annulation (statut ANNULE).
      */
     @Transactional
@@ -447,6 +751,9 @@ public class CertificatCreditService {
 
         if (statut == StatutCertificat.OUVERT && fromStatut != StatutCertificat.OUVERT) {
             assertMontantsRenseignes(entity);
+            if (entity.getDateMiseEnPlace() == null) {
+                entity.setDateMiseEnPlace(Instant.now());
+            }
             // soldeCordon = droits hors TVA (b) seulement — la TVA est suivie séparément
             BigDecimal droits = entity.getDroitsEtTaxesDouaneHorsTva() != null
                     ? entity.getDroitsEtTaxesDouaneHorsTva()
@@ -628,9 +935,10 @@ public class CertificatCreditService {
         }
 
         if (to == StatutCertificat.EN_VALIDATION_PRESIDENT) {
+            java.util.Set<Role> visasRequis = visaRequirementResolver.requiredRolesForCertificat(entity);
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Transition manuelle vers EN_VALIDATION_PRESIDENT interdite : "
-                            + "ce statut est attribué automatiquement lorsque les 3 visas (DGI, DGD, DGTCP) sont validés.");
+                            + "ce statut est attribué automatiquement lorsque les visas requis " + visasRequis + " sont validés.");
         }
 
         if (to == StatutCertificat.EN_CONTROLE) {
@@ -707,11 +1015,20 @@ public class CertificatCreditService {
         if (entity == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Certificat invalide");
         }
-        if (entity.getMontantCordon() == null || entity.getMontantTVAInterieure() == null) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Les montants (cordon et TVA intérieure) doivent être renseignés avant l'ouverture du crédit");
+        java.util.Set<Role> requiredRoles = visaRequirementResolver.requiredRolesForCertificat(entity);
+        boolean cordonRequis = requiredRoles.contains(Role.DGD);
+        boolean tvaRequise = requiredRoles.contains(Role.DGI);
+        if (cordonRequis) {
+            if (entity.getMontantCordon() == null || entity.getMontantCordon().compareTo(BigDecimal.ZERO) < 0) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Le montant cordon (crédit extérieur) doit être renseigné avant l'ouverture du crédit");
+            }
         }
-        if (entity.getMontantCordon().compareTo(BigDecimal.ZERO) <= 0 || entity.getMontantTVAInterieure().compareTo(BigDecimal.ZERO) <= 0) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Les montants (cordon et TVA intérieure) doivent être strictement supérieurs à zéro");
+        if (tvaRequise) {
+            if (entity.getMontantTVAInterieure() == null || entity.getMontantTVAInterieure().compareTo(BigDecimal.ZERO) < 0) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Le montant TVA intérieure (crédit intérieur) doit être renseigné avant l'ouverture du crédit");
+            }
         }
         assertRecapitulatifCoherence(entity);
     }
@@ -719,6 +1036,7 @@ public class CertificatCreditService {
     private CertificatCreditDto toDto(CertificatCredit c) {
         Entreprise e = c.getEntreprise();
         Long demandeCorrectionId = c.getDemandeCorrection() != null ? c.getDemandeCorrection().getId() : null;
+        AutoriteContractante autorite = c.getDemandeCorrection() != null ? c.getDemandeCorrection().getAutoriteContractante() : null;
         Long marcheId = c.getDemandeCorrection() != null && c.getDemandeCorrection().getMarche() != null
                 ? c.getDemandeCorrection().getMarche().getId()
                 : null;
@@ -741,8 +1059,10 @@ public class CertificatCreditService {
         return CertificatCreditDto.builder()
                 .id(c.getId())
                 .numero(c.getNumero())
+                .reference(c.getReference())
                 .dateEmission(c.getDateEmission())
                 .dateValidite(c.getDateValidite())
+                .dateMiseEnPlace(c.getDateMiseEnPlace())
                 .montantCordon(c.getMontantCordon())
                 .montantTVAInterieure(c.getMontantTVAInterieure())
                 .soldeCordon(c.getSoldeCordon())
@@ -761,6 +1081,9 @@ public class CertificatCreditService {
                 .entrepriseRaisonSociale(e != null ? e.getRaisonSociale() : null)
                 .demandeCorrectionId(demandeCorrectionId)
                 .marcheId(marcheId)
+                .autoriteContractanteNom(autorite != null ? autorite.getNom() : null)
+                .autoriteContractanteMinistereTutelleNom(autorite != null ? autorite.getMinistereTutelleNom() : null)
+                .autoriteContractanteMinistereTutelleCode(autorite != null ? autorite.getMinistereTutelleCode() : null)
                 .build();
     }
 

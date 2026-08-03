@@ -81,6 +81,8 @@ public class DataInitializer implements CommandLineRunner {
     private final ReferentielTypeDocumentService referentielTypeDocumentService;
     private final DocumentRequirementLegacyMigration documentRequirementLegacyMigration;
     private final NotificationSchemaMigration notificationSchemaMigration;
+    private final EntrepriseLegacyGroupementMigration entrepriseLegacyGroupementMigration;
+    private final ReferenceBackfillMigration referenceBackfillMigration;
     private final Environment environment;
 
     @Override
@@ -102,6 +104,8 @@ public class DataInitializer implements CommandLineRunner {
         referentielTypeDocumentService.seedFromEnumIfEmpty();
         documentRequirementLegacyMigration.migrateIfNeeded();
         notificationSchemaMigration.migrateIfNeeded();
+        // Avant tout seed / création d'entreprise : retire les colonnes NOT NULL obsolètes.
+        entrepriseLegacyGroupementMigration.migrateIfNeeded();
         seedDocumentRequirements();
         seedDefaultUsers();
         seedReferentielTaxes();
@@ -118,6 +122,7 @@ public class DataInitializer implements CommandLineRunner {
         if (Boolean.TRUE.equals(environment.getProperty("app.seed.certificat-ouvert.enabled", Boolean.class, Boolean.FALSE))) {
             seedCertificatOuvertDemo();
         }
+        referenceBackfillMigration.migrateIfNeeded();
     }
 
     private void seedDocumentRequirements() {
@@ -1247,6 +1252,10 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("correction.reclamation.annuler", "Annuler une réclamation en cours avant DGTCP (demande inchangée)");
         createPermission("correction.reclamation.traiter", "Accepter ou rejeter une réclamation sur une demande de correction");
         createPermission("correction.demande.reactivate", "Réactiver une demande de correction annulée (retour RECUE, AC)");
+        createPermission("correction.demande.reactivate_rejetee", "Annuler un rejet définitif d'une demande de correction (retour EN_VALIDATION, ADMIN_SI)");
+        createPermission("correction.admin_override", "Corriger un document ou une information d'une demande de correction, à tout moment (ADMIN_SI, motif obligatoire)");
+        createPermission("certificat.admin_override", "Corriger un document ou une information d'un certificat de crédit, à tout moment (ADMIN_SI, motif obligatoire)");
+        createPermission("utilisation.admin_override", "Corriger un document ou une information d'une demande d'utilisation, à tout moment (ADMIN_SI, motif obligatoire)");
 
         createPermission("mise_en_place.submit", "Soumettre une demande de mise en place");
         createPermission("mise_en_place.document.upload", "Déposer les pièces justificatives");
@@ -1392,6 +1401,10 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("entreprise.create", "Créer une entreprise");
         createPermission("entreprise.update", "Modifier une entreprise");
         createPermission("entreprise.delete", "Supprimer une entreprise");
+        createPermission("groupement.list", "Consulter la liste des groupements");
+        createPermission("groupement.create", "Créer un groupement");
+        createPermission("groupement.update", "Modifier un groupement");
+        createPermission("groupement.delete", "Supprimer un groupement");
         createPermission("marche.manage", "Gérer les marchés");
         createPermission("marche.view", "Consulter les marchés (lecture)");
 
@@ -1426,6 +1439,12 @@ public class DataInitializer implements CommandLineRunner {
                 "convention.document.upload",
                 "document.requirements.view",
                 "entreprise.list",
+                "entreprise.create",
+                "entreprise.update",
+                "groupement.list",
+                "groupement.create",
+                "groupement.update",
+                "groupement.delete",
                 "bailleur.list",
                 "bailleur.create",
                 "devise.list",
@@ -1465,6 +1484,12 @@ public class DataInitializer implements CommandLineRunner {
                 "convention.document.upload",
                 "document.requirements.view",
                 "entreprise.list",
+                "entreprise.create",
+                "entreprise.update",
+                "groupement.list",
+                "groupement.create",
+                "groupement.update",
+                "groupement.delete",
                 "bailleur.list",
                 "bailleur.create",
                 "devise.list",
@@ -1499,6 +1524,12 @@ public class DataInitializer implements CommandLineRunner {
                 "convention.document.upload",
                 "document.requirements.view",
                 "entreprise.list",
+                "entreprise.create",
+                "entreprise.update",
+                "groupement.list",
+                "groupement.create",
+                "groupement.update",
+                "groupement.delete",
                 "bailleur.list",
                 "bailleur.create",
                 "devise.list",
@@ -1649,6 +1680,10 @@ public class DataInitializer implements CommandLineRunner {
                 "entreprise.create",
                 "entreprise.update",
                 "entreprise.delete",
+                "groupement.list",
+                "groupement.create",
+                "groupement.update",
+                "groupement.delete",
                 "reporting.view",
                 "demande.explication.view",
                 "demande.explication.create",
@@ -1762,6 +1797,10 @@ public class DataInitializer implements CommandLineRunner {
             "convention.validate",
             "convention.reject",
             "correction.view.audit",
+            "correction.demande.reactivate_rejetee",
+            "correction.admin_override",
+            "certificat.admin_override",
+            "utilisation.admin_override",
             "archivage.view",
             "referentiel.taxe.manage",
             "user.create",
@@ -1782,6 +1821,10 @@ public class DataInitializer implements CommandLineRunner {
             "entreprise.create",
             "entreprise.update",
             "entreprise.delete",
+            "groupement.list",
+            "groupement.create",
+            "groupement.update",
+            "groupement.delete",
             "reporting.view",
             "certificat.verification.scan"
     );
@@ -1797,6 +1840,7 @@ public class DataInitializer implements CommandLineRunner {
     private void seedReferentielReadPermissions() {
         String[] readReferentiel = {
                 "entreprise.list",
+                "groupement.list",
                 "convention.view.all",
                 "marche.view",
                 "projet.view.all"

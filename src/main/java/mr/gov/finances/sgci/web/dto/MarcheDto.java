@@ -22,6 +22,8 @@ public class MarcheDto {
     private Long conventionId;
     private Long demandeCorrectionId;
     private String numeroMarche;
+    /** Référence lisible standardisée (ex. DM-01/2025). */
+    private String reference;
     /** Libellé / objet du marché (recherche & affichage). */
     private String intitule;
     private LocalDate dateSignature;
