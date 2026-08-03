@@ -25,8 +25,15 @@ public class CertificatCredit {
     @Column(unique = true)
     private String numero;
 
+    /** Référence lisible standardisée (ex. CR-001-01/2025). Distincte de {@link #numero} (code-barres / unicité). */
+    @Column(unique = true)
+    private String reference;
+
     private Instant dateEmission;
     private Instant dateValidite;
+
+    /** Date de mise en place effective (passage au statut {@code OUVERT}). Utilisée par le journal des crédits. */
+    private Instant dateMiseEnPlace;
 
     /**
      * Enveloppe « crédit cordon / extérieur » (récap. fiscal : ligne e = b + d, imputations douane).

@@ -41,6 +41,8 @@ public class AutoriteContractanteService {
                 .nom(dto.getNom())
                 .code(dto.getCode())
                 .contact(dto.getContact())
+                .ministereTutelleNom(dto.getMinistereTutelleNom())
+                .ministereTutelleCode(dto.getMinistereTutelleCode())
                 .build();
         entity = repository.save(entity);
         AutoriteContractanteDto result = toDto(entity);
@@ -54,6 +56,8 @@ public class AutoriteContractanteService {
         entity.setNom(dto.getNom());
         entity.setCode(dto.getCode());
         entity.setContact(dto.getContact());
+        entity.setMinistereTutelleNom(dto.getMinistereTutelleNom());
+        entity.setMinistereTutelleCode(dto.getMinistereTutelleCode());
         entity = repository.save(entity);
         AutoriteContractanteDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "AutoriteContractante", String.valueOf(id), result);
@@ -75,6 +79,8 @@ public class AutoriteContractanteService {
                 .nom(e.getNom())
                 .code(e.getCode())
                 .contact(e.getContact())
+                .ministereTutelleNom(e.getMinistereTutelleNom())
+                .ministereTutelleCode(e.getMinistereTutelleCode())
                 .build();
     }
 }

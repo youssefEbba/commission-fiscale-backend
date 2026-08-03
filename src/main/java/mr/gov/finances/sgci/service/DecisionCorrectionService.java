@@ -32,7 +32,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -50,6 +49,7 @@ public class DecisionCorrectionService {
     private final DemandeCorrectionWorkflow demandeCorrectionWorkflow;
     private final DemandeCorrectionService demandeCorrectionService;
     private final DocumentService documentService;
+    private final VisaRequirementResolver visaRequirementResolver;
 
     @Transactional
     public DecisionCorrectionDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
@@ -103,11 +103,23 @@ public class DecisionCorrectionService {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Rôle non autorisé pour la décision: " + role);
         }
 
-        if (role != Role.DGD && role != Role.PRESIDENT) {
-            boolean dgdVisa = decisionRepository.existsByDemandeCorrectionIdAndRoleAndDecision(
-                    demandeId, Role.DGD, DecisionCorrectionType.VISA);
-            if (!dgdVisa) {
-                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le visa DGD est requis en premier");
+        DemandeCorrection demande = demandeRepository.findById(demandeId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + demandeId));
+        Set<Role> requiredRoles = visaRequirementResolver.requiredRolesForCorrection(demande);
+
+        if (role != Role.PRESIDENT && !requiredRoles.contains(role)) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Rôle non concerné par cette demande (crédit associé nul): " + role
+                            + ". Visas requis: " + requiredRoles);
+        }
+
+        Role firstVisaRole = visaRequirementResolver.firstVisaRoleForCorrection(demande);
+        if (firstVisaRole != null && role != firstVisaRole && role != Role.PRESIDENT) {
+            boolean firstVisaPose = decisionRepository.existsByDemandeCorrectionIdAndRoleAndDecision(
+                    demandeId, firstVisaRole, DecisionCorrectionType.VISA);
+            if (!firstVisaPose) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Le visa " + firstVisaRole + " est requis en premier");
             }
         }
         if (decision == DecisionCorrectionType.REJET_TEMP) {
@@ -119,8 +131,6 @@ public class DecisionCorrectionService {
             }
         }
 
-        DemandeCorrection demande = demandeRepository.findById(demandeId)
-                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + demandeId));
         StatutDemande statutAvantDecision = demande.getStatut();
 
         if (!DECISION_ALLOWED_STATUTS.contains(demande.getStatut())) {
@@ -147,10 +157,10 @@ public class DecisionCorrectionService {
                         "VISA impossible: un ou plusieurs rejets temporaires sont encore ouverts pour ce rôle. "
                                 + "Résolvez-les via PUT .../decisions/{id}/resolve pour chaque rejet concerné.");
             }
-            if (role == Role.DGI) {
+            if (role == Role.DGI && visaRequirementResolver.isCreditInterieurDocumentRequiredForCorrection(demande)) {
                 documentService.assertActiveDocumentPresent(demandeId, TypeDocument.CREDIT_INTERIEUR.name());
             }
-            if (role == Role.DGD) {
+            if (role == Role.DGD && visaRequirementResolver.isOffreFiscaleCorrigeeRequiredForCorrection(demande)) {
                 documentService.assertActiveDocumentPresent(demandeId, TypeDocument.OFFRE_FISCALE_CORRIGEE.name());
             }
         }
@@ -214,10 +224,11 @@ public class DecisionCorrectionService {
             s = demande.getStatut();
         }
 
-        boolean quatreVisas = Stream.of(Role.DGD, Role.DGTCP, Role.DGI, Role.DGB)
+        Set<Role> requiredRoles = visaRequirementResolver.requiredRolesForCorrection(demande);
+        boolean tousVisas = requiredRoles.stream()
                 .allMatch(r -> decisionRepository.existsByDemandeCorrectionIdAndRoleAndDecision(
                         demandeId, r, DecisionCorrectionType.VISA));
-        if (quatreVisas && s == StatutDemande.EN_EVALUATION) {
+        if (tousVisas && s == StatutDemande.EN_EVALUATION) {
             demandeCorrectionWorkflow.validateTransition(StatutDemande.EN_EVALUATION, StatutDemande.EN_VALIDATION);
             demande.setStatut(StatutDemande.EN_VALIDATION);
         }

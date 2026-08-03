@@ -9,6 +9,7 @@ import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.DocumentUtilisationCreditService;
 import mr.gov.finances.sgci.service.UtilisationCreditService;
 import mr.gov.finances.sgci.web.dto.DocumentUtilisationCreditDto;
+import mr.gov.finances.sgci.web.dto.AdminCorrectionUtilisationRequest;
 import mr.gov.finances.sgci.web.dto.ApurerTVAInterieureRequest;
 import mr.gov.finances.sgci.web.dto.CreateUtilisationCreditRequest;
 import mr.gov.finances.sgci.web.dto.LigneBulletinDto;
@@ -281,5 +282,30 @@ public class UtilisationCreditController {
         String resolved = mr.gov.finances.sgci.web.support.DocumentUploadParamResolver
                 .resolveCodeDocument(codeDocument, typeDocument, type);
         return documentService.upload(id, resolved, message, file, user);
+    }
+
+    /** Correction administrateur d'informations, à tout moment (ADMIN_SI, motif obligatoire). */
+    @PatchMapping("/{id}/admin-correction")
+    @PreAuthorize("hasAuthority('utilisation.admin_override')")
+    public UtilisationCreditDto adminCorrectInfo(
+            @PathVariable Long id,
+            @RequestParam String motif,
+            @RequestBody AdminCorrectionUtilisationRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.adminCorrectInfo(id, request, motif, user);
+    }
+
+    /** Remplacement administrateur d'un document, à tout moment (ADMIN_SI, motif obligatoire). */
+    @PostMapping(value = "/{id}/documents/admin-correction", consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('utilisation.admin_override')")
+    public DocumentUtilisationCreditDto adminReplaceDocument(
+            @PathVariable Long id,
+            @RequestParam String codeDocument,
+            @RequestParam String motif,
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) throws IOException {
+        return documentService.adminReplace(id, codeDocument, motif, file, user);
     }
 }

@@ -27,6 +27,12 @@ public class AutoriteContractante {
 
     private String contact;
 
+    /** Nom du ministère de tutelle (affichage en-têtes de demandes / PDF). */
+    private String ministereTutelleNom;
+
+    /** Code du ministère de tutelle. */
+    private String ministereTutelleCode;
+
     @OneToMany(mappedBy = "autoriteContractante", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<DemandeCorrection> demandes = new ArrayList<>();

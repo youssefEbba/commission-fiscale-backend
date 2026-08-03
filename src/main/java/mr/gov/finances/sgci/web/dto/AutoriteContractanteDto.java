@@ -17,4 +17,9 @@ public class AutoriteContractanteDto {
     private String nom;
     private String code;
     private String contact;
+
+    /** Nom du ministère de tutelle. */
+    private String ministereTutelleNom;
+    /** Code du ministère de tutelle. */
+    private String ministereTutelleCode;
 }

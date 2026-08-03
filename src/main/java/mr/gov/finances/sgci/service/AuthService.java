@@ -104,6 +104,8 @@ public class AuthService {
                         .nom(request.getAcNom().trim())
                         .code(code)
                         .contact(contact)
+                        .ministereTutelleNom(request.getAcMinistereTutelleNom())
+                        .ministereTutelleCode(request.getAcMinistereTutelleCode())
                         .build());
             } else {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,

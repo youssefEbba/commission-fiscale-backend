@@ -158,6 +158,8 @@ public class CommissionRelaisService {
                 .nif(e.getNif())
                 .adresse(e.getAdresse())
                 .situationFiscale(e.getSituationFiscale())
+                .entrepriseEtrangere(e.isEntrepriseEtrangere())
+                .registreCommerceEtranger(e.getRegistreCommerceEtranger())
                 .build();
     }
 
@@ -167,6 +169,8 @@ public class CommissionRelaisService {
                 .nom(a.getNom())
                 .code(a.getCode())
                 .contact(a.getContact())
+                .ministereTutelleNom(a.getMinistereTutelleNom())
+                .ministereTutelleCode(a.getMinistereTutelleCode())
                 .build();
     }
 }

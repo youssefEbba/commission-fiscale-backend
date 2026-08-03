@@ -25,9 +25,12 @@ import java.util.Set;
 public class WorkflowNotificationHelper {
 
     private final WorkflowNotificationDispatcher dispatcher;
+    private final VisaRequirementResolver visaRequirementResolver;
 
-    public WorkflowNotificationHelper(WorkflowNotificationDispatcher dispatcher) {
+    public WorkflowNotificationHelper(WorkflowNotificationDispatcher dispatcher,
+                                      VisaRequirementResolver visaRequirementResolver) {
         this.dispatcher = dispatcher;
+        this.visaRequirementResolver = visaRequirementResolver;
     }
 
     public void correctionStatut(DemandeCorrection d, StatutDemande statut, AuthenticatedUser actor,
@@ -113,7 +116,7 @@ public class WorkflowNotificationHelper {
 
     private void dispatchCorrection(WorkflowEventCode event, DemandeCorrection d, AuthenticatedUser actor,
                                     String newStatus, String motif, boolean includeCommission) {
-        dispatchCorrection(event, d, actor, newStatus, motif, includeCommission, Map.of(), commissionRoles(includeCommission));
+        dispatchCorrection(event, d, actor, newStatus, motif, includeCommission, Map.of(), commissionRoles(includeCommission, d));
     }
 
     private void dispatchCorrection(WorkflowEventCode event, DemandeCorrection d, AuthenticatedUser actor,
@@ -124,7 +127,7 @@ public class WorkflowNotificationHelper {
                 .motif(motif)
                 .extraPayload(extra);
         if (includeCommission) {
-            b.roleRecipients(commissionRoles(true));
+            b.roleRecipients(commissionRoles(true, d));
         } else if (extraRoles != null && !extraRoles.isEmpty()) {
             b.roleRecipients(extraRoles);
         }
@@ -135,7 +138,7 @@ public class WorkflowNotificationHelper {
         return WorkflowNotificationContext.builder()
                 .entityType("DemandeCorrection")
                 .entityId(d.getId())
-                .dossierLabel(d.getNumero())
+                .dossierLabel(ref(d.getReference(), d.getNumero()))
                 .actor(actor)
                 .entrepriseId(d.getEntreprise() != null ? d.getEntreprise().getId() : null)
                 .autoriteContractanteId(d.getAutoriteContractante() != null ? d.getAutoriteContractante().getId() : null);
@@ -150,11 +153,11 @@ public class WorkflowNotificationHelper {
             event = WorkflowEventCode.CERTIFICAT_SOUMIS;
         }
         List<Role> roles = "ENVOYEE".equals(statut) || "EN_CONTROLE".equals(statut)
-                ? List.of(Role.DGI, Role.DGD, Role.DGTCP) : List.of();
+                ? new ArrayList<>(visaRequirementResolver.requiredRolesForCertificat(c)) : List.of();
         dispatcher.dispatch(event, WorkflowNotificationContext.builder()
                 .entityType("CertificatCredit")
                 .entityId(c.getId())
-                .dossierLabel(c.getNumero())
+                .dossierLabel(ref(c.getReference(), c.getNumero()))
                 .actor(actor)
                 .newStatus(statut)
                 .entrepriseId(c.getEntreprise() != null ? c.getEntreprise().getId() : null)
@@ -185,7 +188,7 @@ public class WorkflowNotificationHelper {
         dispatcher.dispatch(WorkflowEventCode.CERTIFICAT_PRESIDENT_VALIDATION, WorkflowNotificationContext.builder()
                 .entityType("CertificatCredit")
                 .entityId(c.getId())
-                .dossierLabel(c.getNumero())
+                .dossierLabel(ref(c.getReference(), c.getNumero()))
                 .newStatus("EN_VALIDATION_PRESIDENT")
                 .roleRecipients(List.of(Role.PRESIDENT))
                 .build());
@@ -309,7 +312,9 @@ public class WorkflowNotificationHelper {
         if (t == null) {
             return;
         }
-        String label = t.getCertificatCredit() != null ? t.getCertificatCredit().getNumero() : ("#" + t.getId());
+        String label = t.getCertificatCredit() != null
+                ? ref(t.getCertificatCredit().getReference(), t.getCertificatCredit().getNumero())
+                : ("#" + t.getId());
         Long entrepriseId = t.getCertificatCredit() != null && t.getCertificatCredit().getEntreprise() != null
                 ? t.getCertificatCredit().getEntreprise().getId() : null;
         List<Role> roles = switch (event) {
@@ -352,7 +357,7 @@ public class WorkflowNotificationHelper {
                 .entityType("ClotureCredit")
                 .entityId(cc.getId())
                 .certificatCreditId(c.getId())
-                .dossierLabel(c.getNumero())
+                .dossierLabel(ref(c.getReference(), c.getNumero()))
                 .actor(actor)
                 .entrepriseId(entrepriseId)
                 .roleRecipients(roles)
@@ -368,7 +373,7 @@ public class WorkflowNotificationHelper {
         return WorkflowNotificationContext.builder()
                 .entityType("CertificatCredit")
                 .entityId(c.getId())
-                .dossierLabel(c.getNumero())
+                .dossierLabel(ref(c.getReference(), c.getNumero()))
                 .actor(actor)
                 .entrepriseId(c.getEntreprise() != null ? c.getEntreprise().getId() : null)
                 .autoriteContractanteId(autoriteId);
@@ -385,15 +390,34 @@ public class WorkflowNotificationHelper {
         return extra;
     }
 
-    private List<Role> commissionRoles(boolean include) {
-        return include ? List.of(Role.PRESIDENT, Role.DGD, Role.DGTCP, Role.DGI, Role.DGB) : List.of();
+    /**
+     * Membres de la commission à notifier. La DGD (crédit extérieur) et la DGI (crédit intérieur) sont
+     * filtrées lorsque leur enveloppe est nulle, afin de ne pas générer de « tâche fantôme ».
+     */
+    private List<Role> commissionRoles(boolean include, DemandeCorrection d) {
+        if (!include) {
+            return List.of();
+        }
+        Set<Role> required = visaRequirementResolver.requiredRolesForCorrection(d);
+        List<Role> roles = new ArrayList<>();
+        roles.add(Role.PRESIDENT);
+        roles.addAll(required);
+        return roles;
     }
 
     private String utilisationLabel(UtilisationCredit u) {
+        if (u.getReference() != null && !u.getReference().isBlank()) {
+            return u.getReference();
+        }
         if (u.getCertificatCredit() != null && u.getCertificatCredit().getNumero() != null) {
             return u.getCertificatCredit().getNumero() + " / util #" + u.getId();
         }
         return "utilisation #" + u.getId();
+    }
+
+    /** Référence lisible si disponible, sinon repli sur le numéro interne — cohérent avec displayRef() côté front. */
+    private static String ref(String reference, String numero) {
+        return reference != null && !reference.isBlank() ? reference : numero;
     }
 
     private WorkflowEventCode mapUtilStatutEvent(boolean douane, String statut) {

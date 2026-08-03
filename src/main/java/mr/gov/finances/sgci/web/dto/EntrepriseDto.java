@@ -21,4 +21,9 @@ public class EntrepriseDto {
     private String nif;
     private String adresse;
     private String situationFiscale;
+
+    /** {@code true} si l'entreprise est étrangère (NIF facultatif, registre de commerce étranger requis). */
+    private boolean entrepriseEtrangere;
+    /** Registre de commerce étranger (obligatoire si {@link #entrepriseEtrangere}). */
+    private String registreCommerceEtranger;
 }

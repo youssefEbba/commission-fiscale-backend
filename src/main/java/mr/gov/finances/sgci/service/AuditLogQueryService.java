@@ -36,6 +36,7 @@ public class AuditLogQueryService {
                 .entityType(a.getEntityType())
                 .entityId(a.getEntityId())
                 .objectSnapshot(a.getObjectSnapshot())
+                .motif(a.getMotif())
                 .build();
     }
 }

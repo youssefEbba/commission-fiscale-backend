@@ -11,6 +11,7 @@ import mr.gov.finances.sgci.domain.entity.Dqe;
 import mr.gov.finances.sgci.domain.entity.DqeLigne;
 import mr.gov.finances.sgci.domain.entity.DecisionCorrection;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
+import mr.gov.finances.sgci.domain.entity.Groupement;
 import mr.gov.finances.sgci.domain.entity.FiscaliteInterieure;
 import mr.gov.finances.sgci.domain.entity.LigneImportation;
 import mr.gov.finances.sgci.domain.entity.Marche;
@@ -31,8 +32,10 @@ import mr.gov.finances.sgci.repository.AutoriteContractanteRepository;
 import mr.gov.finances.sgci.repository.ConventionRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.EntrepriseRepository;
+import mr.gov.finances.sgci.repository.GroupementRepository;
 import mr.gov.finances.sgci.repository.MarcheRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
+import mr.gov.finances.sgci.web.dto.AdminCorrectionDemandeCorrectionRequest;
 import mr.gov.finances.sgci.web.dto.CreateDemandeCorrectionRequest;
 import mr.gov.finances.sgci.web.dto.UpdateDemandeCorrectionRequest;
 import mr.gov.finances.sgci.web.dto.DecisionCorrectionDto;
@@ -51,6 +54,7 @@ import mr.gov.finances.sgci.workflow.DemandeCorrectionWorkflow;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -70,6 +74,7 @@ public class DemandeCorrectionService {
     private final DemandeCorrectionRepository demandeRepository;
     private final AutoriteContractanteRepository autoriteRepository;
     private final EntrepriseRepository entrepriseRepository;
+    private final GroupementRepository groupementRepository;
     private final MarcheRepository marcheRepository;
     private final ConventionRepository conventionRepository;
     private final UtilisateurRepository utilisateurRepository;
@@ -80,6 +85,7 @@ public class DemandeCorrectionService {
     private final DocumentRequirementValidator requirementValidator;
     private final DossierGedService dossierGedService;
     private final EffectiveIdentityService effectiveIdentityService;
+    private final ReferenceSequenceGenerator referenceSequenceGenerator;
 
     private static String generateNumero() {
         return "DC-" + Instant.now().getEpochSecond() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
@@ -207,11 +213,13 @@ public class DemandeCorrectionService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Le modèle fiscal et le DQE sont obligatoires (ou utilisez brouillon=true)");
         }
+        if (!brouillon) {
+            assertAuMoinsUnCredit(request.getCreditInterieur(), request.getCreditExterieur());
+        }
 
         AutoriteContractante autorite = autoriteRepository.findById(request.getAutoriteContractanteId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée"));
-        Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
-                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée"));
+        Titulaire titulaire = resolveTitulaire(request.getGroupementId(), request.getEntrepriseId());
         Convention convention = conventionRepository.findById(request.getConventionId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée"));
         Marche marche = null;
@@ -248,10 +256,15 @@ public class DemandeCorrectionService {
         StatutDemande initial = brouillon ? StatutDemande.BROUILLON : StatutDemande.RECUE;
         DemandeCorrection entity = DemandeCorrection.builder()
                 .numero(generateNumero())
+                .reference(referenceSequenceGenerator.next(ReferenceSequenceGenerator.PREFIX_DEMANDE_CORRECTION))
                 .dateDepot(Instant.now())
                 .statut(initial)
+                .intituleMarche(request.getIntituleMarche())
+                .creditInterieur(normalizeCredit(request.getCreditInterieur()))
+                .creditExterieur(normalizeCredit(request.getCreditExterieur()))
                 .autoriteContractante(autorite)
-                .entreprise(entreprise)
+                .entreprise(titulaire.entreprise())
+                .groupement(titulaire.groupement())
                 .convention(convention)
                 .build();
         if (marche != null) {
@@ -323,6 +336,56 @@ public class DemandeCorrectionService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Modèle fiscal et DQE obligatoires pour la soumission");
         }
+        assertAuMoinsUnCredit(entity.getCreditInterieur(), entity.getCreditExterieur());
+    }
+
+    private static BigDecimal normalizeCredit(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
+    }
+
+    /**
+     * Résout le titulaire de la demande :
+     * <ul>
+     *   <li>si {@code groupementId} → groupement + entreprise = chef de file ;</li>
+     *   <li>sinon {@code entrepriseId} obligatoire → entreprise seule, groupement null.</li>
+     * </ul>
+     */
+    private Titulaire resolveTitulaire(Long groupementId, Long entrepriseId) {
+        if (groupementId != null) {
+            Groupement groupement = groupementRepository.findByIdWithMembres(groupementId)
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
+                            "Groupement non trouvé: " + groupementId));
+            if (!groupement.isActif()) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Le groupement sélectionné n'est pas actif");
+            }
+            Entreprise chef = groupement.getChefDeFile();
+            if (chef == null) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Le groupement n'a pas de chef de file");
+            }
+            return new Titulaire(chef, groupement);
+        }
+        if (entrepriseId == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Indiquez une entreprise (entrepriseId) ou un groupement (groupementId)");
+        }
+        Entreprise entreprise = entrepriseRepository.findById(entrepriseId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée"));
+        return new Titulaire(entreprise, null);
+    }
+
+    private record Titulaire(Entreprise entreprise, Groupement groupement) {
+    }
+
+    /** Règle métier : au moins un des deux crédits (intérieur / extérieur) doit être strictement positif. */
+    private void assertAuMoinsUnCredit(BigDecimal creditInterieur, BigDecimal creditExterieur) {
+        BigDecimal interieur = normalizeCredit(creditInterieur);
+        BigDecimal exterieur = normalizeCredit(creditExterieur);
+        if (interieur.compareTo(BigDecimal.ZERO) <= 0 && exterieur.compareTo(BigDecimal.ZERO) <= 0) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Au moins un crédit (intérieur ou extérieur) doit être strictement supérieur à zéro");
+        }
     }
 
     /**
@@ -388,13 +451,16 @@ public class DemandeCorrectionService {
 
         AutoriteContractante autorite = autoriteRepository.findById(request.getAutoriteContractanteId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée"));
-        Entreprise entreprise = entrepriseRepository.findById(request.getEntrepriseId())
-                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Entreprise non trouvée"));
+        Titulaire titulaire = resolveTitulaire(request.getGroupementId(), request.getEntrepriseId());
         Convention convention = conventionRepository.findById(request.getConventionId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée"));
         entity.setAutoriteContractante(autorite);
-        entity.setEntreprise(entreprise);
+        entity.setEntreprise(titulaire.entreprise());
+        entity.setGroupement(titulaire.groupement());
         entity.setConvention(convention);
+        entity.setIntituleMarche(request.getIntituleMarche());
+        entity.setCreditInterieur(normalizeCredit(request.getCreditInterieur()));
+        entity.setCreditExterieur(normalizeCredit(request.getCreditExterieur()));
 
         Marche marcheCible = null;
         if (request.getMarcheId() != null) {
@@ -448,6 +514,42 @@ public class DemandeCorrectionService {
         DemandeCorrectionDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), result);
         return result;
+    }
+
+    /**
+     * Correction administrateur (ADMIN_SI) d'informations d'une demande de correction, à tout
+     * moment quel que soit le statut. Patch partiel (seuls les champs non nuls sont appliqués),
+     * motif obligatoire, journalisée dans l'audit sous {@link AuditAction#ADMIN_CORRECTION}.
+     * Ne touche ni au workflow (statut, visas) ni aux liens entreprise/convention/marché.
+     */
+    @Transactional
+    public DemandeCorrectionDto adminCorrectInfo(Long id, AdminCorrectionDemandeCorrectionRequest request, String motif, AuthenticatedUser user) {
+        assertAdminOverride(user, motif);
+        DemandeCorrection entity = demandeRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + id));
+
+        if (request.getCreditInterieur() != null) {
+            entity.setCreditInterieur(request.getCreditInterieur());
+        }
+        if (request.getCreditExterieur() != null) {
+            entity.setCreditExterieur(request.getCreditExterieur());
+        }
+        if (request.getIntituleMarche() != null) {
+            entity.setIntituleMarche(request.getIntituleMarche());
+        }
+        entity = demandeRepository.save(entity);
+        DemandeCorrectionDto result = toDto(entity);
+        auditService.log(AuditAction.ADMIN_CORRECTION, "DemandeCorrection", String.valueOf(id), result, motif);
+        return result;
+    }
+
+    private void assertAdminOverride(AuthenticatedUser user, String motif) {
+        if (user == null || user.getRole() != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Correction administrateur réservée à l'administrateur système");
+        }
+        if (motif == null || motif.isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de la correction administrateur est obligatoire");
+        }
     }
 
     private void detachMarcheFromCancelledDemande(DemandeCorrection cancelled, Marche marche) {
@@ -528,6 +630,20 @@ public class DemandeCorrectionService {
             DemandeCorrectionDto reactivated = toDto(entity);
             auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), reactivated);
             notifyDemandeCorrection(entity, StatutDemande.RECUE, null, user, false);
+            return reactivated;
+        }
+
+        if (statut == StatutDemande.EN_VALIDATION && entity.getStatut() == StatutDemande.REJETEE) {
+            if (user == null || user.getRole() != Role.ADMIN_SI) {
+                throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                        "Seul l'administrateur peut annuler un rejet définitif");
+            }
+            entity.setStatut(StatutDemande.EN_VALIDATION);
+            entity.setMotifRejet(null);
+            entity = demandeRepository.save(entity);
+            DemandeCorrectionDto reactivated = toDto(entity);
+            auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), reactivated);
+            notifyDemandeCorrection(entity, StatutDemande.EN_VALIDATION, null, user, false);
             return reactivated;
         }
 
@@ -729,7 +845,11 @@ public class DemandeCorrectionService {
         return DemandeCorrectionDto.builder()
                 .id(d.getId())
                 .numero(d.getNumero())
+                .reference(d.getReference())
                 .dateDepot(d.getDateDepot())
+                .intituleMarche(d.getIntituleMarche())
+                .creditInterieur(d.getCreditInterieur())
+                .creditExterieur(d.getCreditExterieur())
                 .statut(d.getStatut())
                 .validationDgd(d.isValidationDgd())
                 .validationDgtcp(d.isValidationDgtcp())
@@ -748,9 +868,18 @@ public class DemandeCorrectionService {
                 .dateModification(d.getDateModification())
                 .autoriteContractanteId(d.getAutoriteContractante() != null ? d.getAutoriteContractante().getId() : null)
                 .autoriteContractanteNom(d.getAutoriteContractante() != null ? d.getAutoriteContractante().getNom() : null)
+                .autoriteContractanteMinistereTutelleNom(d.getAutoriteContractante() != null ? d.getAutoriteContractante().getMinistereTutelleNom() : null)
+                .autoriteContractanteMinistereTutelleCode(d.getAutoriteContractante() != null ? d.getAutoriteContractante().getMinistereTutelleCode() : null)
                 .entrepriseId(d.getEntreprise() != null ? d.getEntreprise().getId() : null)
                 .entrepriseRaisonSociale(d.getEntreprise() != null ? d.getEntreprise().getRaisonSociale() : null)
+                .entrepriseNif(d.getEntreprise() != null ? d.getEntreprise().getNif() : null)
+                .groupementId(d.getGroupement() != null ? d.getGroupement().getId() : null)
+                .groupementRaisonSociale(d.getGroupement() != null ? d.getGroupement().getRaisonSociale() : null)
+                .groupementNifAffiche(d.getGroupement() != null && d.getGroupement().getChefDeFile() != null
+                        ? d.getGroupement().getChefDeFile().getNif() : null)
                 .conventionId(d.getConvention() != null ? d.getConvention().getId() : null)
+                .conventionReference(d.getConvention() != null ? d.getConvention().getReference() : null)
+                .conventionIntitule(d.getConvention() != null ? d.getConvention().getIntitule() : null)
                 .marcheId(d.getMarche() != null ? d.getMarche().getId() : null)
                 .marcheIdTrace(d.getMarcheIdTrace())
                 .marcheReactivable(d.getStatut() == StatutDemande.ANNULEE
@@ -1024,6 +1153,7 @@ public class DemandeCorrectionService {
                 .conventionId(marche.getConvention() != null ? marche.getConvention().getId() : null)
                 .demandeCorrectionId(marche.getDemandeCorrection() != null ? marche.getDemandeCorrection().getId() : null)
                 .numeroMarche(marche.getNumeroMarche())
+                .reference(marche.getReference())
                 .intitule(marche.getIntitule())
                 .dateSignature(marche.getDateSignature())
                 .montantContratHt(marche.getMontantContratHt())

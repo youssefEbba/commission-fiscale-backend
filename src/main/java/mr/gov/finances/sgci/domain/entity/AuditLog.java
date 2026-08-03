@@ -43,6 +43,10 @@ public class AuditLog {
     @Column(columnDefinition = "LONGTEXT")
     private String objectSnapshot;
 
+    /** Motif obligatoire pour {@link AuditAction#ADMIN_CORRECTION} ; null sinon. */
+    @Column(columnDefinition = "TEXT")
+    private String motif;
+
     @PrePersist
     protected void onCreate() {
         if (timestamp == null) timestamp = Instant.now();

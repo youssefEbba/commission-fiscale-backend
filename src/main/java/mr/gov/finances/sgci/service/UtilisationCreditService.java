@@ -34,6 +34,7 @@ import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
+import mr.gov.finances.sgci.web.dto.AdminCorrectionUtilisationRequest;
 import mr.gov.finances.sgci.web.dto.ApurerTVAInterieureRequest;
 import mr.gov.finances.sgci.web.dto.CreateUtilisationCreditRequest;
 import mr.gov.finances.sgci.web.dto.LigneBulletinDto;
@@ -88,6 +89,7 @@ public class UtilisationCreditService {
     private final TvaDeductibleStockRepository tvaStockRepository;
     private final EffectiveIdentityService effectiveIdentityService;
     private final UtilisationCreditEligibilityHelper eligibilityHelper;
+    private final ReferenceSequenceGenerator referenceSequenceGenerator;
 
     @Transactional(readOnly = true)
     public List<UtilisationCreditDto> findAll() {
@@ -540,6 +542,49 @@ public class UtilisationCreditService {
     }
 
     /**
+     * Correction administrateur (ADMIN_SI) d'informations d'une demande d'utilisation, à tout
+     * moment quel que soit le statut. Patch partiel volontairement restreint (montant + champs
+     * déclaratifs douaniers) : ne touche ni au certificat/entreprise liés, ni aux lignes de
+     * bulletin déjà liquidées. Motif obligatoire, journalisée dans l'audit sous
+     * {@link AuditAction#ADMIN_CORRECTION}.
+     */
+    @Transactional
+    public UtilisationCreditDto adminCorrectInfo(Long id, AdminCorrectionUtilisationRequest request, String motif, AuthenticatedUser user) {
+        assertAdminOverride(user, motif);
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
+
+        if (request.getMontant() != null) {
+            entity.setMontant(request.getMontant());
+        }
+        if (entity instanceof UtilisationDouaniere d) {
+            if (request.getNumeroDeclaration() != null) {
+                d.setNumeroDeclaration(request.getNumeroDeclaration());
+            }
+            if (request.getNumeroBulletin() != null) {
+                d.setNumeroBulletin(request.getNumeroBulletin());
+            }
+            if (request.getDateDeclaration() != null) {
+                d.setDateDeclaration(request.getDateDeclaration());
+            }
+        }
+
+        entity = repository.save(entity);
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.ADMIN_CORRECTION, "UtilisationCredit", String.valueOf(id), result, motif);
+        return result;
+    }
+
+    private void assertAdminOverride(AuthenticatedUser user, String motif) {
+        if (user == null || user.getRole() != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Correction administrateur réservée à l'administrateur système");
+        }
+        if (motif == null || motif.isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de la correction administrateur est obligatoire");
+        }
+    }
+
+    /**
      * Notifie les acteurs concernés selon le statut (entreprise titulaire, commission relais via entreprise, services).
      */
     private void notifyUtilisationStatutChange(UtilisationCredit utilisation, StatutUtilisation statut, AuthenticatedUser actor) {
@@ -764,6 +809,7 @@ public class UtilisationCreditService {
 
     private void mapBase(UtilisationCredit u, CreateUtilisationCreditRequest r, CertificatCredit c, Entreprise e) {
         u.setDateDemande(Instant.now());
+        u.setReference(referenceSequenceGenerator.next(ReferenceSequenceGenerator.PREFIX_UTILISATION));
         u.setMontant(r.getMontant());
         u.setStatut(Boolean.TRUE.equals(r.getBrouillon()) ? StatutUtilisation.BROUILLON : StatutUtilisation.DEMANDEE);
         u.setCertificatCredit(c);
@@ -1372,6 +1418,7 @@ public class UtilisationCreditService {
 
         UtilisationCreditDto.UtilisationCreditDtoBuilder b = UtilisationCreditDto.builder()
                 .id(u.getId())
+                .reference(u.getReference())
                 .type(u.getType())
                 .dateDemande(u.getDateDemande())
                 .montant(u.getMontant())

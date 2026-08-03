@@ -49,6 +49,7 @@ public class DecisionCertificatCreditService {
     private final AuditService auditService;
     private final WorkflowNotificationHelper workflowNotificationHelper;
     private final DocumentRequirementValidator documentRequirementValidator;
+    private final VisaRequirementResolver visaRequirementResolver;
 
     @Transactional
     public DecisionCreditDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
@@ -110,6 +111,13 @@ public class DecisionCertificatCreditService {
 
         CertificatCredit certificat = certificatRepository.findById(certificatCreditId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + certificatCreditId));
+
+        Set<Role> requiredRoles = visaRequirementResolver.requiredRolesForCertificat(certificat);
+        if (!requiredRoles.contains(role)) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Rôle non concerné par ce certificat (crédit associé nul): " + role
+                            + ". Visas requis: " + requiredRoles);
+        }
 
         if (!DECISION_ALLOWED_STATUTS.contains(certificat.getStatut())) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
@@ -210,7 +218,8 @@ public class DecisionCertificatCreditService {
             return;
         }
 
-        boolean allVisas = VISA_REQUIRED_ROLES.stream().allMatch(r ->
+        Set<Role> requiredRoles = visaRequirementResolver.requiredRolesForCertificat(certificat);
+        boolean allVisas = requiredRoles.stream().allMatch(r ->
                 decisionRepository.existsByCertificatCreditIdAndRoleAndDecision(
                         certId, r, DecisionCorrectionType.VISA));
 
@@ -223,12 +232,18 @@ public class DecisionCertificatCreditService {
     }
 
     private void assertMontantsRenseignes(CertificatCredit entity) {
-        if (entity.getMontantCordon() == null || entity.getMontantTVAInterieure() == null) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "DGTCP doit renseigner les montants (cordon et TVA intérieure) avant d'apposer le visa");
+        Set<Role> requiredRoles = visaRequirementResolver.requiredRolesForCertificat(entity);
+        boolean cordonRequis = requiredRoles.contains(Role.DGD);
+        boolean tvaRequise = requiredRoles.contains(Role.DGI);
+        if (cordonRequis
+                && (entity.getMontantCordon() == null || entity.getMontantCordon().compareTo(BigDecimal.ZERO) <= 0)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "DGTCP doit renseigner le montant cordon (crédit extérieur), strictement supérieur à zéro, avant d'apposer le visa");
         }
-        if (entity.getMontantCordon().compareTo(BigDecimal.ZERO) <= 0
-                || entity.getMontantTVAInterieure().compareTo(BigDecimal.ZERO) <= 0) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Les montants (cordon et TVA intérieure) doivent être strictement supérieurs à zéro");
+        if (tvaRequise
+                && (entity.getMontantTVAInterieure() == null || entity.getMontantTVAInterieure().compareTo(BigDecimal.ZERO) <= 0)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "DGTCP doit renseigner le montant TVA intérieure (crédit intérieur), strictement supérieur à zéro, avant d'apposer le visa");
         }
     }
 

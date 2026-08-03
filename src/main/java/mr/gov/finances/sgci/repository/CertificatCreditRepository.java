@@ -16,6 +16,7 @@ import java.util.Optional;
 public interface CertificatCreditRepository extends JpaRepository<CertificatCredit, Long> {
 
     Optional<CertificatCredit> findByNumero(String numero);
+    Optional<CertificatCredit> findByReference(String reference);
     boolean existsByNumero(String numero);
     boolean existsByDemandeCorrectionId(Long demandeCorrectionId);
     Optional<CertificatCredit> findFirstByDemandeCorrectionId(Long demandeCorrectionId);
