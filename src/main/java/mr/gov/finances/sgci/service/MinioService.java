@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.service;
 
+import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
@@ -9,6 +10,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -95,6 +98,95 @@ public class MinioService {
         } catch (Exception e) {
             throw ApiException.serviceUnavailable(ApiErrorCode.OBJECT_STORAGE_UNAVAILABLE,
                     "Échec écriture stockage local (vérifiez app.upload.dir)", e);
+        }
+    }
+
+    /**
+     * Stocke un contenu binaire déjà en mémoire (contrôlé en amont — ex. signatures PNG) et retourne
+     * uniquement la clé objet (pas d'URL publique) : l'objet n'est récupérable que via
+     * {@link #downloadFile(String)}, en authentifié côté serveur.
+     */
+    public String uploadBytes(byte[] content, String contentType, String originalFilename) {
+        if ("local".equalsIgnoreCase(backend)) {
+            return uploadBytesLocal(content, originalFilename);
+        }
+        if (minioClient == null) {
+            throw ApiException.serviceUnavailable(ApiErrorCode.OBJECT_STORAGE_UNAVAILABLE,
+                    "Client MinIO non configuré (app.storage.backend doit être « minio » avec un serveur MinIO joignable, ou « local » sans MinIO)");
+        }
+        try {
+            String objectKey = "signatures/" + UUID.randomUUID() + "_" + safeOriginalName(originalFilename);
+            try (InputStream in = new ByteArrayInputStream(content)) {
+                minioClient.putObject(
+                        PutObjectArgs.builder()
+                                .bucket(bucket)
+                                .object(objectKey)
+                                .stream(in, content.length, -1)
+                                .contentType(contentType)
+                                .build()
+                );
+            }
+            return objectKey;
+        } catch (Exception e) {
+            throw ApiException.serviceUnavailable(ApiErrorCode.OBJECT_STORAGE_UNAVAILABLE,
+                    "Stockage objet indisponible ou mal configuré", e);
+        }
+    }
+
+    private String uploadBytesLocal(byte[] content, String originalFilename) {
+        try {
+            Path base = Paths.get(uploadDir).toAbsolutePath().normalize();
+            Path dir = base.resolve("signatures");
+            Files.createDirectories(dir);
+            String fileName = UUID.randomUUID() + "_" + safeOriginalName(originalFilename);
+            Path target = dir.resolve(fileName).normalize();
+            if (!target.startsWith(dir)) {
+                throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Nom de fichier invalide");
+            }
+            Files.write(target, content);
+            return "signatures/" + fileName;
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw ApiException.serviceUnavailable(ApiErrorCode.OBJECT_STORAGE_UNAVAILABLE,
+                    "Échec écriture stockage local (vérifiez app.upload.dir)", e);
+        }
+    }
+
+    /**
+     * Récupère le contenu binaire d'un objet stocké via {@link #uploadBytes}, quel que soit le
+     * backend actif. Utilisé pour le flux authentifié des signatures (jamais d'URL publique exposée).
+     */
+    public byte[] downloadFile(String objectKey) {
+        if (objectKey == null || objectKey.isBlank()) {
+            throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Objet introuvable");
+        }
+        if ("local".equalsIgnoreCase(backend)) {
+            try {
+                Path base = Paths.get(uploadDir).toAbsolutePath().normalize();
+                Path target = base.resolve(objectKey).normalize();
+                if (!target.startsWith(base) || !Files.isRegularFile(target)) {
+                    throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Fichier introuvable");
+                }
+                return Files.readAllBytes(target);
+            } catch (ApiException e) {
+                throw e;
+            } catch (Exception e) {
+                throw ApiException.serviceUnavailable(ApiErrorCode.OBJECT_STORAGE_UNAVAILABLE,
+                        "Échec lecture stockage local (vérifiez app.upload.dir)", e);
+            }
+        }
+        if (minioClient == null) {
+            throw ApiException.serviceUnavailable(ApiErrorCode.OBJECT_STORAGE_UNAVAILABLE,
+                    "Client MinIO non configuré (app.storage.backend doit être « minio » avec un serveur MinIO joignable, ou « local » sans MinIO)");
+        }
+        try (InputStream in = minioClient.getObject(GetObjectArgs.builder().bucket(bucket).object(objectKey).build())) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            in.transferTo(out);
+            return out.toByteArray();
+        } catch (Exception e) {
+            throw ApiException.serviceUnavailable(ApiErrorCode.OBJECT_STORAGE_UNAVAILABLE,
+                    "Stockage objet indisponible ou mal configuré", e);
         }
     }
 

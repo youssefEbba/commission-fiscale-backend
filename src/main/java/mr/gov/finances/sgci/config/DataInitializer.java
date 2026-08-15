@@ -1254,6 +1254,7 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("correction.demande.reactivate", "Réactiver une demande de correction annulée (retour RECUE, AC)");
         createPermission("correction.demande.reactivate_rejetee", "Annuler un rejet définitif d'une demande de correction (retour EN_VALIDATION, ADMIN_SI)");
         createPermission("correction.admin_override", "Corriger un document ou une information d'une demande de correction, à tout moment (ADMIN_SI, motif obligatoire)");
+        createPermission("signature.manage", "Gérer les images de signature PNG (créer/remplacer/désactiver) — sa propre signature, ou toute signature pour ADMIN_SI");
         createPermission("certificat.admin_override", "Corriger un document ou une information d'un certificat de crédit, à tout moment (ADMIN_SI, motif obligatoire)");
         createPermission("utilisation.admin_override", "Corriger un document ou une information d'une demande d'utilisation, à tout moment (ADMIN_SI, motif obligatoire)");
 
@@ -1293,6 +1294,9 @@ public class DataInitializer implements CommandLineRunner {
 
         createPermission("certificat.verification.scan",
                 "Vérifier un certificat de crédit par scan du code-barres (numéro)");
+
+        createPermission("archive.import",
+                "Reprendre un relevé de crédit d'impôt de l'ancienne application");
 
         createPermission("utilisation.douane.submit", "Soumettre une demande d'utilisation Douane");
         createPermission("utilisation.douane.document.upload", "Déposer les pièces import");
@@ -1610,6 +1614,7 @@ public class DataInitializer implements CommandLineRunner {
         );
 
         assign(Role.DGD,
+                "signature.manage",
                 "document.requirements.view",
                 "convention.view.all",
                 "marche.view",
@@ -1642,6 +1647,7 @@ public class DataInitializer implements CommandLineRunner {
         );
 
         assign(Role.DGI,
+                "signature.manage",
                 "document.requirements.view",
                 "marche.view",
                 "correction.dgi.queue.view",
@@ -1693,6 +1699,7 @@ public class DataInitializer implements CommandLineRunner {
         );
 
         assign(Role.DGB,
+                "signature.manage",
                 "document.requirements.view",
                 "convention.view.all",
                 "convention.validate",
@@ -1717,6 +1724,7 @@ public class DataInitializer implements CommandLineRunner {
         assignAllPermissions(Role.PRESIDENT);
 
         assign(Role.DGTCP,
+                "signature.manage",
                 "convention.view.all",
                 "marche.view",
                 "correction.dgtcp.queue.view",
@@ -1785,6 +1793,7 @@ public class DataInitializer implements CommandLineRunner {
         );
 
     assign(Role.ADMIN_SI,
+        "signature.manage",
         "document.requirements.view",
         "document.types.view",
         "document.types.manage",
@@ -1802,6 +1811,12 @@ public class DataInitializer implements CommandLineRunner {
             "certificat.admin_override",
             "utilisation.admin_override",
             "archivage.view",
+            "archive.import",
+            // Reprise d'archive : l'administrateur doit pouvoir créer à la volée les entités
+            // manquantes (bailleur → convention → marché) auxquelles rattacher le dossier importé.
+            "bailleur.create",
+            "convention.create",
+            "marche.manage",
             "referentiel.taxe.manage",
             "user.create",
             "user.update",
