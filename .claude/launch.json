@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tahdir-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "C:/Users/Index Informatique/Desktop/test-pointage/tahdir"],
+      "port": 5173
+    }
+  ]
+}
