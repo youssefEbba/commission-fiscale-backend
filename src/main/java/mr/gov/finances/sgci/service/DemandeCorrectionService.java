@@ -543,6 +543,43 @@ public class DemandeCorrectionService {
         return result;
     }
 
+    /**
+     * Adoption prononcée par l'administrateur système (ADMIN_SI) à la place du Président, lorsque
+     * celui-ci n'est pas en mesure de se prononcer. Mêmes conditions que l'adoption présidentielle :
+     * demande en {@code EN_VALIDATION} et lettre d'adoption déposée (l'administrateur peut la
+     * téléverser dans le même appel côté {@code DecisionCorrectionService}). Motif obligatoire,
+     * journalisé sous {@link AuditAction#ADMIN_CORRECTION}.
+     */
+    @Transactional
+    public DemandeCorrectionDto adminAdopterPourPresident(Long id, String motif, AuthenticatedUser user) {
+        assertAdminOverride(user, motif);
+        DemandeCorrection entity = demandeRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande de correction non trouvée: " + id));
+
+        if (entity.getStatut() == StatutDemande.ADOPTEE || entity.getStatut() == StatutDemande.NOTIFIEE) {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                    "Adoption impossible: la demande est déjà adoptée (statut " + entity.getStatut() + ")");
+        }
+        if (entity.getStatut() != StatutDemande.EN_VALIDATION) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Adoption impossible: la demande doit être en statut EN_VALIDATION (statut actuel: "
+                            + entity.getStatut() + "). Les visas DGD / DGTCP / DGI / DGB doivent être posés au préalable.");
+        }
+
+        documentService.assertActiveDocumentPresent(
+                entity.getId(), TypeDocument.LETTRE_ADOPTION.name(), "avant validation");
+
+        workflow.validateTransition(entity.getStatut(), StatutDemande.ADOPTEE);
+        entity.setStatut(StatutDemande.ADOPTEE);
+        entity.setMotifRejet(null);
+        entity = demandeRepository.save(entity);
+
+        DemandeCorrectionDto result = toDto(entity);
+        auditService.log(AuditAction.ADMIN_CORRECTION, "DemandeCorrection", String.valueOf(id), result, motif);
+        notifyDemandeCorrection(entity, StatutDemande.ADOPTEE, null, user, true);
+        return result;
+    }
+
     private void assertAdminOverride(AuthenticatedUser user, String motif) {
         if (user == null || user.getRole() != Role.ADMIN_SI) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Correction administrateur réservée à l'administrateur système");
