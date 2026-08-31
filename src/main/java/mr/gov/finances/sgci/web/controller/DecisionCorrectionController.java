@@ -5,16 +5,22 @@ import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.DecisionCorrectionService;
 import mr.gov.finances.sgci.service.RejetTempResponseService;
+import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.web.dto.AdminVisaCorrectionResultDto;
 import mr.gov.finances.sgci.web.dto.DecisionCorrectionDto;
 import mr.gov.finances.sgci.web.dto.DecisionCorrectionRequest;
 import mr.gov.finances.sgci.web.dto.RejetTempResponseDto;
 import mr.gov.finances.sgci.web.dto.RejetTempResponseRequest;
+import mr.gov.finances.sgci.web.dto.VisaCorrectionStatutDto;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 @RestController
@@ -45,6 +51,38 @@ public class DecisionCorrectionController {
                 request.getMotifRejet(),
                 request.getDocumentsDemandes() != null ? new java.util.HashSet<>(request.getDocumentsDemandes()) : null,
                 user);
+    }
+
+    /**
+     * Etat des visas de la commission (DGD, DGTCP, DGI, DGB puis Président) : visas déjà posés,
+     * document exigé avant chaque visa, et possibilité pour l'administrateur de viser à la place
+     * du titulaire. Alimente l'écran administrateur de la demande.
+     */
+    @GetMapping("/{id}/visas")
+    @PreAuthorize("hasAnyAuthority('correction.visa.admin_override', 'correction.dgd.queue.view', 'correction.visa.history.view', 'correction.view.audit', 'correction.president.queue.view')")
+    public List<VisaCorrectionStatutDto> getVisaStatuts(@PathVariable Long id) {
+        return decisionService.visaStatuts(id);
+    }
+
+    /**
+     * Visa posé par l'administrateur (ADMIN_SI) à la place d'un membre de la commission, ou
+     * adoption prononcée à la place du Président ({@code role=PRESIDENT}).
+     * <p>
+     * {@code multipart/form-data} : {@code role} et {@code motif} obligatoires, {@code file}
+     * obligatoire lorsque le visa exige un document non encore déposé (offre fiscale corrigée pour
+     * la DGD, document crédit intérieur pour la DGI, lettre d'adoption pour le Président).
+     */
+    @PostMapping(value = "/{id}/visas/admin", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAuthority('correction.visa.admin_override')")
+    public AdminVisaCorrectionResultDto adminVisa(
+            @PathVariable Long id,
+            @RequestParam("role") Role role,
+            @RequestParam("motif") String motif,
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) throws IOException {
+        return decisionService.adminVisaPourRole(id, role, motif, file, user);
     }
 
     @PostMapping("/decisions/{decisionId}/rejet-temp/reponses")

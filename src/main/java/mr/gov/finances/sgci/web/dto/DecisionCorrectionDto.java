@@ -26,6 +26,10 @@ public class DecisionCorrectionDto {
     private Instant rejetTempResolvedAt;
     private Long utilisateurId;
     private String utilisateurNom;
+    /** {@code true} si le visa a été posé par l'administrateur système à la place du rôle titulaire. */
+    private boolean visaParAdmin;
+    /** Motif saisi par l'administrateur lorsqu'il a visé à la place du rôle titulaire. */
+    private String motifAdmin;
 
     private List<RejetTempResponseDto> rejetTempResponses;
 }

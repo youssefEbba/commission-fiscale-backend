@@ -1254,6 +1254,7 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("correction.demande.reactivate", "Réactiver une demande de correction annulée (retour RECUE, AC)");
         createPermission("correction.demande.reactivate_rejetee", "Annuler un rejet définitif d'une demande de correction (retour EN_VALIDATION, ADMIN_SI)");
         createPermission("correction.admin_override", "Corriger un document ou une information d'une demande de correction, à tout moment (ADMIN_SI, motif obligatoire)");
+        createPermission("correction.visa.admin_override", "Viser une demande de correction à la place d'un membre de la commission (DGD/DGTCP/DGI/DGB) ou adopter à la place du Président (ADMIN_SI, motif obligatoire, document exigé téléversé)");
         createPermission("signature.manage", "Gérer les images de signature PNG (créer/remplacer/désactiver) — sa propre signature, ou toute signature pour ADMIN_SI");
         createPermission("certificat.admin_override", "Corriger un document ou une information d'un certificat de crédit, à tout moment (ADMIN_SI, motif obligatoire)");
         createPermission("utilisation.admin_override", "Corriger un document ou une information d'une demande d'utilisation, à tout moment (ADMIN_SI, motif obligatoire)");
@@ -1808,6 +1809,7 @@ public class DataInitializer implements CommandLineRunner {
             "correction.view.audit",
             "correction.demande.reactivate_rejetee",
             "correction.admin_override",
+            "correction.visa.admin_override",
             "certificat.admin_override",
             "utilisation.admin_override",
             "archivage.view",

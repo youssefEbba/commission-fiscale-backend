@@ -51,6 +51,18 @@ public class DecisionCorrection {
 
     private Instant rejetTempResolvedAt;
 
+    /**
+     * {@code true} lorsque ce visa a été posé par l'administrateur système (ADMIN_SI) à la place du
+     * rôle titulaire ({@link #role}). {@link #utilisateur} contient alors l'administrateur signataire.
+     */
+    @Column(name = "visa_par_admin")
+    @Builder.Default
+    private Boolean visaParAdmin = Boolean.FALSE;
+
+    /** Motif obligatoire saisi par l'administrateur lorsqu'il vise à la place du rôle titulaire. */
+    @Column(name = "motif_admin", length = 1000)
+    private String motifAdmin;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "utilisateur_id", nullable = false)
     private Utilisateur utilisateur;
