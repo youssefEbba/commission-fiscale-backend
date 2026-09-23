@@ -16,7 +16,7 @@ import java.util.Set;
  * BROUILLON ──► ENVOYEE ──(prise en charge acteur)──► EN_CONTROLE ──(3 visas DGI+DGD+DGTCP)──► EN_VALIDATION_PRESIDENT ──► VALIDE_PRESIDENT
  *     │  ▲                                          │                          │
  *     ▼  │                                          │                          │
- * INCOMPLETE ──► A_RECONTROLER                      │                          │
+ * INCOMPLETE ──► A_RECONTROLER ────────────────────┘                          │
  *                                                   ▼                          ▼
  *                                             (DGTCP direct)          EN_OUVERTURE_DGTCP
  *                                                   │                          │
@@ -30,7 +30,10 @@ public class CertificatCreditWorkflow {
             Map.entry(ENVOYEE,                  EnumSet.of(EN_CONTROLE, ANNULE)),
             Map.entry(EN_CONTROLE,              EnumSet.of(INCOMPLETE, EN_VALIDATION_PRESIDENT, ANNULE)),
             Map.entry(INCOMPLETE,               EnumSet.of(A_RECONTROLER, ANNULE)),
-            Map.entry(A_RECONTROLER,            EnumSet.of(EN_CONTROLE, ANNULE)),
+            // EN_VALIDATION_PRESIDENT est atteignable depuis A_RECONTROLER : le dernier visa peut être
+            // posé juste après la résolution d'un rejet temporaire. INCOMPLETE n'en a pas besoin, ce
+            // statut impliquant un rejet encore ouvert, qui bloque la transition automatique en amont.
+            Map.entry(A_RECONTROLER,            EnumSet.of(EN_CONTROLE, EN_VALIDATION_PRESIDENT, ANNULE)),
             Map.entry(EN_VALIDATION_PRESIDENT,  EnumSet.of(VALIDE_PRESIDENT, OUVERT, ANNULE)),
             Map.entry(VALIDE_PRESIDENT,         EnumSet.of(EN_OUVERTURE_DGTCP, OUVERT, ANNULE)),
             Map.entry(EN_OUVERTURE_DGTCP,       EnumSet.of(OUVERT, ANNULE)),

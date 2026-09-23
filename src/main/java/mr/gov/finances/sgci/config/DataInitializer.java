@@ -1257,6 +1257,10 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("correction.visa.admin_override", "Viser une demande de correction à la place d'un membre de la commission (DGD/DGTCP/DGI/DGB) ou adopter à la place du Président (ADMIN_SI, motif obligatoire, document exigé téléversé)");
         createPermission("signature.manage", "Gérer les images de signature PNG (créer/remplacer/désactiver) — sa propre signature, ou toute signature pour ADMIN_SI");
         createPermission("certificat.admin_override", "Corriger un document ou une information d'un certificat de crédit, à tout moment (ADMIN_SI, motif obligatoire)");
+        createPermission("certificat.visa.admin_override", "Viser un certificat de crédit à la place d'un membre de la commission (DGI/DGD/DGTCP) ou valider à la place du Président (ADMIN_SI, motif obligatoire, certificat signé téléversé)");
+        // Séparée de la précédente : l'ouverture du crédit initialise les soldes, donc produit un
+        // effet financier qu'on doit pouvoir accorder indépendamment du simple déblocage des visas.
+        createPermission("certificat.ouverture.admin_override", "Ouvrir le crédit d'un certificat à la place du Président ou de la DGTCP (ADMIN_SI, motif obligatoire)");
         createPermission("utilisation.admin_override", "Corriger un document ou une information d'une demande d'utilisation, à tout moment (ADMIN_SI, motif obligatoire)");
 
         createPermission("mise_en_place.submit", "Soumettre une demande de mise en place");
@@ -1811,6 +1815,8 @@ public class DataInitializer implements CommandLineRunner {
             "correction.admin_override",
             "correction.visa.admin_override",
             "certificat.admin_override",
+            "certificat.visa.admin_override",
+            "certificat.ouverture.admin_override",
             "utilisation.admin_override",
             "archivage.view",
             "archive.import",

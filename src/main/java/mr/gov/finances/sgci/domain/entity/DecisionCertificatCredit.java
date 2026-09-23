@@ -51,6 +51,19 @@ public class DecisionCertificatCredit {
 
     private Instant rejetTempResolvedAt;
 
+    /**
+     * Visa posé par l'administrateur système à la place du rôle titulaire. Nullable à dessein :
+     * les décisions antérieures à l'ajout de la colonne restent à {@code null}, d'où la lecture
+     * systématique via {@code Boolean.TRUE.equals(...)}.
+     */
+    @Column(name = "visa_par_admin")
+    @Builder.Default
+    private Boolean visaParAdmin = Boolean.FALSE;
+
+    /** Motif saisi par l'administrateur lorsqu'il a visé à la place du rôle titulaire. */
+    @Column(name = "motif_admin", length = 1000)
+    private String motifAdmin;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "utilisateur_id", nullable = false)
     private Utilisateur utilisateur;
