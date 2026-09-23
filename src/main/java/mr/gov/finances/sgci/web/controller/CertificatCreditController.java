@@ -241,6 +241,23 @@ public class CertificatCreditController {
         return service.adminCorrectInfo(id, request, motif, user);
     }
 
+    /**
+     * Ouverture du crédit prononcée par l'administrateur à la place du Président ou de la DGTCP.
+     *
+     * <p>Action volontairement distincte du visa administrateur : elle initialise les soldes, donc
+     * produit un effet financier, et suppose la validation présidentielle déjà acquise (statut
+     * VALIDE_PRESIDENT ou EN_OUVERTURE_DGTCP). Permission dédiée.
+     */
+    @PostMapping("/{id}/ouverture/admin")
+    @PreAuthorize("hasAuthority('certificat.ouverture.admin_override')")
+    public CertificatCreditDto adminOuvrirCredit(
+            @PathVariable Long id,
+            @RequestParam String motif,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.adminOuvrirCredit(id, motif, user);
+    }
+
     /** Remplacement administrateur d'un document, à tout moment (ADMIN_SI, motif obligatoire). */
     @PostMapping(value = "/{id}/documents/admin-correction", consumes = "multipart/form-data")
     @PreAuthorize("hasAuthority('certificat.admin_override')")

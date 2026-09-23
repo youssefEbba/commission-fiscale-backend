@@ -690,6 +690,86 @@ public class CertificatCreditService {
         return result;
     }
 
+    /**
+     * Validation présidentielle prononcée par l'administrateur à la place du Président.
+     *
+     * <p>Pendant exact de {@code DemandeCorrectionService.adminAdopterPourPresident}. S'arrête
+     * volontairement à {@code VALIDE_PRESIDENT} : l'ouverture du crédit, qui initialise les soldes,
+     * relève de {@link #adminOuvrirCredit}, sous une permission distincte.
+     *
+     * <p>Le certificat signé doit être présent — s'y substituer sans produire la pièce ne ferait
+     * que fabriquer un statut vide.
+     */
+    @Transactional
+    public CertificatCreditDto adminValiderPourPresident(Long id, String motif, AuthenticatedUser user) {
+        assertAdminOverride(user, motif);
+        CertificatCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + id));
+
+        StatutCertificat actuel = entity.getStatut();
+        if (actuel == StatutCertificat.VALIDE_PRESIDENT || actuel == StatutCertificat.EN_OUVERTURE_DGTCP
+                || actuel == StatutCertificat.OUVERT || actuel == StatutCertificat.MODIFIE
+                || actuel == StatutCertificat.CLOTURE) {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                    "Validation impossible: le certificat est déjà validé. Statut actuel: " + actuel);
+        }
+        if (actuel != StatutCertificat.EN_VALIDATION_PRESIDENT) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Le certificat doit être en statut EN_VALIDATION_PRESIDENT : les visas requis "
+                            + visaRequirementResolver.requiredRolesForCertificat(entity)
+                            + " doivent être posés au préalable. Statut actuel: " + actuel);
+        }
+
+        documentService.assertActiveDocumentPresent(id,
+                mr.gov.finances.sgci.domain.enums.TypeDocument.CERTIFICAT_CREDIT_IMPOTS.name(),
+                "avant validation Président (à téléverser avec le visa administrateur)");
+
+        workflow.validateTransition(actuel, StatutCertificat.VALIDE_PRESIDENT);
+        entity.setStatut(StatutCertificat.VALIDE_PRESIDENT);
+        entity = repository.save(entity);
+
+        CertificatCreditDto result = toDto(entity);
+        auditService.log(AuditAction.ADMIN_CORRECTION, "CertificatCredit", String.valueOf(id), result, motif);
+        // actor renseigné (contrairement à notifyCertificat) pour tracer l'administrateur substitué.
+        workflowNotificationHelper.certificatStatut(entity, StatutCertificat.VALIDE_PRESIDENT.name(), user, null);
+        return result;
+    }
+
+    /**
+     * Ouverture du crédit prononcée par l'administrateur à la place du Président ou de la DGTCP.
+     *
+     * <p>Action délibérément distincte de {@link #adminValiderPourPresident} : elle produit un effet
+     * financier — initialisation des soldes — et exige donc que la validation présidentielle ait déjà
+     * eu lieu. Le statut {@code EN_VALIDATION_PRESIDENT} n'est pas accepté ici.
+     */
+    @Transactional
+    public CertificatCreditDto adminOuvrirCredit(Long id, String motif, AuthenticatedUser user) {
+        assertAdminOverride(user, motif);
+        CertificatCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + id));
+
+        StatutCertificat actuel = entity.getStatut();
+        if (actuel == StatutCertificat.OUVERT) {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Le crédit est déjà ouvert");
+        }
+        if (actuel != StatutCertificat.VALIDE_PRESIDENT && actuel != StatutCertificat.EN_OUVERTURE_DGTCP) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "L'ouverture administrateur suppose la validation présidentielle acquise : statut attendu "
+                            + StatutCertificat.VALIDE_PRESIDENT + " ou " + StatutCertificat.EN_OUVERTURE_DGTCP
+                            + ". Statut actuel: " + actuel);
+        }
+
+        workflow.validateTransition(actuel, StatutCertificat.OUVERT);
+        applyOuvertureInitialisation(entity);
+        entity.setStatut(StatutCertificat.OUVERT);
+        entity = repository.save(entity);
+
+        CertificatCreditDto result = toDto(entity);
+        auditService.log(AuditAction.ADMIN_CORRECTION, "CertificatCredit", String.valueOf(id), result, motif);
+        workflowNotificationHelper.certificatStatut(entity, StatutCertificat.OUVERT.name(), user, null);
+        return result;
+    }
+
     private void assertAdminOverride(AuthenticatedUser user, String motif) {
         if (user == null || user.getRole() != Role.ADMIN_SI) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Correction administrateur réservée à l'administrateur système");
@@ -750,29 +830,7 @@ public class CertificatCreditService {
         assertActorCanTransition(entity, statut, user);
 
         if (statut == StatutCertificat.OUVERT && fromStatut != StatutCertificat.OUVERT) {
-            assertMontantsRenseignes(entity);
-            if (entity.getDateMiseEnPlace() == null) {
-                entity.setDateMiseEnPlace(Instant.now());
-            }
-            // soldeCordon = droits hors TVA (b) seulement — la TVA est suivie séparément
-            BigDecimal droits = entity.getDroitsEtTaxesDouaneHorsTva() != null
-                    ? entity.getDroitsEtTaxesDouaneHorsTva()
-                    : (entity.getMontantCordon() != null ? entity.getMontantCordon() : BigDecimal.ZERO);
-            BigDecimal montantTVA = entity.getMontantTVAInterieure() != null ? entity.getMontantTVAInterieure() : BigDecimal.ZERO;
-            BigDecimal tvaAccordee = entity.getTvaImportationDouaneAccordee() != null
-                    ? entity.getTvaImportationDouaneAccordee() : BigDecimal.ZERO;
-
-            if (entity.getSoldeCordon() == null) {
-                entity.setSoldeCordon(droits);
-            }
-            if (entity.getSoldeTVA() == null) {
-                entity.setSoldeTVA(montantTVA);
-            }
-            // Initialiser tvaImportationDouane si absent ou nul — c'est le quota TVA cordon disponible (d)
-            if (entity.getTvaImportationDouane() == null
-                    || entity.getTvaImportationDouane().compareTo(BigDecimal.ZERO) == 0) {
-                entity.setTvaImportationDouane(tvaAccordee);
-            }
+            applyOuvertureInitialisation(entity);
         }
 
         entity.setStatut(statut);
@@ -786,6 +844,38 @@ public class CertificatCreditService {
         auditService.log(AuditAction.UPDATE, "CertificatCredit", String.valueOf(id), result);
         notifyCertificat(entity, statut);
         return result;
+    }
+
+    /**
+     * Initialisation appliquée à l'ouverture du crédit : date de mise en place et les trois soldes.
+     *
+     * <p>Ces soldes sont la source de vérité des {@code UtilisationCredit} : ce bloc ne doit jamais
+     * être dupliqué. Appelé par {@link #updateStatut} et par {@link #adminOuvrirCredit}.
+     */
+    private void applyOuvertureInitialisation(CertificatCredit entity) {
+        assertMontantsRenseignes(entity);
+        if (entity.getDateMiseEnPlace() == null) {
+            entity.setDateMiseEnPlace(Instant.now());
+        }
+        // soldeCordon = droits hors TVA (b) seulement — la TVA est suivie séparément
+        BigDecimal droits = entity.getDroitsEtTaxesDouaneHorsTva() != null
+                ? entity.getDroitsEtTaxesDouaneHorsTva()
+                : (entity.getMontantCordon() != null ? entity.getMontantCordon() : BigDecimal.ZERO);
+        BigDecimal montantTVA = entity.getMontantTVAInterieure() != null ? entity.getMontantTVAInterieure() : BigDecimal.ZERO;
+        BigDecimal tvaAccordee = entity.getTvaImportationDouaneAccordee() != null
+                ? entity.getTvaImportationDouaneAccordee() : BigDecimal.ZERO;
+
+        if (entity.getSoldeCordon() == null) {
+            entity.setSoldeCordon(droits);
+        }
+        if (entity.getSoldeTVA() == null) {
+            entity.setSoldeTVA(montantTVA);
+        }
+        // Initialiser tvaImportationDouane si absent ou nul — c'est le quota TVA cordon disponible (d)
+        if (entity.getTvaImportationDouane() == null
+                || entity.getTvaImportationDouane().compareTo(BigDecimal.ZERO) == 0) {
+            entity.setTvaImportationDouane(tvaAccordee);
+        }
     }
 
     @Transactional

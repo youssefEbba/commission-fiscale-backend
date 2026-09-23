@@ -181,6 +181,25 @@ public class DocumentCertificatCreditService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public void assertActiveDocumentPresent(Long certificatCreditId, String codeDocument) {
+        assertActiveDocumentPresent(certificatCreditId, codeDocument, "avant visa");
+    }
+
+    @Transactional(readOnly = true)
+    public void assertActiveDocumentPresent(Long certificatCreditId, String codeDocument, String context) {
+        if (certificatCreditId == null || codeDocument == null || codeDocument.isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Document requis manquant");
+        }
+        boolean present = repository
+                .findByCertificatCreditIdAndCodeDocumentAndActifTrue(certificatCreditId, codeDocument)
+                .isPresent();
+        if (!present) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Document actif requis " + context + ": " + codeDocument);
+        }
+    }
+
     private DocumentCertificatCreditDto toDto(DocumentCertificatCredit d) {
         return DocumentCertificatCreditDto.builder()
                 .id(d.getId())
