@@ -24,6 +24,8 @@ public class AdminCorrectionCertificatRequest {
     private BigDecimal montantTVAInterieure;
     private BigDecimal valeurDouaneFournitures;
     private BigDecimal droitsEtTaxesDouaneHorsTva;
+    /** (c) Taxes de consommation — part du crédit douanier hors TVA, facultative. */
+    private BigDecimal taxesConsommation;
     private BigDecimal tvaImportationDouane;
     private BigDecimal montantMarcheHt;
     private BigDecimal tvaCollecteeTravaux;

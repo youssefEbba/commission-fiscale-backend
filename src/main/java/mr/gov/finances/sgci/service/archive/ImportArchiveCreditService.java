@@ -11,6 +11,7 @@ import mr.gov.finances.sgci.domain.entity.LigneBulletinLiquidation;
 import mr.gov.finances.sgci.domain.entity.Marche;
 import mr.gov.finances.sgci.domain.entity.ReferentielTaxe;
 import mr.gov.finances.sgci.domain.entity.TransfertCredit;
+import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationDouaniere;
 import mr.gov.finances.sgci.domain.entity.UtilisationTVAInterieure;
 import mr.gov.finances.sgci.domain.enums.AffectationTaxe;
@@ -41,8 +42,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -91,8 +95,10 @@ public class ImportArchiveCreditService {
             releve.setCertificatDejaImporteId(existant.getId());
             releve.setCertificatDejaImporteReference(
                     existant.getReference() != null ? existant.getReference() : existant.getNumero());
-            releve.getAnomalies().add("Ce relevé a déjà été importé (certificat "
-                    + releve.getCertificatDejaImporteReference() + "). Un nouvel import sera refusé.");
+            releve.getAnomalies().add("Ce crédit a déjà été repris (certificat "
+                    + releve.getCertificatDejaImporteReference() + "). Le dossier sera complété : "
+                    + "seules les utilisations absentes seront ajoutées, les montants et soldes "
+                    + "seront réalignés sur ce relevé.");
         });
 
         return releve;
@@ -188,15 +194,12 @@ public class ImportArchiveCreditService {
                         "Marché non trouvé : " + marcheId));
 
         String numero = numeroCertificat(releve);
-        certificatRepository.findByNumero(numero).ifPresent(existant -> {
-            throw ApiException.conflict(ApiErrorCode.CONFLICT,
-                    "Ce relevé a déjà été importé (certificat " + numero + ").");
-        });
+        // Un crédit déjà repris n'est pas un doublon : le relevé peut être reversé complété de
+        // nouvelles utilisations. On complète alors l'existant au lieu de refuser.
+        CertificatCredit existant = certificatRepository.findByNumero(numero).orElse(null);
 
-        if (releve.getUtilisations().isEmpty()) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                    "Aucune utilisation n'a pu être lue dans le relevé : import interrompu.");
-        }
+        // Un crédit sans utilisation est légitime : le crédit est ouvert, rien n'a encore été
+        // consommé. On le reprend tel quel, ses utilisations seront versées plus tard.
         if (!releve.getAnomalies().isEmpty() && !confirmerMalgreAnomalies) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Le relevé comporte " + releve.getAnomalies().size()
@@ -206,18 +209,36 @@ public class ImportArchiveCreditService {
         // Le relevé ne porte aucune demande de correction : on en crée une d'archive, qui rattache
         // le dossier à son autorité contractante et à sa convention et rend le certificat visible
         // dans les écrans qui passent par la demande.
-        DemandeCorrection demande = demandeCorrectionRepository.save(
-                creerDemandeArchive(releve, entreprise, autorite, convention, numero));
+        CertificatCredit certificat;
+        TransfertCredit transfert;
+        if (existant == null) {
+            DemandeCorrection demande = demandeCorrectionRepository.save(
+                    creerDemandeArchive(releve, entreprise, autorite, convention, numero));
 
-        if (marche != null) {
-            rattacherMarche(marche, demande, convention);
+            if (marche != null) {
+                rattacherMarche(marche, demande, convention);
+            }
+
+            certificat = creerCertificat(releve, entreprise, numero);
+            certificat.setDemandeCorrection(demande);
+            certificat = certificatRepository.save(certificat);
+
+            transfert = creerTransfertArchive(releve, certificat);
+        } else {
+            // Relevé reversé complété : on garde le dossier en place et on l'actualise.
+            certificat = existant;
+            transfert = transfertExistantOuCree(releve, certificat);
+            rafraichirMontantsDepuisReleve(releve, certificat);
         }
 
-        CertificatCredit certificat = creerCertificat(releve, entreprise, numero);
-        certificat.setDemandeCorrection(demande);
-        certificat = certificatRepository.save(certificat);
-
-        TransfertCredit transfert = creerTransfertArchive(releve, certificat);
+        // Lignes déjà reprises pour ce crédit. Le libellé seul ne suffit pas : un relevé peut
+        // répéter le même libellé sur des opérations distinctes (54 lignes pour 51 libellés sur le
+        // relevé de référence). La clé associe donc libellé, date et montant.
+        Set<String> dejaImportees = utilisationRepository.findByCertificatCreditId(certificat.getId())
+                .stream()
+                .filter(u -> u.getOrigineArchiveLibelle() != null)
+                .map(u -> cleLigneArchive(u.getOrigineArchiveLibelle(), u.getDateDemande(), u.getMontant()))
+                .collect(Collectors.toCollection(HashSet::new));
 
         Map<String, ReferentielTaxe> referentiel = referentielTaxeRepository.findAll().stream()
                 .collect(Collectors.toMap(t -> t.getCodeTaxe().toUpperCase(),
@@ -226,7 +247,13 @@ public class ImportArchiveCreditService {
         int douanieres = 0;
         int interieures = 0;
         int lignesTaxe = 0;
+        int ignorees = 0;
         for (UtilisationArchiveDto u : releve.getUtilisations()) {
+            if (u.getLibelle() != null
+                    && !dejaImportees.add(cleLigneArchive(u.getLibelle(), u.getDate(), u.getMontant()))) {
+                ignorees++;   // ligne déjà reprise lors d'un versement précédent
+                continue;
+            }
             if (u.isDouaniere()) {
                 UtilisationDouaniere douaniere = creerUtilisationDouaniere(u, certificat, entreprise, referentiel);
                 utilisationRepository.save(douaniere);   // cascade sur les lignes de bulletin
@@ -238,13 +265,17 @@ public class ImportArchiveCreditService {
             }
         }
 
-        log.info("Import archive : certificat {} créé pour l'entreprise {} — {} utilisation(s) douanière(s), "
-                        + "{} intérieure(s), {} ligne(s) de taxe, par {}",
-                numero, entreprise.getId(), douanieres, interieures, lignesTaxe,
+        log.info("Import archive : certificat {} {} pour l'entreprise {} — {} utilisation(s) douanière(s), "
+                        + "{} intérieure(s), {} ligne(s) de taxe, {} ligne(s) ignorée(s), par {}",
+                numero, existant == null ? "créé" : "complété", entreprise.getId(),
+                douanieres, interieures, lignesTaxe, ignorees,
                 user != null ? user.getUsername() : "système");
 
-        return construireResultat(releve, certificat, entreprise, douanieres, interieures, lignesTaxe,
-                autorite, marche, transfert);
+        ImportArchiveResultatDto resultat = construireResultat(releve, certificat, entreprise,
+                douanieres, interieures, lignesTaxe, autorite, marche, transfert);
+        resultat.setCertificatDejaExistant(existant != null);
+        resultat.setUtilisationsIgnorees(ignorees);
+        return resultat;
     }
 
     /**
@@ -304,6 +335,73 @@ public class ImportArchiveCreditService {
         return transfertCreditRepository.save(transfert);
     }
 
+    /**
+     * Clé d'unicité d'une ligne de relevé : libellé, date et montant réunis.
+     *
+     * <p>Le libellé seul provoquerait la perte d'opérations distinctes portant le même intitulé.
+     * Deux lignes identiques sur ces trois critères sont, elles, indiscernables : les traiter comme
+     * une seule est le comportement voulu.
+     */
+    private static String cleLigneArchive(String libelle, java.time.Instant date, BigDecimal montant) {
+        return (libelle == null ? "" : libelle.trim())
+                + "|" + (date == null ? "" : date.toString())
+                + "|" + (montant == null ? "" : montant.stripTrailingZeros().toPlainString());
+    }
+
+    /**
+     * Transfert du relevé : réutilise celui déjà repris plutôt que d'en créer un second.
+     *
+     * <p>Un relevé reversé porte le même transfert que la fois précédente ; le recréer doublerait
+     * le montant transféré dans les écrans de suivi.
+     */
+    private TransfertCredit transfertExistantOuCree(ReleveArchiveDto releve, CertificatCredit certificat) {
+        List<TransfertCredit> existants = transfertCreditRepository.findByCertificatCreditId(certificat.getId());
+        if (!existants.isEmpty()) {
+            return existants.get(0);
+        }
+        return creerTransfertArchive(releve, certificat);
+    }
+
+    /**
+     * Réaligne les montants et les soldes du crédit sur le relevé le plus récent.
+     *
+     * <p>Le relevé fait foi : ses soldes sont déjà nets des utilisations qu'il contient. Mais si le
+     * crédit a depuis été consommé dans l'application, réécrire ces soldes effacerait ces
+     * consommations. Dans ce cas les soldes sont laissés intacts et une anomalie est signalée :
+     * mieux vaut un écart visible qu'un solde faussement rétabli.
+     */
+    private void rafraichirMontantsDepuisReleve(ReleveArchiveDto releve, CertificatCredit certificat) {
+        boolean consommeHorsArchive = utilisationRepository.findByCertificatCreditId(certificat.getId())
+                .stream()
+                .anyMatch(u -> u.getOrigineArchiveLibelle() == null);
+
+        if (releve.getCreditDouanier() != null) {
+            certificat.setMontantCordon(releve.getCreditDouanier());
+        }
+        if (releve.getCreditInterieur() != null) {
+            certificat.setMontantTVAInterieure(releve.getCreditInterieur());
+        }
+        if (releve.getMontantMarche() != null) {
+            certificat.setMontantMarcheHt(releve.getMontantMarche());
+        }
+
+        if (consommeHorsArchive) {
+            releve.getAnomalies().add("Le crédit a déjà été utilisé dans l'application : les soldes "
+                    + "déclarés dans le relevé n'ont pas été réappliqués, pour ne pas effacer ces "
+                    + "utilisations. Vérifiez la concordance des soldes.");
+        } else {
+            certificat.setSoldeCordon(valeurOuZero(releve.getSoldeDouanierDeclare()));
+            certificat.setSoldeTVA(valeurOuZero(releve.getSoldeInterieurDeclare()));
+        }
+
+        BigDecimal soldeCordon = valeurOuZero(certificat.getSoldeCordon());
+        BigDecimal soldeTva = valeurOuZero(certificat.getSoldeTVA());
+        certificat.setStatut(soldeCordon.signum() > 0 || soldeTva.signum() > 0
+                ? StatutCertificat.OUVERT
+                : StatutCertificat.CLOTURE);
+        certificatRepository.save(certificat);
+    }
+
     /** Relie le marché choisi à la demande d'archive, en refusant d'en détourner un déjà rattaché. */
     private void rattacherMarche(Marche marche, DemandeCorrection demande, Convention convention) {
         if (marche.getDemandeCorrection() != null
@@ -339,6 +437,8 @@ public class ImportArchiveCreditService {
         certificat.setSoldeCordon(soldeCordon);
         certificat.setSoldeTVA(soldeTva);
         certificat.setDateMiseEnPlace(releve.getDateCredit());
+        // Dossier repris : la date d'émission est celle du relevé, pas celle de l'import.
+        certificat.setDateEmission(releve.getDateCredit());
         // Un crédit encore pourvu reste exploitable ; épuisé, il est clos.
         certificat.setStatut(soldeCordon.signum() > 0 || soldeTva.signum() > 0
                 ? StatutCertificat.OUVERT
@@ -357,6 +457,7 @@ public class ImportArchiveCreditService {
         d.setDateDemande(u.getDate());
         d.setDateLiquidation(u.getDate());
         d.setNumeroDeclaration(u.getLibelle());
+        d.setOrigineArchiveLibelle(u.getLibelle());
         d.setNumeroBulletin(u.getNumeroQuittance());
         d.setTotalPrisEnCharge(u.getTotalPrisEnCharge());
         d.setTotalAPayer(u.getTotalAPayer());
@@ -390,6 +491,7 @@ public class ImportArchiveCreditService {
         i.setDateDemande(u.getDate());
         i.setDateLiquidation(u.getDate());
         i.setNumeroFacture(u.getLibelle());
+        i.setOrigineArchiveLibelle(u.getLibelle());
         i.setCreditInterieurUtilise(u.getMontant());
         return i;
     }

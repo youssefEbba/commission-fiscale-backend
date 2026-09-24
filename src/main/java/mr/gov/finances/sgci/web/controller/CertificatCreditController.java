@@ -242,6 +242,35 @@ public class CertificatCreditController {
     }
 
     /**
+     * Prise en charge du certificat par l'administrateur, à la place de la DGI, de la DGD ou de la
+     * DGTCP. Premier maillon du parcours administrateur complet de la mise en place.
+     */
+    @PostMapping("/{id}/prise-en-charge/admin")
+    @PreAuthorize("hasAuthority('certificat.visa.admin_override')")
+    public CertificatCreditDto adminPrendreEnCharge(
+            @PathVariable Long id,
+            @RequestParam String motif,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.adminPrendreEnCharge(id, motif, user);
+    }
+
+    /**
+     * Saisie des montants du récapitulatif par l'administrateur, à la place de la DGTCP. Évite de
+     * devoir réclamer ces montants à la direction avant de pouvoir viser à sa place.
+     */
+    @PostMapping("/{id}/montants/admin")
+    @PreAuthorize("hasAuthority('certificat.visa.admin_override')")
+    public CertificatCreditDto adminRenseignerMontants(
+            @PathVariable Long id,
+            @RequestParam String motif,
+            @Valid @RequestBody UpdateCertificatCreditMontantsRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.adminRenseignerMontants(id, request, motif, user);
+    }
+
+    /**
      * Ouverture du crédit prononcée par l'administrateur à la place du Président ou de la DGTCP.
      *
      * <p>Action volontairement distincte du visa administrateur : elle initialise les soldes, donc

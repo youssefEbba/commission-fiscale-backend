@@ -1425,6 +1425,8 @@ public class UtilisationCreditService {
                 .statut(u.getStatut())
                 .dateLiquidation(u.getDateLiquidation())
                 .certificatCreditId(cert != null ? cert.getId() : null)
+                .certificatNumero(cert != null ? cert.getNumero() : null)
+                .certificatReference(cert != null ? cert.getReference() : null)
                 .entrepriseId(demandeurId)
                 .certificatTitulaireEntrepriseId(titId)
                 .certificatTitulaireRaisonSociale(titRs)

@@ -30,6 +30,18 @@ public class CertificatCredit {
     private String reference;
 
     private Instant dateEmission;
+
+    /**
+     * Filet de sécurité : la date d'émission ne doit jamais être vide, quel que soit le chemin de
+     * création (formulaire, reprise d'archive, script). Les appelants qui connaissent la date réelle
+     * la renseignent ; les autres héritent de l'horodatage d'insertion.
+     */
+    @PrePersist
+    void horodaterEmissionSiAbsente() {
+        if (dateEmission == null) {
+            dateEmission = Instant.now();
+        }
+    }
     private Instant dateValidite;
 
     /** Date de mise en place effective (passage au statut {@code OUVERT}). Utilisée par le journal des crédits. */
@@ -60,6 +72,14 @@ public class CertificatCredit {
     /** Récap. : (b) droits et taxes douaniers (hors ventilation TVA import). */
     @Column(precision = 19, scale = 4)
     private BigDecimal droitsEtTaxesDouaneHorsTva;
+
+    /**
+     * Récap. : (c) taxes de consommation. Ligne distincte des droits (b) et de la TVA (d), mais
+     * comme (b) elle relève du crédit douanier hors TVA : le crédit extérieur vaut b + c + d et le
+     * solde cordon consommable vaut b + c.
+     */
+    @Column(precision = 19, scale = 4)
+    private BigDecimal taxesConsommation;
 
     /**
      * Récap. : (d) TVA à l’import — montant **accordé initialement** (figé à la saisie DGTCP / création).

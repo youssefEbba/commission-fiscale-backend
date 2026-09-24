@@ -31,6 +31,8 @@ public class CertificatCreditDto {
     /** Récapitulatif fiscal (tableau d’attribution) — lignes (a) à (g). */
     private BigDecimal valeurDouaneFournitures;
     private BigDecimal droitsEtTaxesDouaneHorsTva;
+    /** (c) Taxes de consommation — part du crédit douanier hors TVA, facultative. */
+    private BigDecimal taxesConsommation;
     /** (d) accord initial — figé à la saisie. */
     private BigDecimal tvaImportationDouaneAccordee;
     /** Restant de la ligne (d) après liquidations douanières. */
