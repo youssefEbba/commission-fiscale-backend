@@ -33,6 +33,15 @@ public class ImportArchiveResultatDto {
     private Long transfertCreditId;
     private BigDecimal transfertCreditMontant;
 
+    /**
+     * {@code true} si le crédit existait déjà : le relevé a complété le dossier au lieu d'en créer
+     * un nouveau. Les compteurs ci-dessous ne portent alors que sur les lignes effectivement ajoutées.
+     */
+    private boolean certificatDejaExistant;
+
+    /** Lignes du relevé déjà présentes en base, laissées de côté pour ne pas les compter deux fois. */
+    private int utilisationsIgnorees;
+
     private int utilisationsDouanieres;
     private int utilisationsInterieures;
     private int lignesTaxeCreees;

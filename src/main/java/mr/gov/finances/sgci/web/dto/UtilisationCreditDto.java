@@ -27,6 +27,10 @@ public class UtilisationCreditDto {
     private StatutUtilisation statut;
     private Instant dateLiquidation;
     private Long certificatCreditId;
+    /** Numéro technique du crédit rattaché, pour l'affichage en liste et en détail. */
+    private String certificatNumero;
+    /** Référence lisible du crédit ({@code CR-001-01/2026}), à préférer au numéro quand elle existe. */
+    private String certificatReference;
     private Long entrepriseId;
 
     /** Entreprise titulaire du certificat (bénéficiaire du crédit), distincte du demandeur si sous-traitance. */

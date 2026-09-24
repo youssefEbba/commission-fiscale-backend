@@ -674,6 +674,9 @@ public class CertificatCreditService {
         if (request.getDroitsEtTaxesDouaneHorsTva() != null) {
             entity.setDroitsEtTaxesDouaneHorsTva(request.getDroitsEtTaxesDouaneHorsTva());
         }
+        if (request.getTaxesConsommation() != null) {
+            entity.setTaxesConsommation(request.getTaxesConsommation());
+        }
         if (request.getTvaImportationDouane() != null) {
             entity.setTvaImportationDouane(request.getTvaImportationDouane());
         }
@@ -685,6 +688,77 @@ public class CertificatCreditService {
         }
 
         entity = repository.save(entity);
+        CertificatCreditDto result = toDto(entity);
+        auditService.log(AuditAction.ADMIN_CORRECTION, "CertificatCredit", String.valueOf(id), result, motif);
+        return result;
+    }
+
+    /**
+     * Prise en charge du certificat par l'administrateur, à la place de la DGI, de la DGD ou de la
+     * DGTCP ({@code ENVOYEE → EN_CONTROLE}).
+     *
+     * <p>Premier maillon permettant à l'administrateur de mener la mise en place de bout en bout,
+     * sans rendre la main aux directions.
+     */
+    @Transactional
+    public CertificatCreditDto adminPrendreEnCharge(Long id, String motif, AuthenticatedUser user) {
+        assertAdminOverride(user, motif);
+        CertificatCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + id));
+
+        StatutCertificat actuel = entity.getStatut();
+        if (actuel == StatutCertificat.EN_CONTROLE) {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Le certificat est déjà en contrôle");
+        }
+        if (actuel != StatutCertificat.ENVOYEE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "La prise en charge suppose un certificat au statut ENVOYEE. Statut actuel: " + actuel);
+        }
+
+        workflow.validateTransition(actuel, StatutCertificat.EN_CONTROLE);
+        entity.setStatut(StatutCertificat.EN_CONTROLE);
+        entity = repository.save(entity);
+
+        // Même rattachement GED que la prise en charge ordinaire (voir updateStatut).
+        if (entity.getDemandeCorrection() != null && entity.getDemandeCorrection().getId() != null) {
+            dossierGedService.attachCertificatToDossier(entity.getDemandeCorrection().getId(), entity.getId());
+        }
+
+        CertificatCreditDto result = toDto(entity);
+        auditService.log(AuditAction.ADMIN_CORRECTION, "CertificatCredit", String.valueOf(id), result, motif);
+        workflowNotificationHelper.certificatStatut(entity, StatutCertificat.EN_CONTROLE.name(), user, null);
+        return result;
+    }
+
+    /**
+     * Saisie des montants du récapitulatif par l'administrateur, à la place de la DGTCP.
+     *
+     * <p>Les montants conditionnent le visa DGTCP : sans cette action, l'administrateur devrait
+     * réclamer leur saisie à la direction avant de pouvoir viser à sa place. Le traitement est
+     * strictement celui de {@link #updateMontants}, soldes provisoires compris.
+     */
+    @Transactional
+    public CertificatCreditDto adminRenseignerMontants(Long id,
+                                                      UpdateCertificatCreditMontantsRequest request,
+                                                      String motif,
+                                                      AuthenticatedUser user) {
+        assertAdminOverride(user, motif);
+        CertificatCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + id));
+
+        // Après ouverture, les montants alimentent des soldes déjà consommés : passer par la
+        // correction administrateur, qui refuse l'opération si des utilisations existent.
+        if (entity.getStatut() == StatutCertificat.OUVERT
+                || entity.getStatut() == StatutCertificat.MODIFIE
+                || entity.getStatut() == StatutCertificat.CLOTURE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Le crédit est déjà ouvert : utilisez la correction administrateur pour ajuster les montants. Statut actuel: "
+                            + entity.getStatut());
+        }
+
+        applyMontants(entity, request);
+        entity = repository.save(entity);
+
         CertificatCreditDto result = toDto(entity);
         auditService.log(AuditAction.ADMIN_CORRECTION, "CertificatCredit", String.valueOf(id), result, motif);
         return result;
@@ -859,7 +933,7 @@ public class CertificatCreditService {
         }
         // soldeCordon = droits hors TVA (b) seulement — la TVA est suivie séparément
         BigDecimal droits = entity.getDroitsEtTaxesDouaneHorsTva() != null
-                ? entity.getDroitsEtTaxesDouaneHorsTva()
+                ? entity.getDroitsEtTaxesDouaneHorsTva().add(nz(entity.getTaxesConsommation()))
                 : (entity.getMontantCordon() != null ? entity.getMontantCordon() : BigDecimal.ZERO);
         BigDecimal montantTVA = entity.getMontantTVAInterieure() != null ? entity.getMontantTVAInterieure() : BigDecimal.ZERO;
         BigDecimal tvaAccordee = entity.getTvaImportationDouaneAccordee() != null
@@ -887,6 +961,21 @@ public class CertificatCreditService {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut renseigner les montants");
         }
         CertificatCredit entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + id));
+        applyMontants(entity, request);
+        entity = repository.save(entity);
+        CertificatCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "CertificatCredit", String.valueOf(id), result);
+        return result;
+    }
+
+    /**
+     * Écriture des montants du récapitulatif et synchronisation des soldes provisoires.
+     *
+     * <p>Partagée entre la saisie DGTCP ({@link #updateMontants}) et la saisie administrateur
+     * ({@link #adminRenseignerMontants}) : les deux doivent produire exactement le même état,
+     * faute de quoi un certificat instruit par l'administrateur afficherait des soldes différents.
+     */
+    private void applyMontants(CertificatCredit entity, UpdateCertificatCreditMontantsRequest request) {
 
         entity.setMontantCordon(request.getMontantCordon());
         entity.setMontantTVAInterieure(request.getMontantTVAInterieure());
@@ -895,8 +984,9 @@ public class CertificatCreditService {
         // Synchroniser les soldes tant que le crédit n'est pas ouvert (sinon incohérence avec les utilisations)
         if (entity.getStatut() != StatutCertificat.OUVERT) {
             // soldeCordon = b (droits hors TVA), pas b+d
+            // Hors TVA : les taxes de consommation rejoignent les droits dans le solde cordon.
             BigDecimal droitsUpd = request.getDroitsEtTaxesDouaneHorsTva() != null
-                    ? request.getDroitsEtTaxesDouaneHorsTva()
+                    ? request.getDroitsEtTaxesDouaneHorsTva().add(nz(request.getTaxesConsommation()))
                     : request.getMontantCordon();
             if (entity.getSoldeCordon() == null || BigDecimal.ZERO.compareTo(entity.getSoldeCordon()) == 0) {
                 entity.setSoldeCordon(droitsUpd);
@@ -915,10 +1005,6 @@ public class CertificatCreditService {
         }
 
         assertRecapitulatifCoherence(entity);
-        entity = repository.save(entity);
-        CertificatCreditDto result = toDto(entity);
-        auditService.log(AuditAction.UPDATE, "CertificatCredit", String.valueOf(id), result);
-        return result;
     }
 
     private void applyRecapFromCreateRequest(CertificatCredit entity, CreateCertificatCreditRequest request) {
@@ -930,6 +1016,9 @@ public class CertificatCreditService {
         }
         if (request.getDroitsEtTaxesDouaneHorsTva() != null) {
             entity.setDroitsEtTaxesDouaneHorsTva(request.getDroitsEtTaxesDouaneHorsTva());
+        }
+        if (request.getTaxesConsommation() != null) {
+            entity.setTaxesConsommation(request.getTaxesConsommation());
         }
         if (request.getTvaImportationDouane() != null) {
             entity.setTvaImportationDouaneAccordee(request.getTvaImportationDouane());
@@ -952,6 +1041,9 @@ public class CertificatCreditService {
         }
         if (request.getDroitsEtTaxesDouaneHorsTva() != null) {
             entity.setDroitsEtTaxesDouaneHorsTva(request.getDroitsEtTaxesDouaneHorsTva());
+        }
+        if (request.getTaxesConsommation() != null) {
+            entity.setTaxesConsommation(request.getTaxesConsommation());
         }
         if (request.getTvaImportationDouane() != null) {
             entity.setTvaImportationDouaneAccordee(request.getTvaImportationDouane());
@@ -985,19 +1077,22 @@ public class CertificatCreditService {
             return;
         }
         BigDecimal b = c.getDroitsEtTaxesDouaneHorsTva();
+        BigDecimal cons = c.getTaxesConsommation();
         BigDecimal d = resolveTvaImportationDouanePourRecap(c);
         BigDecimal g = c.getTvaCollecteeTravaux();
         BigDecimal mc = c.getMontantCordon();
         BigDecimal mt = c.getMontantTVAInterieure();
         if (b != null && d != null && mc != null) {
-            BigDecimal e = b.add(d);
+            BigDecimal e = b.add(d).add(nz(cons));
             if (!approxEqual(e, mc)) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                        "Récapitulatif incohérent : montantCordon doit correspondre au crédit extérieur (b + d) = "
+                        "Récapitulatif incohérent : montantCordon doit correspondre au crédit extérieur (b + c + d) = "
                                 + e.setScale(2, RoundingMode.HALF_UP) + " (montantCordon=" + mc + ")");
             }
         }
-        if (g != null && d != null && mt != null) {
+        // La TVA nette (g - d) ne concerne que les dossiers comportant un crédit intérieur.
+        // Quand celui-ci est nul, la ligne est sans objet et ne doit rien exiger.
+        if (g != null && d != null && mt != null && mt.signum() > 0) {
             BigDecimal h = g.subtract(d);
             if (!approxEqual(h, mt)) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
@@ -1134,9 +1229,10 @@ public class CertificatCreditService {
         BigDecimal dPourRecap = resolveTvaImportationDouanePourRecap(c);
         BigDecimal dRestant = c.getTvaImportationDouane();
         BigDecimal gRec = c.getTvaCollecteeTravaux();
+        BigDecimal consRec = c.getTaxesConsommation();
         BigDecimal creditExterieurRecap = null;
         if (bRec != null && dPourRecap != null) {
-            creditExterieurRecap = bRec.add(dPourRecap);
+            creditExterieurRecap = bRec.add(dPourRecap).add(nz(consRec));
         }
         BigDecimal creditInterieurNetRecap = null;
         if (gRec != null && dPourRecap != null) {
@@ -1159,6 +1255,7 @@ public class CertificatCreditService {
                 .soldeTVA(c.getSoldeTVA())
                 .valeurDouaneFournitures(c.getValeurDouaneFournitures())
                 .droitsEtTaxesDouaneHorsTva(bRec)
+                .taxesConsommation(consRec)
                 .tvaImportationDouaneAccordee(c.getTvaImportationDouaneAccordee())
                 .tvaImportationDouane(dRestant)
                 .montantMarcheHt(c.getMontantMarcheHt())

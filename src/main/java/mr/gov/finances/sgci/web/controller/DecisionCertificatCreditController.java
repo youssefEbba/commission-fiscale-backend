@@ -88,6 +88,20 @@ public class DecisionCertificatCreditController {
         return service.adminVisaPourRole(id, role, motif, file, user);
     }
 
+    /**
+     * Résolution d'un rejet temporaire par l'administrateur, quel que soit le rôle qui l'a posé.
+     * Un rejet resté ouvert bloque le visa du rôle concerné, y compris le visa administrateur.
+     */
+    @PutMapping("/decisions/{decisionId}/resolve/admin")
+    @PreAuthorize("hasAuthority('certificat.visa.admin_override')")
+    public DecisionCreditDto adminResoudreRejetTemp(
+            @PathVariable Long decisionId,
+            @RequestParam String motif,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.adminResoudreRejetTemp(decisionId, motif, user);
+    }
+
     @PostMapping("/decisions/{decisionId}/rejet-temp/reponses")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAnyAuthority('mise_en_place.document.upload', 'mise_en_place.dgd.queue.view', 'mise_en_place.dgi.queue.view', 'mise_en_place.dgtcp.queue.view', 'mise_en_place.view')")

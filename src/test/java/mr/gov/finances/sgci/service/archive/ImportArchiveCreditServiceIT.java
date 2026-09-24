@@ -185,18 +185,6 @@ class ImportArchiveCreditServiceIT {
                 "la ligne IMF doit rester à la charge de l'entreprise");
     }
 
-    @Test
-    @Transactional
-    void refuse_un_second_import_du_meme_releve() throws Exception {
-        Entreprise entreprise = entrepriseCible();
-        AutoriteContractante autorite = autoriteCible();
-        Convention convention = conventionCible(autorite);
-        service.importer(releve(), entreprise.getId(), autorite.getId(), convention.getId(), null, true, null);
-
-        // Le numéro dérivé du relevé sert de garde contre le double import.
-        assertThrows(RuntimeException.class, () -> service.importer(
-                releve(), entreprise.getId(), autorite.getId(), convention.getId(), null, true, null));
-    }
 
     @Test
     @Transactional
@@ -274,5 +262,43 @@ class ImportArchiveCreditServiceIT {
         interieure.setNumeroFacture("FA-APRES-TRANSFERT-001");
         interieure.setMontantTVAInterieure(new BigDecimal("50000"));
         assertNotNull(utilisationCreditService.create(interieure, null).getId());
+    }
+
+    /**
+     * Un relevé reversé ne doit rien dupliquer : le crédit est complété, pas recréé, et les lignes
+     * déjà reprises sont laissées de côté. Test volontairement indépendant des montants, pour
+     * fonctionner avec n'importe quel relevé fourni.
+     */
+    @Test
+    @Transactional
+    void reimporter_le_meme_releve_complete_sans_dupliquer() throws Exception {
+        Entreprise entreprise = entrepriseCible();
+        AutoriteContractante autorite = autoriteCible();
+        Convention convention = conventionCible(autorite);
+
+        ImportArchiveResultatDto premier = service.importer(
+                releve(), entreprise.getId(), autorite.getId(), convention.getId(), null, true, null);
+        int reprisesInitiales = premier.getUtilisationsDouanieres() + premier.getUtilisationsInterieures();
+        assertFalse(premier.isCertificatDejaExistant(), "le premier import doit créer le crédit");
+
+        long utilisationsApresPremier = utilisationRepository
+                .findByCertificatCreditId(premier.getCertificatId()).size();
+
+        ImportArchiveResultatDto second = service.importer(
+                releve(), entreprise.getId(), autorite.getId(), convention.getId(), null, true, null);
+
+        assertTrue(second.isCertificatDejaExistant(), "le second import doit compléter le crédit existant");
+        assertEquals(premier.getCertificatId(), second.getCertificatId(), "le crédit ne doit pas être recréé");
+        assertEquals(0, second.getUtilisationsDouanieres() + second.getUtilisationsInterieures(),
+                "aucune utilisation ne doit être réinsérée");
+        assertEquals(reprisesInitiales, second.getUtilisationsIgnorees(),
+                "toutes les lignes du relevé doivent être reconnues comme déjà reprises");
+        assertEquals(utilisationsApresPremier,
+                utilisationRepository.findByCertificatCreditId(premier.getCertificatId()).size(),
+                "le nombre d'utilisations en base ne doit pas bouger");
+
+        // Un seul transfert, même après deux passages.
+        assertTrue(transfertCreditRepository.findByCertificatCreditId(premier.getCertificatId()).size() <= 1,
+                "le transfert ne doit pas être dupliqué");
     }
 }

@@ -40,6 +40,16 @@ public abstract class UtilisationCredit {
 
     private Instant dateLiquidation;
 
+    /**
+     * Libellé d'origine de la ligne dans le relevé d'archive, par exemple {@code UT 1 | 1/01/2026}.
+     *
+     * <p>Sert deux usages : renseigné, il marque une utilisation reprise d'une archive (par
+     * opposition à une utilisation saisie dans l'application) ; sa valeur est la clé métier qui
+     * évite de réimporter deux fois la même ligne lorsqu'un relevé est reversé complété.
+     */
+    @Column(name = "origine_archive_libelle", length = 160)
+    private String origineArchiveLibelle;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "certificat_credit_id", nullable = false)
     private CertificatCredit certificatCredit;

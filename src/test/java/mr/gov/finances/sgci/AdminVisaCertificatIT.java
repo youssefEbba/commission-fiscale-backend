@@ -236,13 +236,16 @@ class AdminVisaCertificatIT {
         String adminToken = admin();
         Long id = certificatId(adminToken, CI_VISAS);
 
+        // L'administrateur renseigne lui-même les montants : aucun retour vers la DGTCP.
         Map<String, Object> montants = new LinkedHashMap<>();
         montants.put("montantCordon", new BigDecimal("4000000"));
         montants.put("montantTVAInterieure", new BigDecimal("2000000"));
-        assertThat(restTemplate.exchange(
-                baseUrl() + "/api/certificats-credit/" + id + "/montants",
-                HttpMethod.PATCH, bearerJson(login("dgtcp", "123456"), montants), Map.class)
-                .getStatusCode()).isEqualTo(HttpStatus.OK);
+        ResponseEntity<Map> patch = restTemplate.exchange(
+                baseUrl() + "/api/certificats-credit/" + id + "/montants/admin?motif=dgtcp+indisponible",
+                HttpMethod.POST, bearerJson(adminToken, montants), Map.class);
+        assertThat(patch.getStatusCode()).isEqualTo(HttpStatus.OK);
+        // Les soldes provisoires doivent être initialisés comme par le parcours DGTCP.
+        assertThat(certificat(adminToken, id).get("soldeCordon")).isNotNull();
 
         ResponseEntity<Map> resp = adminVisa(adminToken, id, "DGTCP", "directeur en mission", false);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -263,6 +266,19 @@ class AdminVisaCertificatIT {
         assertThat(decisions.getBody()).anyMatch(o -> o instanceof Map m
                 && "DGTCP".equals(String.valueOf(m.get("role")))
                 && Boolean.TRUE.equals(m.get("visaParAdmin")));
+    }
+
+    @Test
+    @Order(5)
+    void refuse_la_prise_en_charge_sur_un_certificat_deja_en_controle() {
+        String adminToken = admin();
+        Long id = certificatId(adminToken, CI_VISAS);
+
+        // Le parcours administrateur complet expose la prise en charge, bornée au statut ENVOYEE.
+        ResponseEntity<Map> resp = restTemplate.exchange(
+                baseUrl() + "/api/certificats-credit/" + id + "/prise-en-charge/admin?motif=test",
+                HttpMethod.POST, bearer(adminToken), Map.class);
+        assertThat(resp.getStatusCode()).isIn(HttpStatus.CONFLICT, HttpStatus.BAD_REQUEST);
     }
 
     @Test

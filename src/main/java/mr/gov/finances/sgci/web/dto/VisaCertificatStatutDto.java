@@ -64,4 +64,15 @@ public class VisaCertificatStatutDto {
 
     /** Raison du blocage lorsque {@link #visableParAdmin} vaut {@code false} ({@code null} sinon). */
     private String motifBlocage;
+
+    /**
+     * Code stable de la cause du blocage, destiné au client ({@code null} si aucun blocage) :
+     * {@code ROLE_NON_HABILITE}, {@code ROLE_NON_CONCERNE}, {@code STATUT_INCOMPATIBLE},
+     * {@code VISA_DEJA_POSE}, {@code REJET_TEMP_OUVERT}, {@code MONTANTS_MANQUANTS},
+     * {@code DEJA_VALIDE}, {@code DOCUMENT_MANQUANT}.
+     * <p>
+     * À préférer à {@link #motifBlocage} pour toute logique d'affichage : le message est rédigé
+     * pour l'utilisateur et peut être reformulé, le code ne change pas.
+     */
+    private String codeBlocage;
 }

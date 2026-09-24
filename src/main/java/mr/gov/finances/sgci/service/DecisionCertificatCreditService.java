@@ -88,6 +88,49 @@ public class DecisionCertificatCreditService {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Résolution interdite: rôle non autorisé");
         }
 
+        return appliquerResolution(decision, user, null);
+    }
+
+    /**
+     * Résolution d'un rejet temporaire prononcée par l'administrateur, quel que soit le rôle qui
+     * l'a posé.
+     *
+     * <p>Un rejet resté ouvert bloque le visa du rôle concerné : sans cette action, l'administrateur
+     * devrait demander à la direction de lever son propre rejet avant de pouvoir viser à sa place.
+     */
+    @Transactional
+    public DecisionCreditDto adminResoudreRejetTemp(Long decisionId, String motif, AuthenticatedUser user) {
+        if (user == null || user.getRole() != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Résolution administrateur réservée à l'administrateur système");
+        }
+        if (motif == null || motif.isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Le motif de la résolution administrateur est obligatoire");
+        }
+        if (decisionId == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Décision invalide");
+        }
+        DecisionCertificatCredit decision = decisionRepository.findById(decisionId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Décision certificat non trouvée: " + decisionId));
+        if (decision.getDecision() != DecisionCorrectionType.REJET_TEMP || decision.getRejetTempStatus() != RejetTempStatus.OUVERT) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Résolution interdite: la décision n'est pas un REJET_TEMP OUVERT");
+        }
+        return appliquerResolution(decision, user, motif);
+    }
+
+    /**
+     * Marque le rejet résolu et, s'il ne reste aucun rejet ouvert, remet le certificat en
+     * {@code A_RECONTROLER}. Partagée par la résolution ordinaire et la résolution administrateur.
+     */
+    private DecisionCreditDto appliquerResolution(DecisionCertificatCredit decision,
+                                                  AuthenticatedUser user,
+                                                  String motifAdmin) {
+        if (motifAdmin != null) {
+            decision.setVisaParAdmin(Boolean.TRUE);
+            decision.setMotifAdmin(motifAdmin);
+        }
         decision.setRejetTempStatus(RejetTempStatus.RESOLU);
         decision.setRejetTempResolvedAt(Instant.now());
         decision = decisionRepository.save(decision);
@@ -108,7 +151,12 @@ public class DecisionCertificatCreditService {
             }
         }
 
-        return toDto(decision);
+        DecisionCreditDto dto = toDto(decision);
+        if (motifAdmin != null) {
+            auditService.log(AuditAction.ADMIN_CORRECTION, "DecisionCertificatCredit",
+                    String.valueOf(decision.getId()), dto, motifAdmin);
+        }
+        return dto;
     }
 
     @Transactional
@@ -217,35 +265,79 @@ public class DecisionCertificatCreditService {
     }
 
     /**
+     * Cascade unique des causes de blocage, du socle commun aux décisions jusqu'aux contrôles
+     * propres au visa. Retourne {@code null} si rien ne s'oppose à l'action.
+     *
+     * <p>Source de vérité partagée : les assertions lèvent l'exception correspondante et l'écran
+     * d'administration expose le même code. Aucun client n'a donc à interpréter un message.
+     *
+     * @param visa {@code true} pour ajouter les contrôles propres au visa (rejet ouvert, montants).
+     */
+    private String codeBlocage(CertificatCredit certificat, Role role, boolean visa) {
+        if (!VISA_REQUIRED_ROLES.contains(role)) {
+            return "ROLE_NON_HABILITE";
+        }
+        if (!visaRequirementResolver.requiredRolesForCertificat(certificat).contains(role)) {
+            return "ROLE_NON_CONCERNE";
+        }
+        if (!DECISION_ALLOWED_STATUTS.contains(certificat.getStatut())) {
+            return "STATUT_INCOMPATIBLE";
+        }
+        if (decisionRepository.existsByCertificatCreditIdAndRoleAndDecision(
+                certificat.getId(), role, DecisionCorrectionType.VISA)) {
+            return "VISA_DEJA_POSE";
+        }
+        if (!visa) {
+            return null;
+        }
+        if (decisionRepository.existsByCertificatCreditIdAndRoleAndDecisionAndRejetTempStatus(
+                certificat.getId(), role, DecisionCorrectionType.REJET_TEMP, RejetTempStatus.OUVERT)) {
+            return "REJET_TEMP_OUVERT";
+        }
+        if (role == Role.DGTCP && montantsManquants(certificat)) {
+            return "MONTANTS_MANQUANTS";
+        }
+        return null;
+    }
+
+    /** Exception correspondant à un code de blocage : message et code restent ainsi solidaires. */
+    private ApiException exceptionBlocage(String code, CertificatCredit certificat, Role role) {
+        switch (code) {
+            case "ROLE_NON_HABILITE":
+                return ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                        "Rôle non autorisé pour la décision mise en place: " + role
+                                + ". Seuls DGI, DGD et DGTCP peuvent apposer un visa ou rejet temporaire.");
+            case "ROLE_NON_CONCERNE":
+                return ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                        "Rôle non concerné par ce certificat (crédit associé nul): " + role
+                                + ". Visas requis: " + visaRequirementResolver.requiredRolesForCertificat(certificat));
+            case "STATUT_INCOMPATIBLE":
+                return ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Le certificat doit être en statut EN_CONTROLE, INCOMPLETE ou A_RECONTROLER "
+                                + "pour recevoir un visa ou rejet. Statut actuel: " + certificat.getStatut());
+            case "VISA_DEJA_POSE":
+                return ApiException.conflict(ApiErrorCode.CONFLICT,
+                        "Décision impossible: un visa a déjà été accordé par " + role
+                                + ". Le visa clôture les interactions sur cette demande.");
+            case "REJET_TEMP_OUVERT":
+                return ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "VISA impossible: un ou plusieurs rejets temporaires sont encore ouverts pour ce rôle. "
+                                + "Résolvez-les via PUT .../decisions/{id}/resolve pour chaque rejet concerné.");
+            case "MONTANTS_MANQUANTS":
+                return montantsException(certificat);
+            default:
+                return ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Action impossible");
+        }
+    }
+
+    /**
      * Socle commun aux décisions VISA et REJET_TEMP : rôle habilité, rôle concerné par les
      * enveloppes du certificat, statut ouvert aux décisions, et absence de visa déjà posé.
      */
     private void assertDecisionPossible(CertificatCredit certificat, Role role) {
-        if (!VISA_REQUIRED_ROLES.contains(role)) {
-            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
-                    "Rôle non autorisé pour la décision mise en place: " + role
-                            + ". Seuls DGI, DGD et DGTCP peuvent apposer un visa ou rejet temporaire.");
-        }
-
-        Set<Role> requiredRoles = visaRequirementResolver.requiredRolesForCertificat(certificat);
-        if (!requiredRoles.contains(role)) {
-            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
-                    "Rôle non concerné par ce certificat (crédit associé nul): " + role
-                            + ". Visas requis: " + requiredRoles);
-        }
-
-        if (!DECISION_ALLOWED_STATUTS.contains(certificat.getStatut())) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                    "Le certificat doit être en statut EN_CONTROLE, INCOMPLETE ou A_RECONTROLER "
-                            + "pour recevoir un visa ou rejet. Statut actuel: " + certificat.getStatut());
-        }
-
-        boolean visaAlreadyForRole = decisionRepository.existsByCertificatCreditIdAndRoleAndDecision(
-                certificat.getId(), role, DecisionCorrectionType.VISA);
-        if (visaAlreadyForRole) {
-            throw ApiException.conflict(ApiErrorCode.CONFLICT,
-                    "Décision impossible: un visa a déjà été accordé par " + role
-                            + ". Le visa clôture les interactions sur cette demande.");
+        String code = codeBlocage(certificat, role, false);
+        if (code != null) {
+            throw exceptionBlocage(code, certificat, role);
         }
     }
 
@@ -254,35 +346,36 @@ public class DecisionCertificatCreditService {
      * lui-même ou par l'administrateur à sa place.
      */
     private void assertVisaMembrePossible(CertificatCredit certificat, Role role) {
-        assertDecisionPossible(certificat, role);
-
-        boolean openRejetForRole = decisionRepository.existsByCertificatCreditIdAndRoleAndDecisionAndRejetTempStatus(
-                certificat.getId(), role, DecisionCorrectionType.REJET_TEMP, RejetTempStatus.OUVERT);
-        if (openRejetForRole) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                    "VISA impossible: un ou plusieurs rejets temporaires sont encore ouverts pour ce rôle. "
-                            + "Résolvez-les via PUT .../decisions/{id}/resolve pour chaque rejet concerné.");
-        }
-
-        if (role == Role.DGTCP) {
-            assertMontantsRenseignes(certificat);
+        String code = codeBlocage(certificat, role, true);
+        if (code != null) {
+            throw exceptionBlocage(code, certificat, role);
         }
     }
 
-    private void assertMontantsRenseignes(CertificatCredit entity) {
+    /** {@code true} si un montant exigé par les enveloppes du certificat manque encore. */
+    private boolean montantsManquants(CertificatCredit entity) {
+        return montantsException(entity) != null;
+    }
+
+    /**
+     * Exception décrivant le montant manquant, {@code null} si tout est renseigné. Renvoyée plutôt
+     * que levée, pour que la cascade de blocage et l'assertion partagent exactement la même règle.
+     */
+    private ApiException montantsException(CertificatCredit entity) {
         Set<Role> requiredRoles = visaRequirementResolver.requiredRolesForCertificat(entity);
         boolean cordonRequis = requiredRoles.contains(Role.DGD);
         boolean tvaRequise = requiredRoles.contains(Role.DGI);
         if (cordonRequis
                 && (entity.getMontantCordon() == null || entity.getMontantCordon().compareTo(BigDecimal.ZERO) <= 0)) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+            return ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "DGTCP doit renseigner le montant cordon (crédit extérieur), strictement supérieur à zéro, avant d'apposer le visa");
         }
         if (tvaRequise
                 && (entity.getMontantTVAInterieure() == null || entity.getMontantTVAInterieure().compareTo(BigDecimal.ZERO) <= 0)) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+            return ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "DGTCP doit renseigner le montant TVA intérieure (crédit intérieur), strictement supérieur à zéro, avant d'apposer le visa");
         }
+        return null;
     }
 
     /**
@@ -361,17 +454,22 @@ public class DecisionCertificatCreditService {
                 boolean pose = validationPresidentAcquise(certificat.getStatut());
                 boolean auStade = certificat.getStatut() == StatutCertificat.EN_VALIDATION_PRESIDENT;
                 String blocage = null;
+                String code = null;
                 if (pose) {
+                    code = "DEJA_VALIDE";
                     blocage = "Certificat déjà validé";
                 } else if (!auStade) {
+                    code = "STATUT_INCOMPATIBLE";
                     blocage = "Validation possible uniquement en statut EN_VALIDATION_PRESIDENT. Statut actuel: "
                             + certificat.getStatut();
                 } else if (!documentPresent) {
                     // N'empêche pas de viser : la pièce peut être fournie dans le même appel.
+                    code = "DOCUMENT_MANQUANT";
                     blocage = "Le certificat signé (" + codeDocument + ") doit être téléversé avec la validation";
                 }
                 statuts.add(builder.requis(true).pose(pose)
                         .visableParAdmin(!pose && auStade)
+                        .codeBlocage(code)
                         .motifBlocage(blocage).build());
                 continue;
             }
@@ -394,12 +492,12 @@ public class DecisionCertificatCreditService {
                         .visaParAdmin(Boolean.TRUE.equals(visa.getVisaParAdmin()));
             }
 
-            try {
-                assertVisaMembrePossible(certificat, role);
-                statuts.add(builder.visableParAdmin(true).build());
-            } catch (ApiException e) {
-                statuts.add(builder.visableParAdmin(false).motifBlocage(e.getMessage()).build());
-            }
+            String code = codeBlocage(certificat, role, true);
+            statuts.add(builder
+                    .visableParAdmin(code == null)
+                    .codeBlocage(code)
+                    .motifBlocage(code == null ? null : exceptionBlocage(code, certificat, role).getMessage())
+                    .build());
         }
         return statuts;
     }
