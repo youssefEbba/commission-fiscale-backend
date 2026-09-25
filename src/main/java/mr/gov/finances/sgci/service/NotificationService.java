@@ -33,7 +33,11 @@ public class NotificationService {
     private final NotificationRepository repository;
     private final UtilisateurRepository utilisateurRepository;
     private final SimpMessagingTemplate messagingTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    /**
+     * Mapper de l'application, injecté : il embarque le module JavaTime. Un {@code new
+     * ObjectMapper()} ne le fait pas et échouait sur tout DTO portant un {@code Instant}.
+     */
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public NotificationDto notifyUser(Long utilisateurId,

@@ -45,4 +45,11 @@ public class UtilisationTVAInterieure extends UtilisationCredit {
 
     @Column(precision = 19, scale = 4)
     private BigDecimal soldeTVAApres;
+
+    /** Numéro du certificat d'utilisation, attribué au moment de l'apurement ({@code CU-001/2026}). */
+    @Column(name = "numero_certificat_utilisation", length = 40)
+    private String numeroCertificatUtilisation;
+
+    @Column(name = "date_certificat_utilisation")
+    private Instant dateCertificatUtilisation;
 }

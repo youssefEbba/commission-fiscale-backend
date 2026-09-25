@@ -17,6 +17,11 @@ public enum StatutUtilisation {
     /** DGTCP a saisi les quittances Trésor — débit financier imminent. */
     QUITTANCES_ENREGISTREES,
     VALIDEE,
+    /**
+     * TVA intérieure : la DGI a déposé la quittance attestant le paiement. Étape obligatoire entre
+     * la validation DGTCP et l'apurement — sans elle, le solde de TVA ne peut pas être mouvementé.
+     */
+    QUITTANCE_DGI_ENREGISTREE,
     LIQUIDEE,
     APUREE,
     REJETEE,

@@ -26,7 +26,11 @@ public class AuditService {
     private static final int MAX_SNAPSHOT_CHARS = 1_000_000;
 
     private final AuditLogRepository repository;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    /**
+     * Mapper de l'application, injecté : il embarque le module JavaTime. Un {@code new
+     * ObjectMapper()} ne le fait pas et échouait sur tout DTO portant un {@code Instant}.
+     */
+    private final ObjectMapper objectMapper;
 
     /**
      * Enregistre une action (création, modification, suppression) sur une entité.
@@ -63,6 +67,9 @@ public class AuditService {
             try {
                 snapshotJson = objectMapper.writeValueAsString(objectSnapshot);
             } catch (JsonProcessingException e) {
+                // Journalisé : un instantané perdu passait jusqu'ici totalement inaperçu.
+                log.warn("Audit {} {}#{} : instantané non sérialisable ({})",
+                        action, entityType, entityId, e.getOriginalMessage());
                 snapshotJson = "{\"error\":\"serialization\"}";
             }
         } else if (action == AuditAction.DELETE && entityId != null) {

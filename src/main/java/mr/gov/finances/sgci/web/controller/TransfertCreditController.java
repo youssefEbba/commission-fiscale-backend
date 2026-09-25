@@ -4,10 +4,12 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.service.DecisionTransfertCreditService;
 import mr.gov.finances.sgci.service.DocumentTransfertCreditService;
 import mr.gov.finances.sgci.service.TransfertCreditService;
 import mr.gov.finances.sgci.web.dto.CreateTransfertCreditRequest;
 import mr.gov.finances.sgci.web.dto.DocumentTransfertCreditDto;
+import mr.gov.finances.sgci.web.dto.VisaTransfertStatutDto;
 import mr.gov.finances.sgci.web.dto.TransfertCreditDto;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,6 +29,7 @@ public class TransfertCreditController {
 
     private final TransfertCreditService service;
     private final DocumentTransfertCreditService documentService;
+    private final DecisionTransfertCreditService decisionService;
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('transfert.solde.view', 'transfert.dgtcp.queue.view', "
@@ -62,6 +65,31 @@ public class TransfertCreditController {
     public TransfertCreditDto create(@Valid @RequestBody CreateTransfertCreditRequest request,
                                      @AuthenticationPrincipal AuthenticatedUser user) {
         return service.create(request, user);
+    }
+
+    /**
+     * État des quatre visas du circuit P7, dans l'ordre DGD → DGI → DGTCP → Président.
+     *
+     * <p>Alimente la file d'attente de chaque direction et le dossier consolidé soumis au Président.
+     * Le blocage est porté par un code stable : le client ne réécrit pas la règle de séquencement.
+     */
+    @GetMapping("/{id}/visas")
+    @PreAuthorize("hasAnyAuthority('transfert.solde.view', 'transfert.dgtcp.queue.view', "
+            + "'transfert.dgd.visa', 'transfert.dgi.visa', 'transfert.president.validate', 'archivage.view')")
+    public List<VisaTransfertStatutDto> visaStatuts(@PathVariable Long id,
+                                                    @AuthenticationPrincipal AuthenticatedUser user) {
+        return decisionService.visaStatuts(id, user);
+    }
+
+    /**
+     * Visa d'une direction du circuit (DGD, DGI ou DGTCP), posé à son tour.
+     *
+     * <p>L'approbation du Président, qui déclenche l'écriture, passe par {@code POST .../valider}.
+     */
+    @PostMapping("/{id}/visa")
+    @PreAuthorize("hasAnyAuthority('transfert.dgd.visa', 'transfert.dgi.visa', 'transfert.dgtcp.update')")
+    public TransfertCreditDto viser(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.viserParDirection(id, user);
     }
 
     @PostMapping("/{id}/valider")

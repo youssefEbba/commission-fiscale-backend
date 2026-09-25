@@ -20,12 +20,15 @@ import mr.gov.finances.sgci.web.dto.SaisirQuittancesRequest;
 import mr.gov.finances.sgci.web.dto.UtilisationCreditDto;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 @RestController
@@ -193,6 +196,27 @@ public class UtilisationCreditController {
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
         return service.saisirQuittances(id, quittancesJson, files, user);
+    }
+
+    /**
+     * Étape DGI : dépôt de la quittance attestant le paiement de la TVA intérieure.
+     *
+     * <p>S'intercale entre la validation DGTCP et l'apurement. Le dépôt est idempotent : un second
+     * appel remplace la quittance précédente. Le justificatif (PDF, PNG ou JPG) est obligatoire au
+     * premier dépôt, facultatif ensuite. Statut résultant : QUITTANCE_DGI_ENREGISTREE.
+     */
+    @PostMapping(value = "/{id}/quittance-dgi", consumes = "multipart/form-data")
+    @PreAuthorize("hasAnyAuthority('utilisation.interieur.dgi.quittance', 'utilisation.admin_override')")
+    public UtilisationCreditDto deposerQuittanceDgi(
+            @PathVariable Long id,
+            @RequestParam("numeroQuittance") String numeroQuittance,
+            @RequestParam(value = "dateQuittance", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant dateQuittance,
+            @RequestParam("montant") BigDecimal montant,
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) throws IOException {
+        return service.deposerQuittanceDgi(id, numeroQuittance, dateQuittance, montant, file, user);
     }
 
     /**

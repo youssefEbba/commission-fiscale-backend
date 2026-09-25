@@ -440,6 +440,7 @@ public class WorkflowNotificationHelper {
         return switch (statut) {
             case "DEMANDEE" -> WorkflowEventCode.UTIL_TVA_SOUMISE;
             case "APUREE" -> WorkflowEventCode.UTIL_TVA_APUREE;
+            case "QUITTANCE_DGI_ENREGISTREE" -> WorkflowEventCode.UTIL_TVA_STATUT_CHANGE;
             case "REJETEE" -> WorkflowEventCode.UTIL_TVA_REJET_DEFINITIF;
             default -> WorkflowEventCode.UTIL_TVA_STATUT_CHANGE;
         };
@@ -461,6 +462,8 @@ public class WorkflowNotificationHelper {
         return switch (statut) {
             case "DEMANDEE", "EN_VERIFICATION", "VALIDEE", "APUREE", "REJETEE", "INCOMPLETE", "A_RECONTROLER" ->
                     List.of(Role.DGTCP);
+            // Quittance déposée : la DGTCP peut apurer. L'entreprise est notifiée via entrepriseId.
+            case "QUITTANCE_DGI_ENREGISTREE" -> List.of(Role.DGTCP);
             default -> List.of();
         };
     }

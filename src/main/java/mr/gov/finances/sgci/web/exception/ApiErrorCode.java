@@ -33,4 +33,14 @@ public final class ApiErrorCode {
 
     /** Modification interdite (workflow déjà engagé ou statut incompatible). */
     public static final String DEMANDE_NON_EDITABLE = "DEMANDE_NON_EDITABLE";
+    /** Statut courant incompatible avec l'action demandée. */
+    public static final String STATUT_INCOMPATIBLE = "STATUT_INCOMPATIBLE";
+    /** Un visa attendu avant celui-ci n'a pas encore été posé (circuit séquentiel P7). */
+    public static final String VISA_PREALABLE_MANQUANT = "VISA_PREALABLE_MANQUANT";
+    /** Solde douanier insuffisant pour exécuter le transfert demandé. */
+    public static final String SOLDE_INSUFFISANT = "SOLDE_INSUFFISANT";
+    /** Numéro de décompte ou de facture déjà utilisé sur ce crédit. */
+    public static final String JUSTIFICATIF_DEJA_UTILISE = "JUSTIFICATIF_DEJA_UTILISE";
+    /** Apurement TVA demandé sans quittance DGI préalable. */
+    public static final String QUITTANCE_DGI_MANQUANTE = "QUITTANCE_DGI_MANQUANTE";
 }

@@ -7,6 +7,8 @@ import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
 import mr.gov.finances.sgci.domain.entity.LigneBulletinLiquidation;
+import mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit;
+import mr.gov.finances.sgci.domain.entity.QuittanceDgi;
 import mr.gov.finances.sgci.domain.entity.QuittanceTresor;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
@@ -16,6 +18,7 @@ import mr.gov.finances.sgci.domain.enums.AffectationTaxe;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
+import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
@@ -25,6 +28,7 @@ import mr.gov.finances.sgci.domain.enums.TvaDeductibleStockSource;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.LigneBulletinLiquidationRepository;
+import mr.gov.finances.sgci.repository.QuittanceDgiRepository;
 import mr.gov.finances.sgci.repository.QuittanceTresorRepository;
 import mr.gov.finances.sgci.repository.DecisionUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.DocumentUtilisationCreditRepository;
@@ -39,6 +43,7 @@ import mr.gov.finances.sgci.web.dto.ApurerTVAInterieureRequest;
 import mr.gov.finances.sgci.web.dto.CreateUtilisationCreditRequest;
 import mr.gov.finances.sgci.web.dto.LigneBulletinDto;
 import mr.gov.finances.sgci.web.dto.LiquiderUtilisationDouaneRequest;
+import mr.gov.finances.sgci.web.dto.QuittanceDgiDto;
 import mr.gov.finances.sgci.web.dto.QuittanceTresorDto;
 import mr.gov.finances.sgci.web.dto.SaisirChequeRequest;
 import mr.gov.finances.sgci.web.dto.SaisirQuittancesRequest;
@@ -48,6 +53,7 @@ import mr.gov.finances.sgci.workflow.UtilisationCreditWorkflow;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -78,6 +84,7 @@ public class UtilisationCreditService {
     private final DecisionUtilisationCreditRepository decisionUtilisationCreditRepository;
     private final LigneBulletinLiquidationRepository ligneBulletinRepository;
     private final QuittanceTresorRepository quittanceTresorRepository;
+    private final QuittanceDgiRepository quittanceDgiRepository;
     private final SousTraitanceService sousTraitanceService;
     private final UtilisationCreditWorkflow workflow;
     private final AuditService auditService;
@@ -364,6 +371,8 @@ public class UtilisationCreditService {
         } else {
             UtilisationTVAInterieure t = new UtilisationTVAInterieure();
             mapBase(t, request, certificat, entreprise);
+            assertJustificatifNonDejaUtilise(certificat, request.getNumeroDecompte(),
+                    request.getNumeroFacture(), null);
             t.setTypeAchat(resolveTypeAchat(request));
             t.setNumeroFacture(request.getNumeroFacture());
             t.setDateFacture(request.getDateFacture());
@@ -525,6 +534,8 @@ public class UtilisationCreditService {
                 }
             }
         } else if (entity instanceof UtilisationTVAInterieure t) {
+            assertJustificatifNonDejaUtilise(t.getCertificatCredit(), request.getNumeroDecompte(),
+                    request.getNumeroFacture(), t.getId());
             t.setTypeAchat(resolveTypeAchat(request));
             t.setNumeroFacture(request.getNumeroFacture());
             t.setDateFacture(request.getDateFacture());
@@ -587,6 +598,160 @@ public class UtilisationCreditService {
     /**
      * Notifie les acteurs concernés selon le statut (entreprise titulaire, commission relais via entreprise, services).
      */
+    /**
+     * Dépôt de la quittance DGI sur une utilisation de TVA intérieure validée.
+     *
+     * <p>Étape intercalée entre la validation DGTCP et l'apurement : elle atteste le paiement
+     * effectif de la TVA. Le dépôt est idempotent — un second appel remplace la quittance
+     * précédente plutôt que d'en créer une seconde.
+     *
+     * <p>Le justificatif est stocké avant tout changement de statut : si le stockage est
+     * indisponible, l'appel échoue en 503 et le dossier reste intact.
+     */
+    @Transactional
+    public UtilisationCreditDto deposerQuittanceDgi(Long id, String numeroQuittance, Instant dateQuittance,
+                                                    BigDecimal montant, MultipartFile file,
+                                                    AuthenticatedUser user) throws IOException {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation non trouvée: " + id));
+        if (!(entity instanceof UtilisationTVAInterieure)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Cette utilisation n'est pas de type TVA intérieure");
+        }
+        Role role = user != null ? user.getRole() : null;
+        if (role != Role.DGI && role != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Seule la DGI peut déposer la quittance de TVA intérieure");
+        }
+
+        StatutUtilisation actuel = entity.getStatut();
+        boolean remplacement = actuel == StatutUtilisation.QUITTANCE_DGI_ENREGISTREE;
+        if (actuel != StatutUtilisation.VALIDEE && !remplacement) {
+            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.STATUT_INCOMPATIBLE,
+                    "La quittance DGI suppose une utilisation validée. Statut actuel : " + actuel);
+        }
+
+        if (numeroQuittance == null || numeroQuittance.isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Le numéro de quittance est obligatoire");
+        }
+        if (dateQuittance != null && dateQuittance.isAfter(Instant.now())) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "La date de quittance ne peut pas être dans le futur");
+        }
+        if (montant == null || montant.compareTo(BigDecimal.ZERO) <= 0) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Le montant de la quittance doit être strictement positif");
+        }
+
+        QuittanceDgi quittance = quittanceDgiRepository.findByUtilisationCreditId(id).orElse(null);
+        boolean fichierFourni = file != null && !file.isEmpty();
+        if (!fichierFourni && quittance == null) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Le justificatif de la quittance est obligatoire au premier dépôt");
+        }
+        if (fichierFourni) {
+            assertJustificatifAccepte(file);
+        }
+
+        if (quittance == null) {
+            quittance = QuittanceDgi.builder().utilisationCredit(entity).build();
+        }
+        quittance.setNumeroQuittance(numeroQuittance.trim());
+        quittance.setDateQuittance(dateQuittance != null ? dateQuittance : Instant.now());
+        quittance.setMontant(montant);
+        quittance.setDeposeePar(user != null ? user.getUsername() : null);
+        quittance.setDateDepot(Instant.now());
+
+        if (fichierFourni) {
+            // Stockage d'abord : une indisponibilité doit laisser le dossier tel quel.
+            String chemin = minioService.uploadFile(file);
+            String nom = file.getOriginalFilename() != null ? file.getOriginalFilename() : file.getName();
+            documentUtilisationCreditRepository
+                    .findByUtilisationCreditIdAndCodeDocumentAndActifTrue(id, "QUITTANCE_DGI")
+                    .ifPresent(precedent -> {
+                        precedent.setActif(false);
+                        documentUtilisationCreditRepository.save(precedent);
+                    });
+            DocumentUtilisationCredit doc = documentUtilisationCreditRepository.save(
+                    DocumentUtilisationCredit.builder()
+                            .codeDocument("QUITTANCE_DGI")
+                            .nomFichier(nom)
+                            .chemin(chemin)
+                            .dateUpload(Instant.now())
+                            .taille(file.getSize())
+                            .version(1)
+                            .actif(true)
+                            .utilisationCredit(entity)
+                            .build());
+            quittance.setDocumentChemin(chemin);
+            quittance.setDocumentNomFichier(nom);
+            quittance.setDocumentId(doc.getId());
+        }
+        quittanceDgiRepository.save(quittance);
+
+        if (!remplacement) {
+            workflow.validateTransition(actuel, StatutUtilisation.QUITTANCE_DGI_ENREGISTREE);
+        }
+        entity.setStatut(StatutUtilisation.QUITTANCE_DGI_ENREGISTREE);
+        entity = repository.save(entity);
+
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.QUITTANCE_DGI_ENREGISTREE, user);
+        return result;
+    }
+
+    /**
+     * Le chèque ne se saisit qu'une fois le bulletin visé par la DGD.
+     *
+     * <p>Les dossiers antérieurs à l'introduction du statut {@code VISE} sont restés en
+     * {@code EN_CONTROLE_DGD} : ils sont acceptés si un visa DGD figure bien dans leurs décisions,
+     * pour ne pas bloquer un dossier légitimement instruit avant la correction.
+     */
+    private void assertChequeSaisissable(UtilisationCredit entity) {
+        StatutUtilisation actuel = entity.getStatut();
+        if (actuel == StatutUtilisation.VISE) {
+            return;
+        }
+        if (actuel == StatutUtilisation.EN_CONTROLE_DGD) {
+            boolean visaDgd = decisionUtilisationCreditRepository
+                    .existsByUtilisationCreditIdAndRoleAndDecision(
+                            entity.getId(), Role.DGD, DecisionCorrectionType.VISA);
+            if (visaDgd) {
+                return;
+            }
+            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.VISA_PREALABLE_MANQUANT,
+                    "Le bulletin doit d'abord être visé par la DGD avant la saisie du chèque.");
+        }
+        throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.STATUT_INCOMPATIBLE,
+                "La saisie du chèque suppose un bulletin visé par la DGD. Statut actuel : " + actuel);
+    }
+
+    /** PDF, PNG ou JPG uniquement : le justificatif est destiné à être relu et archivé. */
+    private void assertJustificatifAccepte(MultipartFile file) {
+        String nom = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
+        boolean extensionOk = nom.endsWith(".pdf") || nom.endsWith(".png")
+                || nom.endsWith(".jpg") || nom.endsWith(".jpeg");
+        if (!extensionOk) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Justificatif refusé : formats acceptés PDF, PNG ou JPG");
+        }
+    }
+
+    private static QuittanceDgiDto toQuittanceDgiDto(QuittanceDgi q) {
+        return QuittanceDgiDto.builder()
+                .id(q.getId())
+                .numeroQuittance(q.getNumeroQuittance())
+                .dateQuittance(q.getDateQuittance())
+                .montant(q.getMontant())
+                .documentChemin(q.getDocumentChemin())
+                .documentNomFichier(q.getDocumentNomFichier())
+                .documentId(q.getDocumentId())
+                .deposeePar(q.getDeposeePar())
+                .dateDepot(q.getDateDepot())
+                .build();
+    }
+
     private void notifyUtilisationStatutChange(UtilisationCredit utilisation, StatutUtilisation statut, AuthenticatedUser actor) {
         workflowNotificationHelper.utilisationStatut(utilisation, statut.name(), actor, null);
     }
@@ -597,7 +762,11 @@ public class UtilisationCreditService {
         if (!(entity instanceof UtilisationTVAInterieure t)) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type TVA intérieure");
         }
-
+        // La quittance DGI atteste le paiement : sans elle, le solde de TVA ne doit pas bouger.
+        if (entity.getStatut() != StatutUtilisation.QUITTANCE_DGI_ENREGISTREE) {
+            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.QUITTANCE_DGI_MANQUANTE,
+                    "L'apurement suppose la quittance DGI enregistrée. Statut actuel : " + entity.getStatut());
+        }
         workflow.validateTransition(entity.getStatut(), StatutUtilisation.APUREE);
         assertActorCanTransition(entity, StatutUtilisation.APUREE, user);
         assertRequiredDocumentsPresent(entity);
@@ -678,6 +847,12 @@ public class UtilisationCreditService {
 
         t.setStatut(StatutUtilisation.APUREE);
         t.setDateLiquidation(Instant.now());
+        // Certificat d'utilisation : numéroté une seule fois, à l'apurement.
+        if (t.getNumeroCertificatUtilisation() == null) {
+            t.setNumeroCertificatUtilisation(referenceSequenceGenerator
+                    .nextSansMois(ReferenceSequenceGenerator.PREFIX_CERTIFICAT_UTILISATION));
+            t.setDateCertificatUtilisation(Instant.now());
+        }
 
         entity = repository.save(t);
         UtilisationCreditDto result = toDto(entity);
@@ -732,6 +907,62 @@ public class UtilisationCreditService {
                 }
             }
         }
+    }
+
+    /**
+     * Refuse de consommer deux fois le même justificatif sur un même crédit.
+     *
+     * <p>Sans ce contrôle, une facture ou un décompte déjà imputé pouvait servir à une seconde
+     * demande et consommer le crédit une fois de plus. La comparaison ignore la casse et les
+     * espaces de bordure, et laisse de côté les demandes rejetées, dont le justificatif redevient
+     * légitimement disponible.
+     *
+     * @param exclureId identifiant de la demande en cours de modification, à ne pas comparer à elle-même
+     */
+    private void assertJustificatifNonDejaUtilise(CertificatCredit certificat, String numeroDecompte,
+                                                  String numeroFacture, Long exclureId) {
+        if (certificat == null || certificat.getId() == null) {
+            return;
+        }
+        String decompte = normaliserJustificatif(numeroDecompte);
+        String facture = normaliserJustificatif(numeroFacture);
+        if (decompte == null && facture == null) {
+            return;
+        }
+        for (UtilisationCredit autre : repository.findByCertificatCreditId(certificat.getId())) {
+            if (!(autre instanceof UtilisationTVAInterieure t)) {
+                continue;
+            }
+            if (exclureId != null && exclureId.equals(t.getId())) {
+                continue;
+            }
+            if (t.getStatut() == StatutUtilisation.REJETEE) {
+                continue;
+            }
+            String autreDecompte = normaliserJustificatif(t.getNumeroDecompte());
+            String autreFacture = normaliserJustificatif(t.getNumeroFacture());
+            if (decompte != null && decompte.equals(autreDecompte)) {
+                throw conflitJustificatif("décompte", t.getNumeroDecompte(), t);
+            }
+            if (facture != null && facture.equals(autreFacture)) {
+                throw conflitJustificatif("facture", t.getNumeroFacture(), t);
+            }
+        }
+    }
+
+    private static String normaliserJustificatif(String valeur) {
+        if (valeur == null) {
+            return null;
+        }
+        String nettoye = valeur.trim();
+        return nettoye.isEmpty() ? null : nettoye.toUpperCase();
+    }
+
+    private ApiException conflitJustificatif(String libelle, String valeur, UtilisationTVAInterieure autre) {
+        String reference = autre.getReference() != null ? autre.getReference() : String.valueOf(autre.getId());
+        return new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.JUSTIFICATIF_DEJA_UTILISE,
+                "Le numéro de " + libelle + " « " + valeur + " » est déjà utilisé sur ce crédit "
+                        + "par la demande " + reference + " (statut " + autre.getStatut() + ").");
     }
 
     private TypeAchat resolveTypeAchat(CreateUtilisationCreditRequest request) {
@@ -822,8 +1053,9 @@ public class UtilisationCreditService {
      * Le DGD valide ou modifie, pour chaque ligne, la proposition entreprise ({@code affectationEntreprise}) :
      * décision finale {@code affectation} (AU_CI / A_PAYER), correction éventuelle des montants,
      * upload du bulletin annoté. Si le DGD omet une décision sur une ligne, la proposition entreprise est retenue (validation).
-     * Appelable aussi depuis EN_CONTROLE_DGD pour re-annotation. Aucune opération financière à cette étape.
-     * Statut résultant : {@link StatutUtilisation#EN_CONTROLE_DGD}.
+     * Appelable aussi depuis EN_CONTROLE_DGD ou VISE pour ré-annotation. Aucune opération financière ici.
+     * Statut résultant : {@link StatutUtilisation#VISE} — le contrôle est clos, la main passe à
+     * l'entreprise pour la saisie du chèque.
      */
     @Transactional
     public UtilisationCreditDto visaDgd(Long id, String decisionsJson, MultipartFile file, AuthenticatedUser user) throws IOException {
@@ -833,8 +1065,8 @@ public class UtilisationCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type Douane");
         }
 
-        workflow.validateTransition(entity.getStatut(), StatutUtilisation.EN_CONTROLE_DGD);
-        assertActorCanTransition(entity, StatutUtilisation.EN_CONTROLE_DGD, user);
+        workflow.validateTransition(entity.getStatut(), StatutUtilisation.VISE);
+        assertActorCanTransition(entity, StatutUtilisation.VISE, user);
 
         List<LiquiderUtilisationDouaneRequest.DecisionLigneRequest> decisions;
         try {
@@ -937,12 +1169,12 @@ public class UtilisationCreditService {
         d.setMontantTVA(tvaAuCI);
         d.setMontantDroits(totalPrisEnCharge.subtract(tvaAuCI));
         d.setMontant(totalPrisEnCharge);
-        d.setStatut(StatutUtilisation.EN_CONTROLE_DGD);
+        d.setStatut(StatutUtilisation.VISE);
 
         entity = repository.save(d);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
-        notifyUtilisationStatutChange(entity, StatutUtilisation.EN_CONTROLE_DGD, user);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.VISE, user);
         return result;
     }
 
@@ -959,11 +1191,15 @@ public class UtilisationCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type Douane");
         }
 
-        workflow.validateTransition(entity.getStatut(), StatutUtilisation.CHEQUE_SAISI);
         Role role = user != null ? user.getRole() : null;
-        if (role != Role.ENTREPRISE && role != Role.COMMISSION_RELAIS) {
-            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise peut saisir le chèque certifié");
+        if (role != Role.ENTREPRISE && role != Role.SOUS_TRAITANT
+                && role != Role.COMMISSION_RELAIS && role != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Le chèque certifié est saisi par l'entreprise titulaire, le sous-traitant demandeur "
+                            + "ou la commission relais");
         }
+        assertChequeSaisissable(entity);
+        workflow.validateTransition(entity.getStatut(), StatutUtilisation.CHEQUE_SAISI);
 
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Le justificatif du chèque certifié est obligatoire");
@@ -1428,6 +1664,7 @@ public class UtilisationCreditService {
                 .certificatNumero(cert != null ? cert.getNumero() : null)
                 .certificatReference(cert != null ? cert.getReference() : null)
                 .entrepriseId(demandeurId)
+                .entrepriseNom(u.getEntreprise() != null ? u.getEntreprise().getRaisonSociale() : null)
                 .certificatTitulaireEntrepriseId(titId)
                 .certificatTitulaireRaisonSociale(titRs)
                 .demandeurEstSousTraitant(demandeurSt);
@@ -1493,7 +1730,12 @@ public class UtilisationCreditService {
                     .paiementEntreprise(t.getPaiementEntreprise())
                     .reportANouveau(t.getReportANouveau())
                     .soldeTVAAvant(t.getSoldeTVAAvant())
-                    .soldeTVAApres(t.getSoldeTVAApres());
+                    .soldeTVAApres(t.getSoldeTVAApres())
+                    .numeroCertificatUtilisation(t.getNumeroCertificatUtilisation())
+                    .dateCertificatUtilisation(t.getDateCertificatUtilisation())
+                    .quittanceDgi(quittanceDgiRepository.findByUtilisationCreditId(t.getId())
+                            .map(UtilisationCreditService::toQuittanceDgiDto)
+                            .orElse(null));
         }
 
         return b.build();

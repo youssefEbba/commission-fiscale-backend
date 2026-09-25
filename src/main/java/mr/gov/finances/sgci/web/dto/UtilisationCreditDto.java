@@ -89,4 +89,14 @@ public class UtilisationCreditDto {
     private BigDecimal reportANouveau;
     private BigDecimal soldeTVAAvant;
     private BigDecimal soldeTVAApres;
+
+    /** Quittance DGI déposée avant l'apurement. {@code null} tant qu'elle n'a pas été fournie. */
+    private QuittanceDgiDto quittanceDgi;
+
+    /** Numéro du certificat d'utilisation, attribué à l'apurement ({@code CU-001/2026}). */
+    private String numeroCertificatUtilisation;
+    private Instant dateCertificatUtilisation;
+
+    /** Raison sociale de l'entreprise demanderesse, pour l'édition du certificat d'utilisation. */
+    private String entrepriseNom;
 }
