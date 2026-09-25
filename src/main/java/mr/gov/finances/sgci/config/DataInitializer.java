@@ -1330,6 +1330,7 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("utilisation.interieur.dgtcp.solde.update", "Mettre à jour le solde Intérieur");
         createPermission("utilisation.interieur.dgtcp.reject", "Rejeter la demande Intérieur");
         createPermission("utilisation.interieur.dgi.view", "Consulter les utilisations Intérieur");
+        createPermission("utilisation.interieur.dgi.quittance", "Déposer la quittance DGI attestant le paiement de la TVA intérieure (étape préalable à l'apurement)");
         createPermission("utilisation.ac.view",
                 "Consulter les utilisations de crédit liées aux certificats de son périmètre (AC / délégué)");
         createPermission("utilisation.interieur.dgi.decision", "Enregistrer visa ou rejet temporaire (DGI, TVA intérieure)");
@@ -1358,6 +1359,8 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("transfert.solde.view", "Consulter les soldes disponibles");
         createPermission("transfert.dgtcp.queue.view", "Consulter les demandes de transfert");
         createPermission("transfert.dgtcp.verify", "Vérifier la disponibilité du solde");
+        createPermission("transfert.dgd.visa", "Viser un transfert de crédit : la DGD atteste que le solde douanier ne sera pas nécessaire");
+        createPermission("transfert.dgi.visa", "Viser un transfert de crédit : la DGI confirme les besoins en fiscalité intérieure");
         createPermission("transfert.dgtcp.prepare", "Préparer l'opération de transfert");
         createPermission("transfert.dgtcp.update", "Mettre à jour les composantes");
         createPermission("transfert.president.validate", "Valider le transfert de solde");
@@ -1464,6 +1467,7 @@ public class DataInitializer implements CommandLineRunner {
                 "delegue.update",
                 "delegue.disable",
                 "correction.submit",
+            "transfert.submit",
                 "correction.offer.upload",
                 "correction.offer.view",
                 "correction.complement.add",
@@ -1638,6 +1642,7 @@ public class DataInitializer implements CommandLineRunner {
                 "utilisation.douane.dgd.verify",
                 "utilisation.douane.dgd.quittance.visa",
                 "utilisation.douane.dgd.reject",
+            "transfert.dgd.visa",
                 "utilisation.douane.dgd.resolve",
                 "mise_en_place.dgd.queue.view",
                 "mise_en_place.dgd.validate",
@@ -1666,6 +1671,8 @@ public class DataInitializer implements CommandLineRunner {
                 "mise_en_place.dgi.resolve",
                 "utilisation.interieur.dgi.view",
                 "utilisation.interieur.dgi.decision",
+            "utilisation.interieur.dgi.quittance",
+            "transfert.dgi.visa",
                 "utilisation.interieur.dgi.resolve",
                 "correction.offer.view",
                 "convention.view.all",

@@ -393,7 +393,8 @@ public class CertificatCreditService {
         return base.stream().filter(c -> c.getStatut() == statut).collect(Collectors.toList());
     }
 
-    private boolean canAccessCertificat(Long certificatId, AuthenticatedUser user) {
+    /** Accessible aux services voisins : le périmètre d'un certificat est la même règle partout. */
+    public boolean canAccessCertificat(Long certificatId, AuthenticatedUser user) {
         if (certificatId == null) {
             return false;
         }

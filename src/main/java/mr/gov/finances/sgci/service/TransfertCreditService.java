@@ -29,6 +29,7 @@ import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.CreateTransfertCreditRequest;
 import mr.gov.finances.sgci.web.dto.TransfertCreditDto;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +50,8 @@ public class TransfertCreditService {
     private final DocumentTransfertCreditService documentService;
     private final DocumentRequirementValidator requirementValidator;
     private final AuditService auditService;
+    private final DecisionTransfertCreditService decisionTransfertCreditService;
+    private final CertificatCreditService certificatCreditService;
     private final WorkflowNotificationHelper workflowNotificationHelper;
     private final EffectiveIdentityService effectiveIdentityService;
     private final UtilisationCreditRepository utilisationCreditRepository;
@@ -129,8 +132,10 @@ public class TransfertCreditService {
         if (user == null || user.getRole() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
-        if (user.getRole() != Role.ENTREPRISE) {
-            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise peut soumettre une demande de transfert");
+        // Le cahier des charges P7 admet l'entreprise bénéficiaire comme l'autorité contractante.
+        if (user.getRole() != Role.ENTREPRISE && user.getRole() != Role.AUTORITE_CONTRACTANTE) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Seule l'entreprise bénéficiaire ou l'autorité contractante peut demander un transfert");
         }
 
         CertificatCredit source = certificatRepository.findById(request.getCertificatCreditId())
@@ -208,8 +213,10 @@ public class TransfertCreditService {
         if (user == null || user.getRole() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
-        if (user.getRole() != Role.ENTREPRISE) {
-            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise peut annuler sa demande de transfert");
+        // L'autorité contractante peut déposer une demande : elle doit pouvoir la retirer.
+        if (user.getRole() != Role.ENTREPRISE && user.getRole() != Role.AUTORITE_CONTRACTANTE) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Seul le demandeur — entreprise bénéficiaire ou autorité contractante — peut retirer la demande");
         }
         TransfertCredit transfert = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Transfert de crédit non trouvé: " + id));
@@ -220,7 +227,11 @@ public class TransfertCreditService {
         Long titId = transfert.getCertificatCredit() != null && transfert.getCertificatCredit().getEntreprise() != null
                 ? transfert.getCertificatCredit().getEntreprise().getId()
                 : null;
-        if (myEnt == null || titId == null || !myEnt.equals(titId)) {
+        boolean horsPerimetre = user.getRole() == Role.AUTORITE_CONTRACTANTE
+                ? transfert.getCertificatCredit() == null
+                        || !certificatCreditService.canAccessCertificat(transfert.getCertificatCredit().getId(), user)
+                : myEnt == null || titId == null || !myEnt.equals(titId);
+        if (horsPerimetre) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Annulation interdite: demande hors périmètre");
         }
 
@@ -246,9 +257,43 @@ public class TransfertCreditService {
         }
     }
 
+    /**
+     * Visa d'une direction du circuit P7 : DGD, DGI ou DGTCP, chacune à son tour.
+     *
+     * <p>Le visa n'exécute rien : il atteste ce qui relève de la direction et fait avancer le
+     * dossier. Seule l'approbation du Président déclenche l'écriture.
+     */
+    @Transactional
+    public TransfertCreditDto viserParDirection(Long id, AuthenticatedUser user) {
+        if (user == null || user.getRole() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        Role role = user.getRole();
+        if (role != Role.DGD && role != Role.DGI && role != Role.DGTCP) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Ce visa appartient à la DGD, à la DGI ou à la DGTCP. "
+                            + "L'approbation du Président passe par POST .../valider");
+        }
+        TransfertCredit transfert = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
+                        "Transfert de crédit non trouvé: " + id));
+        decisionTransfertCreditService.enregistrerVisa(transfert, role, user);
+
+        TransfertCreditDto result = toDto(repository.findById(id).orElse(transfert));
+        auditService.log(AuditAction.UPDATE, "TransfertCredit", String.valueOf(id), result);
+        return result;
+    }
+
     @Transactional
     public TransfertCreditDto validateByDgtcp(Long id, AuthenticatedUser user) {
-        assertDgtcpOuPresidentPourDecision(user);
+        if (user == null || user.getRole() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        // Circuit P7 : l'approbation finale et l'écriture appartiennent au seul Président.
+        if (user.getRole() != Role.PRESIDENT) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Seul le Président approuve un transfert, après les visas DGD, DGI et DGTCP");
+        }
 
         TransfertCredit transfert = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Transfert de crédit non trouvé: " + id));
@@ -256,6 +301,9 @@ public class TransfertCreditService {
         if (transfert.getStatut() == StatutTransfert.ANNULEE) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Demande annulée par l'entreprise");
         }
+
+        // Le visa du Président est lui-même soumis au séquencement du circuit.
+        decisionTransfertCreditService.assertVisaPossible(transfert, Role.PRESIDENT);
 
         StatutTransfert st = transfert.getStatut();
         if (st != StatutTransfert.DEMANDE && st != StatutTransfert.EN_COURS && st != StatutTransfert.VALIDE
@@ -305,6 +353,14 @@ public class TransfertCreditService {
                             .build()
             );
         }
+
+        if (dReste.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.SOLDE_INSUFFISANT,
+                    "Transfert impossible : le quota de TVA à l'importation est épuisé, il n'y a rien à transférer.");
+        }
+
+        // Visa du Président tracé comme les trois précédents, avant l'écriture qu'il autorise.
+        decisionTransfertCreditService.enregistrerVisa(transfert, Role.PRESIDENT, user);
 
         transfert.setMontant(dReste);
         cloturerUtilisationsDouanieresOuvertes(source.getId());

@@ -98,7 +98,8 @@ class UtilisationCreditMinioFailFastIT {
     @Test
     @Transactional
     void saisirCheque_minioUnavailable_statutEtDocumentInchanges() throws Exception {
-        UtilisationDouaniere util = prepareUtilisationDouaniere(StatutUtilisation.EN_CONTROLE_DGD);
+        // Depuis la correction P4, le chèque se saisit sur un bulletin visé (VISE), non en cours de contrôle.
+        UtilisationDouaniere util = prepareUtilisationDouaniere(StatutUtilisation.VISE);
         SaisirChequeRequest request = SaisirChequeRequest.builder()
                 .banqueNom("Banque Test")
                 .numeroCheque("CHQ-001")
@@ -113,7 +114,7 @@ class UtilisationCreditMinioFailFastIT {
                 .isEqualTo(503);
 
         UtilisationDouaniere reloaded = (UtilisationDouaniere) utilisationCreditRepository.findById(util.getId()).orElseThrow();
-        assertThat(reloaded.getStatut()).isEqualTo(StatutUtilisation.EN_CONTROLE_DGD);
+        assertThat(reloaded.getStatut()).isEqualTo(StatutUtilisation.VISE);
         assertThat(documentUtilisationCreditRepository
                 .findByUtilisationCreditIdAndCodeDocumentAndActifTrue(util.getId(), "CHEQUE_CERTIFIE"))
                 .isEmpty();

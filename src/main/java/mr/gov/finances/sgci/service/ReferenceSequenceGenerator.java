@@ -34,6 +34,8 @@ public class ReferenceSequenceGenerator {
     public static final String PREFIX_CERTIFICAT = "CR";
     public static final String PREFIX_MARCHE = "DM";
     public static final String PREFIX_UTILISATION = "DU";
+    /** Certificat d'utilisation : numéroté à l'apurement, sans segment de mois ({@code CU-001/2026}). */
+    public static final String PREFIX_CERTIFICAT_UTILISATION = "CU";
 
     private final ReferenceSequenceRepository repository;
 
@@ -79,6 +81,22 @@ public class ReferenceSequenceGenerator {
             return repository.findByKeyForUpdate(key)
                     .orElseThrow(() -> concurrentInsert);
         }
+    }
+
+    /**
+     * Numérotation annuelle sans segment de mois, pour le certificat d'utilisation.
+     * Partage le même compteur transactionnel que les autres références.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public String nextSansMois(String prefix) {
+        int year = LocalDate.now().getYear();
+        String key = prefix + "-" + year;
+        ReferenceSequence sequence = repository.findByKeyForUpdate(key)
+                .orElseGet(() -> createSequence(key));
+        long value = sequence.getCurrentValue() + 1;
+        sequence.setCurrentValue(value);
+        repository.saveAndFlush(sequence);
+        return String.format("%s-%03d/%d", prefix, value, year);
     }
 
     private String format(String prefix, long value, int month, int year) {
