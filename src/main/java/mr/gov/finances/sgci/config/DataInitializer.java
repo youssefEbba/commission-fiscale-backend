@@ -101,7 +101,7 @@ public class DataInitializer implements CommandLineRunner {
 
         seedPermissions();
         seedRolePermissions();
-        referentielTypeDocumentService.seedFromEnumIfEmpty();
+        referentielTypeDocumentService.seedMissingFromEnum();
         documentRequirementLegacyMigration.migrateIfNeeded();
         notificationSchemaMigration.migrateIfNeeded();
         // Avant tout seed / création d'entreprise : retire les colonnes NOT NULL obsolètes.
@@ -186,6 +186,11 @@ public class DataInitializer implements CommandLineRunner {
                 all, "Connaissement / LTA / LVI", 6);
         seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "CERTIFICAT_CREDIT_IMPOTS_SYDONIA", false,
                 all, "Copie du certificat (SYDONIA)", 7);
+        // obligatoire = false impérativement : assertRequiredDocumentsPresent est appelé à l'ENTRÉE
+        // du circuit (EN_VERIFICATION), alors que cette pièce n'existe qu'à la sortie.
+        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "CERTIFICAT_UTILISATION", false,
+                EnumSet.of(TypeFichierAutorise.PDF, TypeFichierAutorise.IMAGE),
+                "Certificat d'utilisation signé et cacheté par le Président", 8);
 
         seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, "FACTURE", false,
                 all, "Facture fournisseur", 1);
@@ -193,6 +198,9 @@ public class DataInitializer implements CommandLineRunner {
                 all, "Déclaration TVA", 2);
         seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, "DECOMPTE", false,
                 all, "Décompte (selon cas)", 3);
+        seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, "CERTIFICAT_UTILISATION", false,
+                EnumSet.of(TypeFichierAutorise.PDF, TypeFichierAutorise.IMAGE),
+                "Certificat d'utilisation signé et cacheté par le Président", 4);
 
         seedDocReq(ProcessusDocument.MODIFICATION_CI, "NOTE_SERVICE", false,
                 all, "Note de service", 1);
@@ -1343,6 +1351,11 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("utilisation.entreprise.rejet.repondre",
                 "Répondre à un rejet temporaire sur une utilisation (message ou complément lié au dépôt de pièces)");
 
+        createPermission("utilisation.president.certificat.emettre",
+                "Émettre le certificat d'utilisation (numérotation CU-, acte réservé au Président)");
+        createPermission("utilisation.certificat.admin_override",
+                "Émettre le certificat d'utilisation à la place du Président (motif obligatoire)");
+
         createPermission("modification.submit", "Soumettre une demande de modification");
         createPermission("modification.document.upload", "Déposer les documents justificatifs");
         createPermission("modification.view", "Consulter le statut de modification");
@@ -1825,6 +1838,7 @@ public class DataInitializer implements CommandLineRunner {
             "certificat.visa.admin_override",
             "certificat.ouverture.admin_override",
             "utilisation.admin_override",
+            "utilisation.certificat.admin_override",
             "archivage.view",
             "archive.import",
             // Reprise d'archive : l'administrateur doit pouvoir créer à la volée les entités

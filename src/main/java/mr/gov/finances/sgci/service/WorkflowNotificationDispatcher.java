@@ -57,13 +57,15 @@ public class WorkflowNotificationDispatcher {
             case CERTIFICAT_REJET_TEMP_RESOLU -> NotificationType.REJET_TEMP_RESOLU;
 
             case UTIL_DOUANE_SOUMISE, UTIL_DOUANE_STATUT_CHANGE, UTIL_DOUANE_VISA_DGD, UTIL_DOUANE_CHEQUE,
-                 UTIL_DOUANE_TRESOR, UTIL_DOUANE_QUITTANCES, UTIL_DOUANE_LIQUIDEE, UTIL_DOUANE_CLOTUREE,
+                 UTIL_DOUANE_TRESOR, UTIL_DOUANE_QUITTANCES, UTIL_DOUANE_LIQUIDEE,
+                 UTIL_DOUANE_CERTIFICAT_EMIS, UTIL_DOUANE_CLOTUREE,
                  UTIL_DOUANE_REJET_DEFINITIF -> NotificationType.UTILISATION_STATUT_CHANGE;
             case UTIL_DOUANE_REJET_TEMP -> NotificationType.REJET_TEMP_DECISION;
             case UTIL_DOUANE_REJET_TEMP_REPONSE -> NotificationType.REJET_TEMP_REPONSE;
             case UTIL_DOUANE_REJET_TEMP_RESOLU -> NotificationType.REJET_TEMP_RESOLU;
 
-            case UTIL_TVA_SOUMISE, UTIL_TVA_STATUT_CHANGE, UTIL_TVA_APUREE, UTIL_TVA_REJET_DEFINITIF ->
+            case UTIL_TVA_SOUMISE, UTIL_TVA_STATUT_CHANGE, UTIL_TVA_APUREE,
+                 UTIL_TVA_CERTIFICAT_EMIS, UTIL_TVA_REJET_DEFINITIF ->
                     NotificationType.UTILISATION_STATUT_CHANGE;
             case UTIL_TVA_REJET_TEMP -> NotificationType.REJET_TEMP_DECISION;
             case UTIL_TVA_REJET_TEMP_REPONSE -> NotificationType.REJET_TEMP_REPONSE;
@@ -108,6 +110,8 @@ public class WorkflowNotificationDispatcher {
             case UTIL_DOUANE_STATUT_CHANGE, UTIL_DOUANE_VISA_DGD, UTIL_DOUANE_CHEQUE, UTIL_DOUANE_TRESOR,
                  UTIL_DOUANE_QUITTANCES, UTIL_DOUANE_LIQUIDEE, UTIL_DOUANE_CLOTUREE ->
                     "Utilisation douane " + dossier + " — statut : " + label(ctx.getNewStatus());
+            case UTIL_DOUANE_CERTIFICAT_EMIS ->
+                    "Certificat d'utilisation émis — utilisation douane " + dossier;
             case UTIL_DOUANE_REJET_TEMP -> "Rejet temporaire — utilisation douane " + dossier;
             case UTIL_DOUANE_REJET_TEMP_REPONSE -> "Réponse rejet temporaire — utilisation douane " + dossier;
             case UTIL_DOUANE_REJET_TEMP_RESOLU -> "Rejet temporaire résolu — utilisation douane " + dossier;
@@ -116,6 +120,8 @@ public class WorkflowNotificationDispatcher {
             case UTIL_TVA_SOUMISE -> "Demande d'utilisation TVA " + dossier + " soumise";
             case UTIL_TVA_STATUT_CHANGE, UTIL_TVA_APUREE ->
                     "Utilisation TVA " + dossier + " — statut : " + label(ctx.getNewStatus());
+            case UTIL_TVA_CERTIFICAT_EMIS ->
+                    "Certificat d'utilisation émis — utilisation TVA " + dossier;
             case UTIL_TVA_REJET_TEMP -> "Rejet temporaire — utilisation TVA " + dossier;
             case UTIL_TVA_REJET_TEMP_REPONSE -> "Réponse rejet temporaire — utilisation TVA " + dossier;
             case UTIL_TVA_REJET_TEMP_RESOLU -> "Rejet temporaire résolu — utilisation TVA " + dossier;

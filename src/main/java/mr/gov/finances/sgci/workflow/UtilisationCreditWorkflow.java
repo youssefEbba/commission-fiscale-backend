@@ -43,9 +43,15 @@ public class UtilisationCreditWorkflow {
             // Auto-transition autorisée : un dépôt de quittance peut en remplacer un précédent.
             Map.entry(QUITTANCE_DGI_ENREGISTREE,
                     EnumSet.of(QUITTANCE_DGI_ENREGISTREE, APUREE, REJETEE, CLOTUREE)),
-            Map.entry(LIQUIDEE, EnumSet.of(CLOTUREE)),
-            // L'entreprise accuse réception d'une utilisation TVA apurée.
-            Map.entry(APUREE, EnumSet.of(CLOTUREE)),
+            // Le calcul financier de la DGTCP est acquis ; le certificat reste à émettre par le
+            // Président. CLOTUREE demeure atteignable en direct : les utilisations reprises
+            // d'archive naissent en APUREE sans numéro CU- et n'ont jamais traversé ce circuit.
+            // Le verrou métier vit dans le service (assertCertificatEmisAvantCloture), où il peut
+            // exempter ces dossiers ; ce graphe, lui, reste purement structurel.
+            Map.entry(LIQUIDEE, EnumSet.of(CERTIFICAT_EMIS, CLOTUREE)),
+            Map.entry(APUREE, EnumSet.of(CERTIFICAT_EMIS, CLOTUREE)),
+            // L'entreprise accuse réception du certificat émis par le Président.
+            Map.entry(CERTIFICAT_EMIS, EnumSet.of(CLOTUREE)),
             Map.entry(REJETEE, EnumSet.noneOf(StatutUtilisation.class)),
             Map.entry(CLOTUREE, EnumSet.noneOf(StatutUtilisation.class))
     );

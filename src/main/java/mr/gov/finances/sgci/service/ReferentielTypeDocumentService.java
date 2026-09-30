@@ -108,17 +108,27 @@ public class ReferentielTypeDocumentService {
         return normalized;
     }
 
+    /**
+     * Insère les codes de {@link TypeDocument} absents du référentiel.
+     *
+     * <p>Strictement additif : ne réactive jamais un code qu'un administrateur a délibérément
+     * désactivé, et n'écrase aucun libellé personnalisé saisi via {@code /api/referentiel/types-document}.
+     *
+     * <p>Remplace {@code seedFromEnumIfEmpty}, dont le garde-fou « table vide » empêchait toute
+     * nouvelle valeur d'énumération d'apparaître sur une base déjà amorcée — le dépôt du document
+     * correspondant était alors refusé en 400 « Type de document inconnu ». Sur une base vide, le
+     * résultat est identique à l'ancienne méthode.
+     */
     @Transactional
-    public void seedFromEnumIfEmpty() {
-        if (repository.count() > 0) {
-            return;
-        }
+    public void seedMissingFromEnum() {
         for (TypeDocument type : TypeDocument.values()) {
             String code = type.name();
-            String libelle = humanizeEnumName(code);
+            if (repository.existsById(code)) {
+                continue;
+            }
             repository.save(ReferentielTypeDocument.builder()
                     .code(code)
-                    .libelle(libelle)
+                    .libelle(humanizeEnumName(code))
                     .actif(true)
                     .systeme(true)
                     .build());

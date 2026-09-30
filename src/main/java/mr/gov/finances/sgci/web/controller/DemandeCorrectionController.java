@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
+import mr.gov.finances.sgci.domain.enums.ModeApposition;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.DemandeCorrectionService;
 import mr.gov.finances.sgci.service.DocumentService;
@@ -147,11 +148,14 @@ public class DemandeCorrectionController {
             @RequestParam(value = "type", required = false) String type,
             @RequestParam(required = false) String message,
             @RequestParam("file") MultipartFile file,
+            // Chemin choisi par le Président : scan signé à la main, ou empreintes apposées par le
+            // système. Optionnel — les pièces sans signature ne le renseignent pas.
+            @RequestParam(value = "modeApposition", required = false) ModeApposition modeApposition,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
         String resolved = mr.gov.finances.sgci.web.support.DocumentUploadParamResolver
                 .resolveCodeDocument(codeDocument, typeDocument, type);
-        return documentService.upload(id, resolved, message, file, user);
+        return documentService.upload(id, resolved, message, file, modeApposition, user);
     }
 
     /** Correction administrateur d'informations, à tout moment (ADMIN_SI, motif obligatoire). */

@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.TypeEmpreinte;
 
 import java.time.Instant;
 
@@ -15,6 +16,8 @@ import java.time.Instant;
 public class SignatureDto {
 
     private Long id;
+    /** SIGNATURE ou CACHET. Ajout additif : les clients antérieurs l'ignorent. */
+    private TypeEmpreinte type;
     private Long utilisateurId;
     private String utilisateurNom;
     private Role role;

@@ -3,6 +3,7 @@ package mr.gov.finances.sgci.web.controller;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
+import mr.gov.finances.sgci.domain.enums.ModeApposition;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.CertificatCreditService;
 import mr.gov.finances.sgci.service.CertificatVerificationService;
@@ -222,11 +223,14 @@ public class CertificatCreditController {
             @RequestParam(value = "type", required = false) String type,
             @RequestParam(required = false) String message,
             @RequestParam("file") MultipartFile file,
+            // Chemin choisi par le Président : scan signé à la main, ou empreintes apposées par le
+            // système. Optionnel — les pièces sans signature ne le renseignent pas.
+            @RequestParam(value = "modeApposition", required = false) ModeApposition modeApposition,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
         String resolved = mr.gov.finances.sgci.web.support.DocumentUploadParamResolver
                 .resolveCodeDocument(codeDocument, typeDocument, type);
-        return documentService.upload(id, resolved, message, file, user);
+        return documentService.upload(id, resolved, message, file, modeApposition, user);
     }
 
     /** Correction administrateur d'informations, à tout moment y compris après ouverture (ADMIN_SI, motif obligatoire). */

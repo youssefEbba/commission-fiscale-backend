@@ -41,6 +41,32 @@ public abstract class UtilisationCredit {
     private Instant dateLiquidation;
 
     /**
+     * Numéro du certificat d'utilisation ({@code CU-001/2026}), attribué une seule fois par le
+     * Président à l'émission. Porté par la classe mère : les deux branches en ont un, la douane
+     * comme la TVA intérieure. Héritage SINGLE_TABLE, donc même colonne physique qu'avant.
+     */
+    @Column(name = "numero_certificat_utilisation", length = 40)
+    private String numeroCertificatUtilisation;
+
+    @Column(name = "date_certificat_utilisation")
+    private Instant dateCertificatUtilisation;
+
+    /**
+     * {@code TRUE} si ce dossier doit passer par l'émission présidentielle avant sa clôture.
+     *
+     * <p>Posé à {@code TRUE} par le calcul de la DGTCP (liquidation douanière, apurement TVA), donc
+     * pour tout dossier instruit depuis l'introduction de l'étape. {@code FALSE} marque les dossiers
+     * historiques, arrivés à leur statut final avant que l'application sache émettre un certificat :
+     * leur réclamer un acte présidentiel rétroactif serait un faux, et les bloquer à la clôture une
+     * régression. Ils sont marqués une seule fois par
+     * {@code CertificatUtilisationGrandfatheringMigration}.
+     *
+     * <p>{@code null} n'a de sens que le temps qui sépare l'ajout de la colonne de ce rattrapage.
+     */
+    @Column(name = "emission_certificat_requise")
+    private Boolean emissionCertificatRequise;
+
+    /**
      * Libellé d'origine de la ligne dans le relevé d'archive, par exemple {@code UT 1 | 1/01/2026}.
      *
      * <p>Sert deux usages : renseigné, il marque une utilisation reprise d'une archive (par

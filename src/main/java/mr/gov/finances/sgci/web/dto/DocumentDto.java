@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import mr.gov.finances.sgci.domain.enums.ModeApposition;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 
 import java.time.Instant;
@@ -26,4 +27,7 @@ public class DocumentDto {
     private Boolean actif;
     /** {@code true} si c'est la version active ({@link #actif}). */
     private Boolean versionCourante;
+    /** MANUSCRIT_SCANNE ou APPOSE_SYSTEME ; {@code null} si non déclaré (cas de la plupart des pièces). */
+    private ModeApposition modeApposition;
+    private Long signataireUtilisateurId;
 }

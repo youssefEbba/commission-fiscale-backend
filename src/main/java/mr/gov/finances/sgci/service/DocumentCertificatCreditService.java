@@ -10,6 +10,7 @@ import mr.gov.finances.sgci.domain.entity.DocumentCertificatCredit;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
+import mr.gov.finances.sgci.domain.enums.ModeApposition;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
@@ -41,6 +42,19 @@ public class DocumentCertificatCreditService {
 
     @Transactional
     public DocumentCertificatCreditDto upload(Long certificatCreditId, String codeDocument, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
+        return upload(certificatCreditId, codeDocument, message, file, null, user);
+    }
+
+    /**
+     * Dépôt avec déclaration du mode d'apposition de la signature.
+     *
+     * <p>{@code modeApposition} nul est le cas courant : la pièce ne porte pas de signature, ou le
+     * client ne le déclare pas. Le signataire n'est retenu que pour un dépôt du Président — c'est
+     * sa signature qui est en jeu, pas celle de l'agent qui téléverse.
+     */
+    @Transactional
+    public DocumentCertificatCreditDto upload(Long certificatCreditId, String codeDocument, String message, MultipartFile file,
+                                ModeApposition modeApposition, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
@@ -79,6 +93,9 @@ public class DocumentCertificatCreditService {
                 .taille(file.getSize())
                 .version(nextVersion)
                 .actif(true)
+                .modeApposition(modeApposition)
+                .signataireUtilisateurId(modeApposition != null && user != null
+                        && user.getRole() == Role.PRESIDENT ? user.getUserId() : null)
                 .certificatCredit(certificat)
                 .build();
 
@@ -210,6 +227,8 @@ public class DocumentCertificatCreditService {
                 .taille(d.getTaille())
                 .version(d.getVersion())
                 .actif(d.getActif())
+                .modeApposition(d.getModeApposition())
+                .signataireUtilisateurId(d.getSignataireUtilisateurId())
                 .build();
     }
 }
