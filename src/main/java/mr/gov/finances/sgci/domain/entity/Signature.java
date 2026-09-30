@@ -3,18 +3,24 @@ package mr.gov.finances.sgci.domain.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.TypeEmpreinte;
 
 import java.time.Instant;
 
 /**
- * Image de signature (PNG fond transparent) utilisée pour les documents générés côté client
- * (certificat de crédit, lettre d'adoption, utilisation). Au plus une version {@code active} par
- * couple (role, utilisateur) — versionnement identique au pattern GED (ancienne version désactivée,
- * pas supprimée, lors d'un remplacement).
+ * Empreinte (PNG fond transparent) apposée sur les documents générés côté client : signature
+ * manuscrite ou cachet, pour le certificat de crédit, la lettre d'adoption, le certificat
+ * d'utilisation.
+ *
+ * <p>Au plus une version {@code active} par triplet (type, role, utilisateur) — versionnement
+ * identique au pattern GED : l'ancienne version est désactivée, pas supprimée, lors d'un
+ * remplacement. Le {@code type} fait partie de la clé : un cachet et une signature du même
+ * utilisateur sont légitimement actifs en même temps.
  */
 @Entity
 @Table(name = "signature", indexes = {
         @Index(name = "idx_signature_role_user", columnList = "role,utilisateur_id"),
+        @Index(name = "idx_signature_type_role_user", columnList = "type_empreinte,role,utilisateur_id"),
         @Index(name = "idx_signature_active", columnList = "active")
 })
 @Getter
@@ -28,7 +34,20 @@ public class Signature {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Signature propre à un utilisateur précis. {@code null} = signature générique du rôle. */
+    /**
+     * Nature de l'empreinte : signature manuscrite ou cachet.
+     *
+     * <p>Colonne <b>nullable à dessein</b> — voir {@code SignatureTypeEmpreinteMigration}. Les
+     * lignes créées par l'application portent toujours une valeur ({@code @Builder.Default} plus le
+     * repli de {@code @PrePersist}) ; seules les lignes antérieures à l'introduction du cachet
+     * peuvent être nulles, le temps du rattrapage au démarrage.
+     */
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type_empreinte", length = 16)
+    private TypeEmpreinte type = TypeEmpreinte.SIGNATURE;
+
+    /** Empreinte propre à un utilisateur précis. {@code null} = empreinte générique du rôle. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "utilisateur_id")
     private Utilisateur utilisateur;
@@ -76,6 +95,9 @@ public class Signature {
         }
         if (version == null) {
             version = 1;
+        }
+        if (type == null) {
+            type = TypeEmpreinte.SIGNATURE;
         }
     }
 }

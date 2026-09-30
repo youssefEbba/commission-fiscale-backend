@@ -904,6 +904,16 @@ public class CertificatCreditService {
 
         assertActorCanTransition(entity, statut, user);
 
+        // Le certificat signé est exigé du titulaire comme de son suppléant. Sans ce contrôle, le
+        // Président pouvait valider sans avoir déposé la pièce, alors que l'ADMIN_SI substitué en
+        // était empêché (adminValiderPourPresident) : le suppléant était tenu plus strictement que
+        // le titulaire, exactement l'inverse de ce qu'on attend.
+        if (statut == StatutCertificat.VALIDE_PRESIDENT && fromStatut != StatutCertificat.VALIDE_PRESIDENT) {
+            documentService.assertActiveDocumentPresent(id,
+                    mr.gov.finances.sgci.domain.enums.TypeDocument.CERTIFICAT_CREDIT_IMPOTS.name(),
+                    "avant validation Président");
+        }
+
         if (statut == StatutCertificat.OUVERT && fromStatut != StatutCertificat.OUVERT) {
             applyOuvertureInitialisation(entity);
         }

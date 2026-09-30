@@ -11,6 +11,7 @@ import mr.gov.finances.sgci.domain.entity.UtilisationTVAInterieure;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
+import mr.gov.finances.sgci.domain.enums.ModeApposition;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
@@ -43,6 +44,19 @@ public class DocumentUtilisationCreditService {
 
     @Transactional
     public DocumentUtilisationCreditDto upload(Long utilisationCreditId, String codeDocument, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
+        return upload(utilisationCreditId, codeDocument, message, file, null, user);
+    }
+
+    /**
+     * Dépôt avec déclaration du mode d'apposition de la signature.
+     *
+     * <p>{@code modeApposition} nul est le cas courant : la pièce ne porte pas de signature, ou le
+     * client ne le déclare pas. Le signataire n'est retenu que pour un dépôt du Président — c'est
+     * sa signature qui est en jeu, pas celle de l'agent qui téléverse.
+     */
+    @Transactional
+    public DocumentUtilisationCreditDto upload(Long utilisationCreditId, String codeDocument, String message, MultipartFile file,
+                                ModeApposition modeApposition, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
@@ -55,8 +69,10 @@ public class DocumentUtilisationCreditService {
         int nextVersion = 1;
         DocumentUtilisationCredit previous = repository.findByUtilisationCreditIdAndCodeDocumentAndActifTrue(utilisationCreditId, codeDocument)
                 .orElse(null);
-        if (previous != null) {
+        if (previous != null && !isCertificatUtilisationReplacement(utilisation, codeDocument, user)) {
             assertReplacementAllowed(utilisation, codeDocument, user);
+        }
+        if (previous != null) {
             previous.setActif(false);
             nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
         }
@@ -82,6 +98,9 @@ public class DocumentUtilisationCreditService {
                 .taille(file.getSize())
                 .version(nextVersion)
                 .actif(true)
+                .modeApposition(modeApposition)
+                .signataireUtilisateurId(modeApposition != null && user != null
+                        && user.getRole() == Role.PRESIDENT ? user.getUserId() : null)
                 .utilisationCredit(utilisation)
                 .build();
         doc = repository.save(doc);
@@ -142,6 +161,33 @@ public class DocumentUtilisationCreditService {
         DocumentUtilisationCreditDto result = toDto(doc);
         auditService.log(AuditAction.ADMIN_CORRECTION, "DocumentUtilisationCredit", String.valueOf(doc.getId()), result, motif);
         return result;
+    }
+
+    /**
+     * Le Président — ou l'ADMIN_SI qui s'y substitue — peut re-déposer le certificat d'utilisation.
+     *
+     * <p>Sans cette échappatoire, {@link #assertReplacementAllowed} l'enfermerait : ce contrôle
+     * réserve tout remplacement à l'ENTREPRISE, en statut INCOMPLETE, sur un rejet temporaire ouvert.
+     * Le Président déposerait donc son certificat une fois et ne pourrait plus jamais corriger un
+     * scan illisible ni une signature à refaire. Symétrique de
+     * {@code DocumentService.isPresidentLettreAdoptionReplacement} pour la lettre d'adoption.
+     */
+    private static boolean isCertificatUtilisationReplacement(UtilisationCredit utilisation,
+                                                              String codeDocument,
+                                                              AuthenticatedUser user) {
+        if (user == null || user.getRole() == null || utilisation == null) {
+            return false;
+        }
+        if (user.getRole() != Role.PRESIDENT && user.getRole() != Role.ADMIN_SI) {
+            return false;
+        }
+        if (!TypeDocument.CERTIFICAT_UTILISATION.name().equals(codeDocument)) {
+            return false;
+        }
+        StatutUtilisation st = utilisation.getStatut();
+        return st == StatutUtilisation.LIQUIDEE
+                || st == StatutUtilisation.APUREE
+                || st == StatutUtilisation.CERTIFICAT_EMIS;
     }
 
     private void assertReplacementAllowed(UtilisationCredit utilisation, String codeDocument, AuthenticatedUser user) {
@@ -209,6 +255,8 @@ public class DocumentUtilisationCreditService {
                 .taille(d.getTaille())
                 .version(d.getVersion())
                 .actif(d.getActif())
+                .modeApposition(d.getModeApposition())
+                .signataireUtilisateurId(d.getSignataireUtilisateurId())
                 .build();
     }
 }

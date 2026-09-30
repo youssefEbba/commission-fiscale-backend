@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import mr.gov.finances.sgci.domain.enums.ModeApposition;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 
 import java.time.Instant;
@@ -22,4 +23,7 @@ public class DocumentUtilisationCreditDto {
     private Long taille;
     private Integer version;
     private Boolean actif;
+    /** MANUSCRIT_SCANNE ou APPOSE_SYSTEME ; {@code null} si non déclaré (cas de la plupart des pièces). */
+    private ModeApposition modeApposition;
+    private Long signataireUtilisateurId;
 }

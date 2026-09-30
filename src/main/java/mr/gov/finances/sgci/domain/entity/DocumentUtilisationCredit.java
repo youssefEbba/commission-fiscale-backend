@@ -1,6 +1,7 @@
 package mr.gov.finances.sgci.domain.entity;
 
 import jakarta.persistence.*;
+import mr.gov.finances.sgci.domain.enums.ModeApposition;
 import lombok.*;
 
 import java.time.Instant;
@@ -41,4 +42,20 @@ public class DocumentUtilisationCredit {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "utilisation_credit_id", nullable = false)
     private UtilisationCredit utilisationCredit;
+
+    /**
+     * Comment le document a été signé et cacheté, lorsqu'il porte une signature.
+     *
+     * <p>Colonnes nullables : {@code null} = non déclaré, ce qui est la vérité pour les pièces
+     * antérieures et pour toutes celles que personne ne signe. Voir {@link ModeApposition} sur la
+     * portée exacte de cette déclaration — elle documente, elle ne prouve pas.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mode_apposition", length = 24)
+    private ModeApposition modeApposition;
+
+    /** Auteur de la signature, renseigné au dépôt lorsqu'un mode d'apposition est déclaré. */
+    @Column(name = "signataire_utilisateur_id")
+    private Long signataireUtilisateurId;
+
 }

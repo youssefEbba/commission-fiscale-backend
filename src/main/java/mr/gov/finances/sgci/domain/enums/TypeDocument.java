@@ -53,5 +53,7 @@ public enum TypeDocument {
     DOCUMENTS_OFFICIELS,
     DECISION_COMMISSION,
     LISTE_CREDITS_A_CLOTURER,
+    /** Certificat d'utilisation signé et cacheté par le Président (processus 6). */
+    CERTIFICAT_UTILISATION,
     AUTRE_DOCUMENT
 }

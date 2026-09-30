@@ -5,9 +5,11 @@ import mr.gov.finances.sgci.domain.entity.Signature;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.TypeEmpreinte;
 import mr.gov.finances.sgci.repository.SignatureRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.web.dto.MesEmpreintesDto;
 import mr.gov.finances.sgci.web.dto.SignatureBase64Dto;
 import mr.gov.finances.sgci.web.dto.SignatureDto;
 import mr.gov.finances.sgci.web.dto.UpdateSignatureRequest;
@@ -25,6 +27,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -43,8 +46,17 @@ public class SignatureService {
     private final MinioService minioService;
     private final AuditService auditService;
 
+    /**
+     * Liste les empreintes visibles par l'appelant.
+     *
+     * <p>{@code type} nul signifie « toutes natures ». Le filtrage par droit de lecture est ce qui
+     * ferme le principal vecteur d'énumération : sans paramètre, cette méthode renvoyait auparavant
+     * la table entière à tout utilisateur authentifié, ce qui permettait à un compte entreprise de
+     * repérer puis télécharger la signature manuscrite du Président.
+     */
     @Transactional(readOnly = true)
-    public List<SignatureDto> list(Role role, Long utilisateurId, Boolean activeOnly) {
+    public List<SignatureDto> list(TypeEmpreinte type, Role role, Long utilisateurId,
+                                   Boolean activeOnly, AuthenticatedUser user) {
         List<Signature> all;
         if (role != null && utilisateurId != null) {
             all = repository.findByRoleAndUtilisateur_Id(role, utilisateurId);
@@ -56,49 +68,123 @@ public class SignatureService {
             all = repository.findAll();
         }
         return all.stream()
+                .filter(s -> type == null || s.getType() == type)
                 .filter(s -> !Boolean.TRUE.equals(activeOnly) || Boolean.TRUE.equals(s.getActive()))
+                .filter(s -> peutLire(s, user))
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
-    public SignatureDto getActive(Role role, Long utilisateurId) {
-        Signature entity = (utilisateurId != null
-                ? repository.findByRoleAndUtilisateur_IdAndActiveTrue(role, utilisateurId)
-                : repository.findByRoleAndUtilisateurIsNullAndActiveTrue(role))
+    public SignatureDto getActive(TypeEmpreinte type, Role role, Long utilisateurId, AuthenticatedUser user) {
+        Signature entity = resoudreActive(typeOuDefaut(type), role, utilisateurId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
-                        "Aucune signature active pour ce rôle" + (utilisateurId != null ? "/utilisateur" : "")));
+                        "Aucune empreinte " + typeOuDefaut(type) + " active pour ce rôle"
+                                + (utilisateurId != null ? "/utilisateur" : "")));
+        assertCanRead(entity, user);
         return toDto(entity);
     }
 
+    /**
+     * Résout l'empreinte active, avec repli sur l'empreinte générique du rôle.
+     *
+     * <p>Une empreinte personnelle l'emporte sur celle du rôle ; à défaut, l'empreinte générique
+     * ({@code utilisateur} nul) prend le relais. C'est ce qui permet au titulaire de déposer sa
+     * propre signature depuis son profil tout en laissant l'administrateur poser un sceau
+     * institutionnel unique, valable pour quiconque occupe la fonction.
+     */
+    private Optional<Signature> resoudreActive(TypeEmpreinte type, Role role, Long utilisateurId) {
+        if (utilisateurId != null) {
+            List<Signature> perso = repository
+                    .findByTypeAndRoleAndUtilisateur_IdAndActiveTrueOrderByVersionDescIdDesc(
+                            type, role, utilisateurId);
+            if (!perso.isEmpty()) {
+                return Optional.of(perso.get(0));
+            }
+        }
+        List<Signature> generique = repository
+                .findByTypeAndRoleAndUtilisateurIsNullAndActiveTrueOrderByVersionDescIdDesc(type, role);
+        return generique.isEmpty() ? Optional.empty() : Optional.of(generique.get(0));
+    }
+
+    private static TypeEmpreinte typeOuDefaut(TypeEmpreinte type) {
+        return type != null ? type : TypeEmpreinte.SIGNATURE;
+    }
+
+    /**
+     * Les empreintes de l'utilisateur courant, signature et cachet, en un seul appel.
+     *
+     * <p>Ne lève jamais sur une empreinte absente : le front a besoin de savoir qu'elle manque pour
+     * n'offrir que le chemin manuel, pas d'un 404 à interpréter.
+     */
     @Transactional(readOnly = true)
-    public byte[] getContent(Long id) {
+    public MesEmpreintesDto mesEmpreintes(AuthenticatedUser user, boolean withContent) {
+        if (user == null || user.getRole() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Authentification requise");
+        }
+        Optional<Signature> signature = resoudreActive(TypeEmpreinte.SIGNATURE, user.getRole(), user.getUserId());
+        Optional<Signature> cachet = resoudreActive(TypeEmpreinte.CACHET, user.getRole(), user.getUserId());
+
+        MesEmpreintesDto.MesEmpreintesDtoBuilder b = MesEmpreintesDto.builder()
+                .signature(signature.map(this::toDto).orElse(null))
+                .cachet(cachet.map(this::toDto).orElse(null))
+                .cachetGeneriqueDuRole(cachet.isPresent() && cachet.get().getUtilisateur() == null);
+        if (withContent) {
+            b.signatureDataUrl(signature.map(this::dataUrl).orElse(null))
+                    .cachetDataUrl(cachet.map(this::dataUrl).orElse(null));
+        }
+        return b.build();
+    }
+
+    /**
+     * Dépose une empreinte pour l'utilisateur courant, rôle et identifiant déduits du jeton.
+     *
+     * <p>Évite au client de connaître son propre {@code userId} et supprime du même coup toute une
+     * classe de 403 sur {@link #assertCanManage}.
+     */
+    @Transactional
+    public SignatureDto createPourMoi(MultipartFile file, TypeEmpreinte type, String nomAffiche,
+                                      AuthenticatedUser user) {
+        if (user == null || user.getRole() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Authentification requise");
+        }
+        return create(file, type, user.getRole(), user.getUserId(), nomAffiche, Boolean.TRUE, user);
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] getContent(Long id, AuthenticatedUser user) {
         Signature entity = findEntity(id);
+        assertCanRead(entity, user);
         return minioService.downloadFile(entity.getObjetMinio());
     }
 
     @Transactional(readOnly = true)
-    public String getContentType(Long id) {
-        return findEntity(id).getContentType();
+    public String getContentType(Long id, AuthenticatedUser user) {
+        Signature entity = findEntity(id);
+        assertCanRead(entity, user);
+        return entity.getContentType();
     }
 
     @Transactional(readOnly = true)
-    public SignatureBase64Dto getBase64(Long id) {
+    public SignatureBase64Dto getBase64(Long id, AuthenticatedUser user) {
         Signature entity = findEntity(id);
+        assertCanRead(entity, user);
+        return SignatureBase64Dto.builder().dataUrl(dataUrl(entity)).build();
+    }
+
+    private String dataUrl(Signature entity) {
         byte[] content = minioService.downloadFile(entity.getObjetMinio());
         String type = entity.getContentType() != null ? entity.getContentType() : "image/png";
-        String encoded = Base64.getEncoder().encodeToString(content);
-        return SignatureBase64Dto.builder()
-                .dataUrl("data:" + type + ";base64," + encoded)
-                .build();
+        return "data:" + type + ";base64," + Base64.getEncoder().encodeToString(content);
     }
 
     @Transactional
-    public SignatureDto create(MultipartFile file, Role role, Long utilisateurId, String nomAffiche,
-                                Boolean activer, AuthenticatedUser user) {
+    public SignatureDto create(MultipartFile file, TypeEmpreinte type, Role role, Long utilisateurId,
+                                String nomAffiche, Boolean activer, AuthenticatedUser user) {
         if (role == null) {
             throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Le rôle est obligatoire");
         }
+        TypeEmpreinte typeEmpreinte = typeOuDefaut(type);
         assertCanManage(role, utilisateurId, user);
 
         Utilisateur utilisateur = null;
@@ -113,9 +199,11 @@ public class SignatureService {
         // Fail-fast : l'upload objet se fait AVANT toute écriture en base ; si MinIO échoue,
         // rien n'est persisté (MinioService lève une ApiException 503, la transaction ne démarre
         // aucune écriture DB avant ce point).
-        String objectKey = minioService.uploadBytes(info.content, "image/png", safeFileName(file, "signature.png"));
+        String objectKey = minioService.uploadBytes(info.content, "image/png",
+                safeFileName(file, typeEmpreinte.name().toLowerCase() + ".png"));
 
         Signature entity = Signature.builder()
+                .type(typeEmpreinte)
                 .utilisateur(utilisateur)
                 .role(role)
                 .nomAffiche(nomAffiche)
@@ -132,7 +220,7 @@ public class SignatureService {
                 .build();
 
         if (shouldActivate) {
-            deactivateExistingActive(role, utilisateurId, null);
+            deactivateExistingActive(typeEmpreinte, role, utilisateurId, null);
         }
 
         entity = repository.save(entity);
@@ -177,6 +265,7 @@ public class SignatureService {
         }
 
         Signature next = Signature.builder()
+                .type(previous.getType() != null ? previous.getType() : TypeEmpreinte.SIGNATURE)
                 .utilisateur(previous.getUtilisateur())
                 .role(previous.getRole())
                 .nomAffiche(previous.getNomAffiche())
@@ -193,7 +282,7 @@ public class SignatureService {
                 .build();
 
         if (previousWasActive) {
-            deactivateExistingActive(previous.getRole(), utilisateurId, previous.getId());
+            deactivateExistingActive(next.getType(), previous.getRole(), utilisateurId, previous.getId());
         }
 
         next = repository.save(next);
@@ -218,7 +307,7 @@ public class SignatureService {
         if (active) {
             if (!Boolean.TRUE.equals(entity.getActive())) {
                 Long utilisateurId = entity.getUtilisateur() != null ? entity.getUtilisateur().getId() : null;
-                deactivateExistingActive(entity.getRole(), utilisateurId, entity.getId());
+                deactivateExistingActive(entity.getType(), entity.getRole(), utilisateurId, entity.getId());
                 entity.setActive(true);
                 entity.setDateDesactivation(null);
             }
@@ -228,11 +317,17 @@ public class SignatureService {
         }
     }
 
-    /** Garantit « au plus une signature active par couple (role, utilisateurId) » avant d'en activer une nouvelle. */
-    private void deactivateExistingActive(Role role, Long utilisateurId, Long excludeId) {
+    /**
+     * Garantit « au plus une empreinte active par triplet (type, role, utilisateurId) ».
+     *
+     * <p>Le scope de type n'est pas cosmétique : sans lui, déposer un cachet désactiverait la
+     * signature du même utilisateur, et réciproquement.
+     */
+    private void deactivateExistingActive(TypeEmpreinte type, Role role, Long utilisateurId, Long excludeId) {
+        TypeEmpreinte t = typeOuDefaut(type);
         List<Signature> actives = utilisateurId != null
-                ? repository.findByRoleAndUtilisateur_Id(role, utilisateurId)
-                : repository.findByRoleAndUtilisateurIsNull(role);
+                ? repository.findByTypeAndRoleAndUtilisateur_Id(t, role, utilisateurId)
+                : repository.findByTypeAndRoleAndUtilisateurIsNull(t, role);
         for (Signature s : actives) {
             if (Boolean.TRUE.equals(s.getActive()) && !Objects.equals(s.getId(), excludeId)) {
                 s.setActive(false);
@@ -240,6 +335,46 @@ public class SignatureService {
                 repository.save(s);
             }
         }
+    }
+
+    /**
+     * Refuse la lecture d'une empreinte qui n'appartient pas à l'appelant.
+     *
+     * <p>Répond 404 et non 403, pour ne pas offrir d'oracle d'énumération : un tiers ne doit pas
+     * pouvoir distinguer « cette empreinte existe mais vous n'y avez pas droit » de « elle n'existe
+     * pas ». Réutilise un code d'erreur déjà connu du front.
+     *
+     * <p>Le parcours de composition côté client n'en souffre pas : le Président compose ses propres
+     * documents et lit donc sa propre empreinte ; l'administrateur substitué passe par la première
+     * règle. Afficher un document <em>déjà signé</em> est un besoin distinct, qui lit le document et
+     * non l'empreinte.
+     */
+    private void assertCanRead(Signature s, AuthenticatedUser user) {
+        if (!peutLire(s, user)) {
+            throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
+                    "Empreinte non trouvée: " + (s != null ? s.getId() : null));
+        }
+    }
+
+    private boolean peutLire(Signature s, AuthenticatedUser user) {
+        if (s == null || user == null || user.getRole() == null) {
+            return false;
+        }
+        // 1. Administrateur : accès complet, versions désactivées comprises. Volontairement
+        // adossé au rôle et non à une permission dédiée : une permission serait attribuée
+        // automatiquement au Président par assignAllPermissions, lui ouvrant sans nécessité les
+        // signatures manuscrites des autres directions.
+        if (user.getRole() == Role.ADMIN_SI) {
+            return true;
+        }
+        // 2. Titulaire : y compris son historique, pour l'affichage de son profil.
+        if (s.getUtilisateur() != null && Objects.equals(s.getUtilisateur().getId(), user.getUserId())) {
+            return true;
+        }
+        // 3. Empreinte générique de son propre rôle : la version active seulement.
+        return s.getUtilisateur() == null
+                && s.getRole() == user.getRole()
+                && Boolean.TRUE.equals(s.getActive());
     }
 
     private void assertCanManage(Role targetRole, Long targetUtilisateurId, AuthenticatedUser user) {
@@ -339,6 +474,7 @@ public class SignatureService {
     private SignatureDto toDto(Signature s) {
         return SignatureDto.builder()
                 .id(s.getId())
+                .type(s.getType())
                 .utilisateurId(s.getUtilisateur() != null ? s.getUtilisateur().getId() : null)
                 .utilisateurNom(s.getUtilisateur() != null ? s.getUtilisateur().getNomComplet() : null)
                 .role(s.getRole())

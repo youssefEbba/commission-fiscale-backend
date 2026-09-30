@@ -5,12 +5,14 @@ import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.repository.LigneBulletinLiquidationRepository;
+import mr.gov.finances.sgci.domain.enums.ModeApposition;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.DocumentUtilisationCreditService;
 import mr.gov.finances.sgci.service.UtilisationCreditService;
 import mr.gov.finances.sgci.web.dto.DocumentUtilisationCreditDto;
 import mr.gov.finances.sgci.web.dto.AdminCorrectionUtilisationRequest;
 import mr.gov.finances.sgci.web.dto.ApurerTVAInterieureRequest;
+import mr.gov.finances.sgci.web.dto.CertificatUtilisationEmissionDto;
 import mr.gov.finances.sgci.web.dto.CreateUtilisationCreditRequest;
 import mr.gov.finances.sgci.web.dto.LigneBulletinDto;
 import mr.gov.finances.sgci.web.dto.LiquiderUtilisationDouaneRequest;
@@ -220,9 +222,12 @@ public class UtilisationCreditController {
     }
 
     /**
-     * Étape DGTCP : génération du certificat d'utilisation + débit financier.
+     * Étape DGTCP : débit financier de la liquidation douanière.
      * Débite le solde cordon (hors TVA), décrémente le quota TVA importation,
      * alimente le stock TVA déductible. Statut résultant : LIQUIDEE.
+     * <p>
+     * Le certificat d'utilisation n'est pas produit ici : il est émis ensuite par le Président
+     * via {@code POST /{id}/certificat-utilisation}.
      */
     @PostMapping("/{id}/liquidation-douane")
     @PreAuthorize("hasAnyAuthority('utilisation.douane.dgtcp.impute', 'utilisation.douane.dgtcp.solde.update')")
@@ -231,6 +236,53 @@ public class UtilisationCreditController {
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return service.liquiderDouane(id, user);
+    }
+
+    /**
+     * Étape Président : émission du certificat d'utilisation, pour les deux branches.
+     * <p>
+     * Attribue le numéro {@code CU-nnn/AAAA} et fait passer la demande en CERTIFICAT_EMIS. Le calcul
+     * de la DGTCP doit être acquis : LIQUIDEE en douane, APUREE en TVA intérieure. Idempotent — un
+     * second appel renvoie le même numéro sans erreur.
+     */
+    @PostMapping("/{id}/certificat-utilisation")
+    @PreAuthorize("hasAuthority('utilisation.president.certificat.emettre')")
+    public UtilisationCreditDto emettreCertificatUtilisation(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.emettreCertificatUtilisation(id, user);
+    }
+
+    /**
+     * Substitution administrative : l'ADMIN_SI émet à la place du Président, motif obligatoire.
+     * <p>
+     * Le fichier est optionnel et déposé après la numérotation — il doit porter le numéro que cet
+     * appel attribue. Il passe par cette route parce que l'ADMIN_SI ne détient pas les permissions
+     * de {@code POST /{id}/documents}.
+     */
+    @PostMapping(value = "/{id}/certificat-utilisation/admin", consumes = "multipart/form-data")
+    @PreAuthorize("hasAuthority('utilisation.certificat.admin_override')")
+    public UtilisationCreditDto adminEmettreCertificatUtilisation(
+            @PathVariable Long id,
+            @RequestParam("motif") String motif,
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) throws IOException {
+        return service.adminEmettreCertificatUtilisation(id, motif, file, user);
+    }
+
+    /** État d'émission : bouton actif ou non, et code de blocage stable côté front. */
+    @GetMapping("/{id}/certificat-utilisation/etat")
+    @PreAuthorize("hasAnyAuthority('utilisation.president.certificat.emettre', "
+            + "'utilisation.certificat.admin_override', "
+            + "'utilisation.douane.dgtcp.queue.view', 'utilisation.interieur.dgtcp.queue.view', "
+            + "'utilisation.douane.solde.view', 'utilisation.interieur.solde.view')")
+    public CertificatUtilisationEmissionDto etatEmissionCertificat(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.etatEmissionCertificat(id, user);
     }
 
     /**
@@ -301,11 +353,14 @@ public class UtilisationCreditController {
             @RequestParam(value = "type", required = false) String type,
             @RequestParam(required = false) String message,
             @RequestParam("file") MultipartFile file,
+            // Chemin choisi par le Président : scan signé à la main, ou empreintes apposées par le
+            // système. Optionnel — les pièces sans signature ne le renseignent pas.
+            @RequestParam(value = "modeApposition", required = false) ModeApposition modeApposition,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
         String resolved = mr.gov.finances.sgci.web.support.DocumentUploadParamResolver
                 .resolveCodeDocument(codeDocument, typeDocument, type);
-        return documentService.upload(id, resolved, message, file, user);
+        return documentService.upload(id, resolved, message, file, modeApposition, user);
     }
 
     /** Correction administrateur d'informations, à tout moment (ADMIN_SI, motif obligatoire). */

@@ -40,6 +40,7 @@ import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.AdminCorrectionUtilisationRequest;
 import mr.gov.finances.sgci.web.dto.ApurerTVAInterieureRequest;
+import mr.gov.finances.sgci.web.dto.CertificatUtilisationEmissionDto;
 import mr.gov.finances.sgci.web.dto.CreateUtilisationCreditRequest;
 import mr.gov.finances.sgci.web.dto.LigneBulletinDto;
 import mr.gov.finances.sgci.web.dto.LiquiderUtilisationDouaneRequest;
@@ -847,12 +848,11 @@ public class UtilisationCreditService {
 
         t.setStatut(StatutUtilisation.APUREE);
         t.setDateLiquidation(Instant.now());
-        // Certificat d'utilisation : numéroté une seule fois, à l'apurement.
-        if (t.getNumeroCertificatUtilisation() == null) {
-            t.setNumeroCertificatUtilisation(referenceSequenceGenerator
-                    .nextSansMois(ReferenceSequenceGenerator.PREFIX_CERTIFICAT_UTILISATION));
-            t.setDateCertificatUtilisation(Instant.now());
-        }
+        // Le certificat d'utilisation n'est PAS numéroté ici : l'apurement est le calcul de la
+        // DGTCP, l'émission est l'acte du Président (emettreCertificatUtilisation). On marque en
+        // revanche le dossier comme soumis à cette émission, ce qui le distingue des dossiers
+        // historiques et rend le rattrapage au démarrage auto-limité.
+        t.setEmissionCertificatRequise(Boolean.TRUE);
 
         entity = repository.save(t);
         UtilisationCreditDto result = toDto(entity);
@@ -1369,6 +1369,7 @@ public class UtilisationCreditService {
         if (role != Role.ENTREPRISE && role != Role.COMMISSION_RELAIS) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise peut accuser réception");
         }
+        assertCertificatEmisAvantCloture(entity);
 
         entity.setStatut(StatutUtilisation.CLOTUREE);
         entity = repository.save(entity);
@@ -1455,6 +1456,7 @@ public class UtilisationCreditService {
         d.setCertificatCredit(certificat);
         d.setStatut(StatutUtilisation.LIQUIDEE);
         d.setDateLiquidation(Instant.now());
+        d.setEmissionCertificatRequise(Boolean.TRUE);
 
         // ── Alimenter le stock TVA déductible ───────────────────────────────
         if (tvaAuCI.compareTo(BigDecimal.ZERO) > 0) {
@@ -1475,6 +1477,201 @@ public class UtilisationCreditService {
         return result;
     }
 
+    /**
+     * Étape Président : émission du certificat d'utilisation.
+     *
+     * <p>Sépare le calcul financier de la DGTCP ({@code LIQUIDEE} en douane, {@code APUREE} en TVA)
+     * de l'acte d'émission, qui relève de la seule autorité du Président. Le numéro
+     * ({@code CU-nnn/AAAA}) est attribué ici, et une seule fois.
+     *
+     * <p><b>Ne pas exiger ici la présence du document {@code CERTIFICAT_UTILISATION}.</b> Le
+     * document doit porter le numéro, donc le numéro le précède nécessairement. Calquer le contrôle
+     * de la lettre d'adoption ({@code DemandeCorrectionService}, qui exige la pièce au moment de
+     * l'adoption) créerait ici une impasse circulaire. La séquence est : émission → composition du
+     * document avec le numéro → dépôt de la pièce signée.
+     *
+     * <p>Statut résultant : {@link StatutUtilisation#CERTIFICAT_EMIS}.
+     */
+    @Transactional
+    public UtilisationCreditDto emettreCertificatUtilisation(Long id, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
+                        "Utilisation de crédit non trouvée: " + id));
+        return appliquerEmissionCertificat(entity, user, Role.PRESIDENT);
+    }
+
+    /**
+     * Substitution administrative de l'émission : l'ADMIN_SI agit à la place du Président.
+     *
+     * <p>Même pattern que {@code adminVisaPourRole} / {@code adminValiderPourPresident} — motif
+     * obligatoire et trace {@link AuditAction#ADMIN_CORRECTION} — à une différence près : la pièce
+     * signée ne peut pas être exigée au moment de l'émission, puisqu'elle doit porter le numéro que
+     * l'émission attribue. Elle est donc acceptée ici de façon optionnelle, et déposée juste après
+     * la numérotation. Le fichier passe par cette route parce que l'ADMIN_SI ne détient pas
+     * {@code utilisation.*.document.upload} et ne peut donc pas utiliser {@code POST /{id}/documents}.
+     */
+    @Transactional
+    public UtilisationCreditDto adminEmettreCertificatUtilisation(Long id, String motif,
+                                                                  MultipartFile file,
+                                                                  AuthenticatedUser user) throws IOException {
+        if (user == null || user.getRole() != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Seul l'administrateur SI peut émettre le certificat à la place du Président");
+        }
+        if (motif == null || motif.isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Le motif est obligatoire pour une émission par substitution administrative");
+        }
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
+                        "Utilisation de crédit non trouvée: " + id));
+
+        UtilisationCreditDto result = appliquerEmissionCertificat(entity, user, Role.ADMIN_SI);
+
+        // Le numéro existe désormais : la pièce signée peut être déposée dans la même requête.
+        if (file != null && !file.isEmpty()) {
+            documentService.adminReplace(id, TypeDocument.CERTIFICAT_UTILISATION.name(), motif, file, user);
+        }
+
+        Map<String, Object> trace = new HashMap<>();
+        trace.put("motif", motif);
+        trace.put("roleSubstitue", Role.PRESIDENT.name());
+        trace.put("numeroCertificatUtilisation", result.getNumeroCertificatUtilisation());
+        trace.put("documentDepose", file != null && !file.isEmpty());
+        auditService.log(AuditAction.ADMIN_CORRECTION, "UtilisationCredit", String.valueOf(id), trace);
+        return result;
+    }
+
+    /** Corps commun aux deux routes d'émission ; {@code roleAttendu} n'en change que la porte. */
+    private UtilisationCreditDto appliquerEmissionCertificat(UtilisationCredit entity,
+                                                             AuthenticatedUser user,
+                                                             Role roleAttendu) {
+        // Idempotence : un double clic du front ne doit pas produire un 409.
+        if (entity.getStatut() == StatutUtilisation.CERTIFICAT_EMIS) {
+            return toDto(entity);
+        }
+
+        String code = codeBlocageEmissionCertificat(entity, user, roleAttendu);
+        if (code != null) {
+            throw exceptionBlocageEmissionCertificat(code, entity, user, roleAttendu);
+        }
+
+        workflow.validateTransition(entity.getStatut(), StatutUtilisation.CERTIFICAT_EMIS);
+        assertActorCanTransition(entity, StatutUtilisation.CERTIFICAT_EMIS, user);
+
+        // nextSansMois est en REQUIRES_NEW : la séquence est consommée même si cette transaction
+        // échoue ensuite. Toutes les validations doivent donc précéder cette affectation.
+        // Et jamais de renumérotation : un dossier TVA apuré sous l'ancienne règle garde son numéro.
+        if (entity.getNumeroCertificatUtilisation() == null) {
+            entity.setNumeroCertificatUtilisation(referenceSequenceGenerator
+                    .nextSansMois(ReferenceSequenceGenerator.PREFIX_CERTIFICAT_UTILISATION));
+            entity.setDateCertificatUtilisation(Instant.now());
+        }
+        entity.setStatut(StatutUtilisation.CERTIFICAT_EMIS);
+
+        entity = repository.save(entity);
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(entity.getId()), result);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.CERTIFICAT_EMIS, user);
+        return result;
+    }
+
+    /**
+     * Cause du blocage de l'émission, {@code null} si rien ne s'y oppose.
+     *
+     * <p>Source de vérité unique : {@link #exceptionBlocageEmissionCertificat} lève l'exception
+     * correspondante et {@link #etatEmissionCertificat} expose le même code. Aucun client n'a donc
+     * à réécrire la règle.
+     */
+    private String codeBlocageEmissionCertificat(UtilisationCredit u, AuthenticatedUser user, Role roleAttendu) {
+        Role role = user != null ? user.getRole() : null;
+        if (role != roleAttendu) {
+            return "ROLE_NON_HABILITE";
+        }
+        if (u.getStatut() != statutPrealableEmission(u)) {
+            return "STATUT_INCOMPATIBLE";
+        }
+        return null;
+    }
+
+    /** Le calcul de la DGTCP dont l'émission dépend : liquidation en douane, apurement en TVA. */
+    private static StatutUtilisation statutPrealableEmission(UtilisationCredit u) {
+        return u.getType() == TypeUtilisation.DOUANIER
+                ? StatutUtilisation.LIQUIDEE
+                : StatutUtilisation.APUREE;
+    }
+
+    /** Exception correspondant à un code de blocage : message et code restent solidaires. */
+    private ApiException exceptionBlocageEmissionCertificat(String code, UtilisationCredit u,
+                                                            AuthenticatedUser user, Role roleAttendu) {
+        switch (code) {
+            case "ROLE_NON_HABILITE":
+                return ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                        "Émission du certificat d'utilisation réservée au rôle " + roleAttendu
+                                + ". Rôle courant : " + (user != null ? user.getRole() : null));
+            case "STATUT_INCOMPATIBLE":
+                return ApiException.badRequest(ApiErrorCode.STATUT_INCOMPATIBLE,
+                        "L'émission suppose le calcul de la DGTCP acquis (statut "
+                                + statutPrealableEmission(u) + "). Statut actuel : " + u.getStatut());
+            default:
+                return ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Émission du certificat impossible");
+        }
+    }
+
+    /** État d'émission, pour piloter le bouton et son message côté front. */
+    @Transactional(readOnly = true)
+    public CertificatUtilisationEmissionDto etatEmissionCertificat(Long id, AuthenticatedUser user) {
+        UtilisationCredit u = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
+                        "Utilisation de crédit non trouvée: " + id));
+        boolean dejaEmis = u.getStatut() == StatutUtilisation.CERTIFICAT_EMIS;
+        String code = dejaEmis ? null : codeBlocageEmissionCertificat(u, user, Role.PRESIDENT);
+        return CertificatUtilisationEmissionDto.builder()
+                .emissible(code == null && !dejaEmis)
+                .codeBlocage(code)
+                .motifBlocage(code == null ? null
+                        : exceptionBlocageEmissionCertificat(code, u, user, Role.PRESIDENT).getMessage())
+                .statut(u.getStatut())
+                .statutPrealableAttendu(statutPrealableEmission(u))
+                .numeroCertificatUtilisation(u.getNumeroCertificatUtilisation())
+                .dateCertificatUtilisation(u.getDateCertificatUtilisation())
+                .certificatSigneDepose(documentService.findActiveDocumentTypes(id)
+                        .contains(TypeDocument.CERTIFICAT_UTILISATION.name()))
+                .build();
+    }
+
+    /**
+     * Le certificat d'utilisation doit avoir été émis par le Président avant la clôture.
+     *
+     * <p>Trois exemptions, dans cet ordre. {@code emissionCertificatRequise = FALSE} marque les
+     * dossiers arrivés à leur statut final avant l'introduction de l'étape — le contrôle de la base
+     * de production en a dénombré 107, liquidés ou apurés entre 2023 et 2025 : les bloquer serait une
+     * régression pure. {@code origineArchiveLibelle} couvre les reprises d'archive, et la présence
+     * d'un numéro les dossiers TVA numérotés sous l'ancienne règle, quand l'apurement numérotait
+     * lui-même.
+     *
+     * <p>Aucune de ces exemptions n'est une date de bascule codée en dur : le marqueur est posé par
+     * le calcul de la DGTCP lui-même, de sorte que le rattrapage au démarrage ne peut pas déborder
+     * sur les dossiers instruits ensuite.
+     */
+    private void assertCertificatEmisAvantCloture(UtilisationCredit u) {
+        if (u.getStatut() == StatutUtilisation.CERTIFICAT_EMIS) {
+            return;
+        }
+        if (Boolean.FALSE.equals(u.getEmissionCertificatRequise())) {
+            return;                       // dossier historique, antérieur à l'étape d'émission
+        }
+        if (u.getOrigineArchiveLibelle() != null) {
+            return;                       // reprise d'archive : jamais passée par le circuit
+        }
+        if (u.getNumeroCertificatUtilisation() != null) {
+            return;                       // déjà numéroté sous l'ancienne règle
+        }
+        throw ApiException.conflict(ApiErrorCode.CERTIFICAT_UTILISATION_NON_EMIS,
+                "Le certificat d'utilisation doit être émis par le Président avant la clôture");
+    }
+
     @Transactional
     public UtilisationCreditDto updateStatut(Long id, StatutUtilisation statut, AuthenticatedUser user) {
         UtilisationCredit entity = repository.findById(id).orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
@@ -1490,6 +1687,15 @@ public class UtilisationCreditService {
         }
         if (entity.getType() == TypeUtilisation.TVA_INTERIEURE && statut == StatutUtilisation.APUREE) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Apurement TVA: veuillez utiliser POST /{id}/apurement-tva (calcul FIFO automatique)");
+        }
+        // Le Président détient toutes les permissions énumérées par PATCH /{id}/statut : il
+        // franchit l'annotation. Seul ce garde-fou applicatif force le passage par la route dédiée.
+        if (statut == StatutUtilisation.CERTIFICAT_EMIS) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Émission du certificat d'utilisation : veuillez utiliser POST /{id}/certificat-utilisation");
+        }
+        if (statut == StatutUtilisation.CLOTUREE) {
+            assertCertificatEmisAvantCloture(entity);
         }
 
         if (statut == StatutUtilisation.EN_VERIFICATION) {
@@ -1552,7 +1758,8 @@ public class UtilisationCreditService {
                     StatutUtilisation.VISE, StatutUtilisation.EN_CONTROLE_DGD,
                     StatutUtilisation.CHEQUE_SAISI, StatutUtilisation.ENVOYEE_AU_TRESOR,
                     StatutUtilisation.QUITTANCES_ENREGISTREES,
-                    StatutUtilisation.LIQUIDEE, StatutUtilisation.CLOTUREE,
+                    StatutUtilisation.LIQUIDEE, StatutUtilisation.CERTIFICAT_EMIS,
+                    StatutUtilisation.CLOTUREE,
                     StatutUtilisation.REJETEE);
             if (!douaneAllowed.contains(to)) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
@@ -1565,6 +1772,7 @@ public class UtilisationCreditService {
                     && to != StatutUtilisation.EN_VERIFICATION
                     && to != StatutUtilisation.VALIDEE
                     && to != StatutUtilisation.APUREE
+                    && to != StatutUtilisation.CERTIFICAT_EMIS
                     && to != StatutUtilisation.REJETEE) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                         "Transition non autorisée (TVA intérieure): vers " + to);
@@ -1594,6 +1802,11 @@ public class UtilisationCreditService {
                 }
                 return;
             }
+            // Étape Président : l'émission du certificat, postérieure au calcul DGTCP.
+            if (to == StatutUtilisation.CERTIFICAT_EMIS) {
+                assertPeutEmettreCertificat(role);
+                return;
+            }
             // Étape Entreprise / Commission Relais : chèque et clôture
             if (to == StatutUtilisation.CHEQUE_SAISI || to == StatutUtilisation.CLOTUREE) {
                 if (role != Role.ENTREPRISE && role != Role.COMMISSION_RELAIS) {
@@ -1611,9 +1824,31 @@ public class UtilisationCreditService {
         }
 
         if (utilisation.getType() == TypeUtilisation.TVA_INTERIEURE) {
+            // L'émission du certificat se teste AVANT la porte DGTCP : ce bloc n'a pas de
+            // return par cible, donc inverser l'ordre rendrait la porte présidentielle
+            // inatteignable et reproduirait le 403 que cette étape corrige.
+            if (to == StatutUtilisation.CERTIFICAT_EMIS) {
+                assertPeutEmettreCertificat(role);
+                return;
+            }
             if (role != Role.DGTCP) {
                 throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut traiter les utilisations TVA intérieure");
             }
+        }
+    }
+
+    /**
+     * Porte de rôle de l'émission du certificat d'utilisation, commune aux deux branches.
+     *
+     * <p>{@code ADMIN_SI} est admis ici pour la seule route de substitution
+     * ({@code POST /{id}/certificat-utilisation/admin}) : la route ordinaire exige la permission
+     * {@code utilisation.president.certificat.emettre}, qu'il ne détient pas, et
+     * {@link #codeBlocageEmissionCertificat} y réclame explicitement le rôle PRESIDENT.
+     */
+    private void assertPeutEmettreCertificat(Role role) {
+        if (role != Role.PRESIDENT && role != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Seul le Président peut émettre le certificat d'utilisation");
         }
     }
 
@@ -1653,6 +1888,9 @@ public class UtilisationCreditService {
         boolean demandeurSt = titId != null && demandeurId != null && !titId.equals(demandeurId);
 
         UtilisationCreditDto.UtilisationCreditDtoBuilder b = UtilisationCreditDto.builder()
+                // Portes par la classe mere : les deux branches ont un certificat d'utilisation.
+                .numeroCertificatUtilisation(u.getNumeroCertificatUtilisation())
+                .dateCertificatUtilisation(u.getDateCertificatUtilisation())
                 .id(u.getId())
                 .reference(u.getReference())
                 .type(u.getType())
@@ -1731,8 +1969,6 @@ public class UtilisationCreditService {
                     .reportANouveau(t.getReportANouveau())
                     .soldeTVAAvant(t.getSoldeTVAAvant())
                     .soldeTVAApres(t.getSoldeTVAApres())
-                    .numeroCertificatUtilisation(t.getNumeroCertificatUtilisation())
-                    .dateCertificatUtilisation(t.getDateCertificatUtilisation())
                     .quittanceDgi(quittanceDgiRepository.findByUtilisationCreditId(t.getId())
                             .map(UtilisationCreditService::toQuittanceDgiDto)
                             .orElse(null));

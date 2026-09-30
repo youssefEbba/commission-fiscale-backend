@@ -24,6 +24,15 @@ public enum StatutUtilisation {
     QUITTANCE_DGI_ENREGISTREE,
     LIQUIDEE,
     APUREE,
+
+    /**
+     * Le Président a émis le certificat d'utilisation (numérotation {@code CU-nnn/AAAA}).
+     *
+     * <p>Étape strictement présidentielle, postérieure au calcul financier de la DGTCP
+     * ({@link #LIQUIDEE} en douane, {@link #APUREE} en TVA intérieure) : celui qui calcule
+     * n'est pas celui qui émet.
+     */
+    CERTIFICAT_EMIS,
     REJETEE,
 
     /**
