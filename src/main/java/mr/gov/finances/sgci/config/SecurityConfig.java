@@ -38,6 +38,10 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
+                        // Vérification d'un document par QR code : ouverte à dessein, pour que
+                        // le Trésor, la DGI ou la douane contrôlent une pièce au guichet sans
+                        // compte. Réponse sans aucune donnée financière, et débit limité par IP.
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/public/verification").permitAll()
                         .requestMatchers("/api/local-files/**").authenticated()
                         .requestMatchers("/h2-console/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()

@@ -85,6 +85,8 @@ public class CertificatCreditController {
     @PreAuthorize("hasAnyAuthority('mise_en_place.dgi.queue.view', 'mise_en_place.dgtcp.queue.view', 'mise_en_place.dgb.queue.view', 'mise_en_place.dgd.queue.view', 'mise_en_place.president.queue.view', 'mise_en_place.view', 'mise_en_place.entreprise.queue.view', 'archivage.view')")
     public PageResponse<CertificatCreditDto> search(
             @RequestParam(required = false) String nif,
+            /** Raison sociale ou NIF, en « contient » : c'est le critère de recherche par entreprise. */
+            @RequestParam(required = false) String entreprise,
             @RequestParam(required = false) String numeroMarche,
             @RequestParam(required = false) String conventionRef,
             @RequestParam(required = false) String projet,
@@ -96,7 +98,8 @@ public class CertificatCreditController {
             @RequestParam(defaultValue = "20") int size,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
-        return service.search(nif, numeroMarche, conventionRef, projet, autoriteContractanteId, statut, from, to, page, size, user);
+        return service.search(nif, entreprise, numeroMarche, conventionRef, projet, autoriteContractanteId,
+                statut, from, to, page, size, user);
     }
 
     /** Journal daté des crédits mis en place (OUVERT / MODIFIE / CLOTURE) + agrégats financiers. */

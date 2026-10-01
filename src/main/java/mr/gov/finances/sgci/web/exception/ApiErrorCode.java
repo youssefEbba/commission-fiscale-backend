@@ -43,6 +43,8 @@ public final class ApiErrorCode {
     public static final String JUSTIFICATIF_DEJA_UTILISE = "JUSTIFICATIF_DEJA_UTILISE";
     /** Apurement TVA demandé sans quittance DGI préalable. */
     public static final String QUITTANCE_DGI_MANQUANTE = "QUITTANCE_DGI_MANQUANTE";
+    /** Quota d'appels dépassé sur un endpoint ouvert (vérification publique). */
+    public static final String TROP_DE_REQUETES = "TROP_DE_REQUETES";
     /** Clôture demandée alors que le Président n'a pas encore émis le certificat d'utilisation. */
     public static final String CERTIFICAT_UTILISATION_NON_EMIS = "CERTIFICAT_UTILISATION_NON_EMIS";
 }

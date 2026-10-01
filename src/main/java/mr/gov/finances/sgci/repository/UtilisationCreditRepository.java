@@ -14,6 +14,9 @@ import java.util.List;
 @Repository
 public interface UtilisationCreditRepository extends JpaRepository<UtilisationCredit, Long> {
 
+    /** Résolution d'un certificat d'utilisation par son numéro ({@code CU-007/2026}). */
+    java.util.Optional<UtilisationCredit> findByNumeroCertificatUtilisation(String numeroCertificatUtilisation);
+
     List<UtilisationCredit> findByCertificatCreditId(Long certificatCreditId);
 
     long countByCertificatCreditIdAndStatutNotIn(Long certificatCreditId, Collection<StatutUtilisation> statuts);

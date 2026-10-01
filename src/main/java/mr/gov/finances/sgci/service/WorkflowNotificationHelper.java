@@ -455,24 +455,28 @@ public class WorkflowNotificationHelper {
         if (douane) {
             return switch (statut) {
                 case "DEMANDEE", "EN_CONTROLE_DGD", "VISE" -> List.of(Role.DGD);
-                case "CHEQUE_SAISI", "ENVOYEE_AU_TRESOR", "QUITTANCES_ENREGISTREES", "CLOTUREE" ->
-                        List.of(Role.DGTCP);
-                // Le calcul est fait : la main passe au Président, qui doit émettre le certificat.
-                case "LIQUIDEE" -> List.of(Role.PRESIDENT);
-                // Certificat émis : aucun rôle n'a d'action, l'entreprise est notifiée via entrepriseId.
-                case "CERTIFICAT_EMIS" -> List.of();
+                // Le chèque est saisi : la main passe au Président, qui doit émettre le certificat.
+                case "CHEQUE_SAISI" -> List.of(Role.PRESIDENT);
+                // Certificat émis : la DGTCP peut le présenter au Trésor.
+                case "CERTIFICAT_EMIS" -> List.of(Role.DGTCP);
+                case "ENVOYEE_AU_TRESOR", "QUITTANCES_ENREGISTREES", "CLOTUREE" -> List.of(Role.DGTCP);
+                // Liquidation faite : plus d'action de rôle, l'entreprise est notifiée via entrepriseId.
+                case "LIQUIDEE" -> List.of();
                 case "REJETEE" -> List.of(Role.DGD, Role.DGTCP);
                 default -> List.of();
             };
         }
         return switch (statut) {
-            case "DEMANDEE", "EN_VERIFICATION", "VALIDEE", "REJETEE", "INCOMPLETE", "A_RECONTROLER" ->
+            case "DEMANDEE", "EN_VERIFICATION", "REJETEE", "INCOMPLETE", "A_RECONTROLER" ->
                     List.of(Role.DGTCP);
+            // Dossier validé : la main passe au Président, qui doit émettre le certificat.
+            case "VALIDEE" -> List.of(Role.PRESIDENT);
+            // Certificat émis : l'entreprise peut le présenter à la DGI, qui délivre la quittance.
+            case "CERTIFICAT_EMIS" -> List.of(Role.DGI);
             // Quittance déposée : la DGTCP peut apurer. L'entreprise est notifiée via entrepriseId.
             case "QUITTANCE_DGI_ENREGISTREE" -> List.of(Role.DGTCP);
-            // Apurement fait : la main passe au Président.
-            case "APUREE" -> List.of(Role.PRESIDENT);
-            case "CERTIFICAT_EMIS" -> List.of();
+            // Apurement fait : plus d'action de rôle.
+            case "APUREE" -> List.of();
             default -> List.of();
         };
     }

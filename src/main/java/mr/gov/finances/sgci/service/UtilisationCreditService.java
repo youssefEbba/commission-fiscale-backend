@@ -627,9 +627,11 @@ public class UtilisationCreditService {
 
         StatutUtilisation actuel = entity.getStatut();
         boolean remplacement = actuel == StatutUtilisation.QUITTANCE_DGI_ENREGISTREE;
-        if (actuel != StatutUtilisation.VALIDEE && !remplacement) {
-            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.STATUT_INCOMPATIBLE,
-                    "La quittance DGI suppose une utilisation validée. Statut actuel : " + actuel);
+        // La DGI délivre sa quittance sur présentation du certificat : il doit précéder, pas suivre.
+        if (actuel != StatutUtilisation.CERTIFICAT_EMIS && !remplacement) {
+            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.CERTIFICAT_UTILISATION_NON_EMIS,
+                    "La quittance DGI suppose le certificat d'utilisation émis par le Président. "
+                            + "Statut actuel : " + actuel);
         }
 
         if (numeroQuittance == null || numeroQuittance.isBlank()) {
@@ -1254,6 +1256,12 @@ public class UtilisationCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type Douane");
         }
 
+        // Le Trésor encaisse sur présentation du certificat : sans lui, l'envoi n'a pas d'objet.
+        if (entity.getStatut() != StatutUtilisation.CERTIFICAT_EMIS) {
+            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.CERTIFICAT_UTILISATION_NON_EMIS,
+                    "Le certificat d'utilisation doit être émis par le Président avant l'envoi au Trésor. "
+                            + "Statut actuel : " + entity.getStatut());
+        }
         workflow.validateTransition(entity.getStatut(), StatutUtilisation.ENVOYEE_AU_TRESOR);
         if (user == null || user.getRole() != Role.DGTCP) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seul DGTCP peut envoyer au Trésor");
@@ -1480,9 +1488,9 @@ public class UtilisationCreditService {
     /**
      * Étape Président : émission du certificat d'utilisation.
      *
-     * <p>Sépare le calcul financier de la DGTCP ({@code LIQUIDEE} en douane, {@code APUREE} en TVA)
-     * de l'acte d'émission, qui relève de la seule autorité du Président. Le numéro
-     * ({@code CU-nnn/AAAA}) est attribué ici, et une seule fois.
+     * <p>Acte réservé au Président, placé <b>avant</b> l'étape de paiement : le certificat est la
+     * pièce que l'entreprise présente au Trésor (douane) ou à la DGI (TVA intérieure) pour obtenir
+     * sa quittance. Le numéro ({@code CU-nnn/AAAA}) est attribué ici, et une seule fois.
      *
      * <p><b>Ne pas exiger ici la présence du document {@code CERTIFICAT_UTILISATION}.</b> Le
      * document doit porter le numéro, donc le numéro le précède nécessairement. Calquer le contrôle
@@ -1490,7 +1498,8 @@ public class UtilisationCreditService {
      * l'adoption) créerait ici une impasse circulaire. La séquence est : émission → composition du
      * document avec le numéro → dépôt de la pièce signée.
      *
-     * <p>Statut résultant : {@link StatutUtilisation#CERTIFICAT_EMIS}.
+     * <p>Statut résultant : {@link StatutUtilisation#CERTIFICAT_EMIS}, d'où le dossier repart vers
+     * {@code ENVOYEE_AU_TRESOR} en douane ou {@code QUITTANCE_DGI_ENREGISTREE} en TVA intérieure.
      */
     @Transactional
     public UtilisationCreditDto emettreCertificatUtilisation(Long id, AuthenticatedUser user) {
@@ -1594,11 +1603,17 @@ public class UtilisationCreditService {
         return null;
     }
 
-    /** Le calcul de la DGTCP dont l'émission dépend : liquidation en douane, apurement en TVA. */
+    /**
+      * L'étape dont l'émission dépend : le chèque saisi en douane, la validation en TVA intérieure.
+      *
+      * <p>Le certificat d'utilisation est la pièce que l'entreprise présente au Trésor ou à la DGI
+      * pour obtenir sa quittance : il doit donc exister <b>avant</b> cette présentation, et non
+      * après le calcul financier qui la suit.
+      */
     private static StatutUtilisation statutPrealableEmission(UtilisationCredit u) {
         return u.getType() == TypeUtilisation.DOUANIER
-                ? StatutUtilisation.LIQUIDEE
-                : StatutUtilisation.APUREE;
+                ? StatutUtilisation.CHEQUE_SAISI
+                : StatutUtilisation.VALIDEE;
     }
 
     /** Exception correspondant à un code de blocage : message et code restent solidaires. */
@@ -1656,17 +1671,14 @@ public class UtilisationCreditService {
      * sur les dossiers instruits ensuite.
      */
     private void assertCertificatEmisAvantCloture(UtilisationCredit u) {
-        if (u.getStatut() == StatutUtilisation.CERTIFICAT_EMIS) {
-            return;
+        if (u.getNumeroCertificatUtilisation() != null) {
+            return;                       // certificat émis : c'est le discriminant principal
         }
         if (Boolean.FALSE.equals(u.getEmissionCertificatRequise())) {
             return;                       // dossier historique, antérieur à l'étape d'émission
         }
         if (u.getOrigineArchiveLibelle() != null) {
             return;                       // reprise d'archive : jamais passée par le circuit
-        }
-        if (u.getNumeroCertificatUtilisation() != null) {
-            return;                       // déjà numéroté sous l'ancienne règle
         }
         throw ApiException.conflict(ApiErrorCode.CERTIFICAT_UTILISATION_NON_EMIS,
                 "Le certificat d'utilisation doit être émis par le Président avant la clôture");

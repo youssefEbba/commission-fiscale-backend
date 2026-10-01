@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,11 +31,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Le DGTCP calcule, le Président émet.
+ * Le Président émet le certificat d'utilisation, et il l'émet <b>avant</b> l'étape de paiement.
  *
- * <p>Vérifie la séparation introduite dans les deux branches : l'apurement TVA ne numérote plus, le
- * Président seul émet, l'émission est idempotente, la route de statut générique est fermée, et la
- * clôture est refusée tant que le certificat n'est pas émis — sauf pour les reprises d'archive.
+ * <p>Le certificat est la pièce que l'entreprise présente au Trésor (douane) ou à la DGI (TVA
+ * intérieure) pour obtenir sa quittance : il doit donc exister avant cette présentation. Ces tests
+ * verrouillent cet ordre, l'idempotence de l'émission, la fermeture de la route de statut générique,
+ * et le fait que le calcul financier de la DGTCP ne numérote plus rien.
+ *
+ * <p>Niveau service, et non HTTP : Tomcat ne démarre pas sur ce poste, ce qui rendrait tout test
+ * {@code RANDOM_PORT} inexploitable.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -53,6 +58,7 @@ class UtilisationCertificatPresidentIT {
 
     private AuthenticatedUser president;
     private AuthenticatedUser dgtcp;
+    private AuthenticatedUser dgi;
     private AuthenticatedUser entreprise;
     private AuthenticatedUser admin;
 
@@ -60,14 +66,17 @@ class UtilisationCertificatPresidentIT {
     void setUpUsers() {
         president = new AuthenticatedUser(1L, "president", Role.PRESIDENT);
         dgtcp = new AuthenticatedUser(2L, "dgtcp", Role.DGTCP);
+        dgi = new AuthenticatedUser(5L, "dgi", Role.DGI);
         entreprise = new AuthenticatedUser(3L, "entreprise", Role.ENTREPRISE);
         admin = new AuthenticatedUser(4L, "admin", Role.ADMIN_SI);
     }
 
+    // ── l'émission, et sa place dans le circuit ────────────────────────────────────────────────
+
     @Test
     @Transactional
-    void douaneLiquidee_presidentEmet_numeroAttribueEtStatutCertificatEmis() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.LIQUIDEE);
+    void douaneChequeSaisi_presidentEmet_numeroAttribueEtStatutCertificatEmis() {
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
 
         UtilisationCreditDto dto = service.emettreCertificatUtilisation(util.getId(), president);
 
@@ -78,8 +87,19 @@ class UtilisationCertificatPresidentIT {
 
     @Test
     @Transactional
-    void douaneLiquidee_dgtcpNePeutPasEmettre() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.LIQUIDEE);
+    void tvaValidee_presidentEmet_avantLaQuittanceDgi() {
+        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.VALIDEE);
+
+        UtilisationCreditDto dto = service.emettreCertificatUtilisation(util.getId(), president);
+
+        assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CERTIFICAT_EMIS);
+        assertThat(dto.getNumeroCertificatUtilisation()).matches("^CU-\\d{3}/\\d{4}$");
+    }
+
+    @Test
+    @Transactional
+    void seulLePresidentEmet() {
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
 
         assertThatThrownBy(() -> service.emettreCertificatUtilisation(util.getId(), dgtcp))
                 .isInstanceOf(ApiException.class)
@@ -89,13 +109,13 @@ class UtilisationCertificatPresidentIT {
                     assertThat(api.getCode()).isEqualTo(ApiErrorCode.ROLE_FORBIDDEN);
                 });
         assertThat(utilisationRepository.findById(util.getId()).orElseThrow().getStatut())
-                .isEqualTo(StatutUtilisation.LIQUIDEE);
+                .isEqualTo(StatutUtilisation.CHEQUE_SAISI);
     }
 
     @Test
     @Transactional
     void emissionIdempotente_secondAppelRendLeMemeNumero() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.LIQUIDEE);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
 
         String premier = service.emettreCertificatUtilisation(util.getId(), president)
                 .getNumeroCertificatUtilisation();
@@ -107,8 +127,9 @@ class UtilisationCertificatPresidentIT {
 
     @Test
     @Transactional
-    void calculNonFait_emissionRefuseeAvecStatutIncompatible() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+    void etapePrealableNonAtteinte_emissionRefusee() {
+        // Le bulletin est visé mais l'entreprise n'a pas encore remis son chèque.
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.VISE);
 
         assertThatThrownBy(() -> service.emettreCertificatUtilisation(util.getId(), president))
                 .isInstanceOf(ApiException.class)
@@ -119,7 +140,7 @@ class UtilisationCertificatPresidentIT {
     @Test
     @Transactional
     void routeStatutGenerique_refuseCertificatEmis() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.LIQUIDEE);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
 
         assertThatThrownBy(() ->
                 service.updateStatut(util.getId(), StatutUtilisation.CERTIFICAT_EMIS, president))
@@ -131,20 +152,92 @@ class UtilisationCertificatPresidentIT {
                 });
     }
 
+    // ── l'ordre imposé : le certificat précède le paiement ─────────────────────────────────────
+
     @Test
     @Transactional
-    void apurementTva_neNumerotePlus_puisLePresidentEmet() {
+    void envoiAuTresorRefuseTantQueLeCertificatNestPasEmis() {
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        util.setNumeroCheque("CHQ-001");
+        utilisationRepository.save(util);
+
+        assertThatThrownBy(() -> service.envoyerAuTresor(util.getId(), dgtcp))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> {
+                    ApiException api = (ApiException) e;
+                    assertThat(api.getStatus()).isEqualTo(409);
+                    assertThat(api.getCode()).isEqualTo(ApiErrorCode.CERTIFICAT_UTILISATION_NON_EMIS);
+                });
+    }
+
+    @Test
+    @Transactional
+    void certificatEmis_puisEnvoiAuTresorAccepte() {
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        util.setNumeroCheque("CHQ-002");
+        utilisationRepository.save(util);
+
+        service.emettreCertificatUtilisation(util.getId(), president);
+        UtilisationCreditDto dto = service.envoyerAuTresor(util.getId(), dgtcp);
+
+        assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.ENVOYEE_AU_TRESOR);
+        assertThat(dto.getNumeroCertificatUtilisation()).isNotBlank();
+    }
+
+    @Test
+    @Transactional
+    void quittanceDgiRefuseeTantQueLeCertificatNestPasEmis() throws Exception {
+        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.VALIDEE);
+
+        assertThatThrownBy(() -> service.deposerQuittanceDgi(
+                util.getId(), "Q-001", Instant.now(), BigDecimal.valueOf(50), null, dgi))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getCode())
+                        .isEqualTo(ApiErrorCode.CERTIFICAT_UTILISATION_NON_EMIS));
+    }
+
+    @Test
+    @Transactional
+    void certificatEmis_puisQuittanceDgiAcceptee() throws Exception {
+        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.VALIDEE);
+        service.emettreCertificatUtilisation(util.getId(), president);
+
+        // Le justificatif est obligatoire au premier dépôt : c'est la pièce qui atteste le paiement.
+        MockMultipartFile justificatif = new MockMultipartFile(
+                "file", "quittance.pdf", "application/pdf", "quittance".getBytes());
+        UtilisationCreditDto dto = service.deposerQuittanceDgi(
+                util.getId(), "Q-002", Instant.now(), BigDecimal.valueOf(50), justificatif, dgi);
+
+        assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.QUITTANCE_DGI_ENREGISTREE);
+    }
+
+    // ── le calcul de la DGTCP ne numérote plus ─────────────────────────────────────────────────
+
+    @Test
+    @Transactional
+    void apurementTva_neNumerotePlus() {
         UtilisationTVAInterieure util = tvaAu(StatutUtilisation.QUITTANCE_DGI_ENREGISTREE);
 
         UtilisationCreditDto apure = service.apurerTVAInterieure(util.getId(), null, dgtcp);
+
         assertThat(apure.getStatut()).isEqualTo(StatutUtilisation.APUREE);
         // Le cœur du chantier : le calcul de la DGTCP ne produit plus le certificat.
         assertThat(apure.getNumeroCertificatUtilisation()).isNull();
-
-        UtilisationCreditDto emis = service.emettreCertificatUtilisation(util.getId(), president);
-        assertThat(emis.getStatut()).isEqualTo(StatutUtilisation.CERTIFICAT_EMIS);
-        assertThat(emis.getNumeroCertificatUtilisation()).matches("^CU-\\d{3}/\\d{4}$");
     }
+
+    @Test
+    @Transactional
+    void leCalculDgtcpMarqueLeDossierCommeSoumisALemission() {
+        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.QUITTANCE_DGI_ENREGISTREE);
+
+        service.apurerTVAInterieure(util.getId(), null, dgtcp);
+
+        // Sans ce marqueur, le rattrapage au démarrage dispenserait ce dossier à chaque redémarrage.
+        assertThat(utilisationRepository.findById(util.getId()).orElseThrow()
+                .getEmissionCertificatRequise()).isTrue();
+    }
+
+    // ── le verrou de clôture ───────────────────────────────────────────────────────────────────
 
     @Test
     @Transactional
@@ -162,6 +255,18 @@ class UtilisationCertificatPresidentIT {
 
     @Test
     @Transactional
+    void certificatEmis_clotureAcceptee() {
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.LIQUIDEE);
+        util.setNumeroCertificatUtilisation("CU-042/2026");
+        utilisationRepository.save(util);
+
+        UtilisationCreditDto dto = service.cloturerReceptionEntreprise(util.getId(), entreprise);
+
+        assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CLOTUREE);
+    }
+
+    @Test
+    @Transactional
     void repriseArchive_clotureAcceptee_sansEmission() {
         UtilisationDouaniere util = douaneAu(StatutUtilisation.LIQUIDEE);
         util.setOrigineArchiveLibelle("UT 1 | 1/01/2019");
@@ -174,20 +279,7 @@ class UtilisationCertificatPresidentIT {
 
     @Test
     @Transactional
-    void dossierDejaNumerote_clotureAcceptee_grandfathering() {
-        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.APUREE);
-        util.setNumeroCertificatUtilisation("CU-001/2024");
-        utilisationRepository.save(util);
-
-        UtilisationCreditDto dto = service.cloturerReceptionEntreprise(util.getId(), entreprise);
-
-        assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CLOTUREE);
-    }
-
-    @Test
-    @Transactional
     void dossierHistorique_clotureAcceptee_marqueurDeGrandfathering() {
-        // Ce que le rattrapage au démarrage pose sur les dossiers liquidés avant l'étape.
         UtilisationTVAInterieure util = tvaAu(StatutUtilisation.APUREE);
         util.setEmissionCertificatRequise(Boolean.FALSE);
         utilisationRepository.save(util);
@@ -197,22 +289,12 @@ class UtilisationCertificatPresidentIT {
         assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CLOTUREE);
     }
 
-    @Test
-    @Transactional
-    void leCalculDgtcpMarqueLeDossierCommeSoumisALemission() {
-        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.QUITTANCE_DGI_ENREGISTREE);
-
-        service.apurerTVAInterieure(util.getId(), null, dgtcp);
-
-        // Sans ce marqueur, le rattrapage au démarrage dispenserait ce dossier à chaque redémarrage.
-        assertThat(utilisationRepository.findById(util.getId()).orElseThrow()
-                .getEmissionCertificatRequise()).isTrue();
-    }
+    // ── substitution administrative ────────────────────────────────────────────────────────────
 
     @Test
     @Transactional
     void substitutionAdmin_motifObligatoire() throws Exception {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.LIQUIDEE);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
 
         assertThatThrownBy(() ->
                 service.adminEmettreCertificatUtilisation(util.getId(), "  ", null, admin))
@@ -229,7 +311,7 @@ class UtilisationCertificatPresidentIT {
     @Test
     @Transactional
     void substitutionAdmin_refuseeAuxAutresRoles() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.LIQUIDEE);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
 
         assertThatThrownBy(() ->
                 service.adminEmettreCertificatUtilisation(util.getId(), "motif", null, dgtcp))
@@ -237,17 +319,19 @@ class UtilisationCertificatPresidentIT {
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(403));
     }
 
+    // ── écran d'état ───────────────────────────────────────────────────────────────────────────
+
     @Test
     @Transactional
     void etatEmission_exposeLeMemeCodeQueLecriture() {
-        UtilisationDouaniere avant = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        UtilisationDouaniere avant = douaneAu(StatutUtilisation.VISE);
         CertificatUtilisationEmissionDto bloque = service.etatEmissionCertificat(avant.getId(), president);
         assertThat(bloque.isEmissible()).isFalse();
         assertThat(bloque.getCodeBlocage()).isEqualTo("STATUT_INCOMPATIBLE");
         assertThat(bloque.getMotifBlocage()).isNotBlank();
-        assertThat(bloque.getStatutPrealableAttendu()).isEqualTo(StatutUtilisation.LIQUIDEE);
+        assertThat(bloque.getStatutPrealableAttendu()).isEqualTo(StatutUtilisation.CHEQUE_SAISI);
 
-        UtilisationDouaniere prete = douaneAu(StatutUtilisation.LIQUIDEE);
+        UtilisationDouaniere prete = douaneAu(StatutUtilisation.CHEQUE_SAISI);
         CertificatUtilisationEmissionDto ok = service.etatEmissionCertificat(prete.getId(), president);
         assertThat(ok.isEmissible()).isTrue();
         assertThat(ok.getCodeBlocage()).isNull();
@@ -257,6 +341,17 @@ class UtilisationCertificatPresidentIT {
         CertificatUtilisationEmissionDto vuDgtcp = service.etatEmissionCertificat(prete.getId(), dgtcp);
         assertThat(vuDgtcp.isEmissible()).isFalse();
         assertThat(vuDgtcp.getCodeBlocage()).isEqualTo("ROLE_NON_HABILITE");
+    }
+
+    @Test
+    @Transactional
+    void etatEmission_tvaAttendLaValidation() {
+        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.EN_VERIFICATION);
+
+        CertificatUtilisationEmissionDto etat = service.etatEmissionCertificat(util.getId(), president);
+
+        assertThat(etat.isEmissible()).isFalse();
+        assertThat(etat.getStatutPrealableAttendu()).isEqualTo(StatutUtilisation.VALIDEE);
     }
 
     // ── fixtures ───────────────────────────────────────────────────────────────────────────────
