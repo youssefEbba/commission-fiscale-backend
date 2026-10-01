@@ -184,10 +184,15 @@ public class DocumentUtilisationCreditService {
         if (!TypeDocument.CERTIFICAT_UTILISATION.name().equals(codeDocument)) {
             return false;
         }
+        // Toute la portion du circuit postérieure à l'émission : un scan illisible peut n'être
+        // remarqué qu'au Trésor ou à la DGI, bien après que le Président a déposé sa pièce.
         StatutUtilisation st = utilisation.getStatut();
-        return st == StatutUtilisation.LIQUIDEE
-                || st == StatutUtilisation.APUREE
-                || st == StatutUtilisation.CERTIFICAT_EMIS;
+        return st == StatutUtilisation.CERTIFICAT_EMIS
+                || st == StatutUtilisation.ENVOYEE_AU_TRESOR
+                || st == StatutUtilisation.QUITTANCES_ENREGISTREES
+                || st == StatutUtilisation.QUITTANCE_DGI_ENREGISTREE
+                || st == StatutUtilisation.LIQUIDEE
+                || st == StatutUtilisation.APUREE;
     }
 
     private void assertReplacementAllowed(UtilisationCredit utilisation, String codeDocument, AuthenticatedUser user) {

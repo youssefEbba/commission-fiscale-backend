@@ -33,25 +33,30 @@ public class UtilisationCreditWorkflow {
             // CHEQUE_SAISI reste atteignable depuis EN_CONTROLE_DGD pour les dossiers antérieurs à
             // l'introduction de VISE ; le service exige alors qu'un visa DGD existe.
             Map.entry(EN_CONTROLE_DGD, EnumSet.of(EN_CONTROLE_DGD, VISE, INCOMPLETE, CHEQUE_SAISI, REJETEE, CLOTUREE)),
-            Map.entry(CHEQUE_SAISI, EnumSet.of(INCOMPLETE, ENVOYEE_AU_TRESOR, REJETEE, CLOTUREE)),
+            // Le chèque couvre la part A_PAYER ; le Président émet ensuite le certificat, qui est
+            // la pièce présentée au Trésor. L'envoi au Trésor n'est donc plus atteignable d'ici.
+            Map.entry(CHEQUE_SAISI, EnumSet.of(INCOMPLETE, CERTIFICAT_EMIS, REJETEE, CLOTUREE)),
             Map.entry(ENVOYEE_AU_TRESOR, EnumSet.of(QUITTANCES_ENREGISTREES, REJETEE, CLOTUREE)),
             Map.entry(QUITTANCES_ENREGISTREES, EnumSet.of(LIQUIDEE, REJETEE, CLOTUREE)),
-            // TVA intérieure : la quittance DGI s'intercale entre la validation et l'apurement.
-            // APUREE reste atteignable depuis VALIDEE pour les parcours douaniers ; le service TVA
-            // exige, lui, la quittance (code QUITTANCE_DGI_MANQUANTE).
-            Map.entry(VALIDEE, EnumSet.of(LIQUIDEE, APUREE, QUITTANCE_DGI_ENREGISTREE, REJETEE, CLOTUREE)),
+            // TVA intérieure : le certificat s'émet après la validation, et c'est lui que l'entreprise
+            // présente à la DGI pour obtenir la quittance. APUREE et LIQUIDEE restent atteignables
+            // depuis VALIDEE pour les parcours antérieurs ; les services exigent, eux, la quittance.
+            Map.entry(VALIDEE, EnumSet.of(CERTIFICAT_EMIS, LIQUIDEE, APUREE, REJETEE, CLOTUREE)),
             // Auto-transition autorisée : un dépôt de quittance peut en remplacer un précédent.
             Map.entry(QUITTANCE_DGI_ENREGISTREE,
                     EnumSet.of(QUITTANCE_DGI_ENREGISTREE, APUREE, REJETEE, CLOTUREE)),
-            // Le calcul financier de la DGTCP est acquis ; le certificat reste à émettre par le
-            // Président. CLOTUREE demeure atteignable en direct : les utilisations reprises
-            // d'archive naissent en APUREE sans numéro CU- et n'ont jamais traversé ce circuit.
-            // Le verrou métier vit dans le service (assertCertificatEmisAvantCloture), où il peut
-            // exempter ces dossiers ; ce graphe, lui, reste purement structurel.
-            Map.entry(LIQUIDEE, EnumSet.of(CERTIFICAT_EMIS, CLOTUREE)),
-            Map.entry(APUREE, EnumSet.of(CERTIFICAT_EMIS, CLOTUREE)),
-            // L'entreprise accuse réception du certificat émis par le Président.
-            Map.entry(CERTIFICAT_EMIS, EnumSet.of(CLOTUREE)),
+            // Le certificat émis est la pièce qui ouvre l'étape de paiement : au Trésor en douane,
+            // à la DGI en TVA intérieure. Une seule valeur de statut pour les deux branches, que le
+            // service oriente ensuite selon le type.
+            Map.entry(CERTIFICAT_EMIS,
+                    EnumSet.of(ENVOYEE_AU_TRESOR, QUITTANCE_DGI_ENREGISTREE, INCOMPLETE, REJETEE, CLOTUREE)),
+            // Le calcul financier de la DGTCP clôt l'instruction ; l'entreprise accuse réception.
+            // CLOTUREE demeure atteignable en direct : les utilisations reprises d'archive naissent
+            // en APUREE sans numéro CU- et n'ont jamais traversé ce circuit. Le verrou métier vit
+            // dans le service (assertCertificatEmisAvantCloture), où il peut exempter ces dossiers ;
+            // ce graphe, lui, reste purement structurel.
+            Map.entry(LIQUIDEE, EnumSet.of(CLOTUREE)),
+            Map.entry(APUREE, EnumSet.of(CLOTUREE)),
             Map.entry(REJETEE, EnumSet.noneOf(StatutUtilisation.class)),
             Map.entry(CLOTUREE, EnumSet.noneOf(StatutUtilisation.class))
     );

@@ -127,13 +127,15 @@ public class CertificatCreditService {
      * Tous les critères sont optionnels et combinés en ET. Les critères texte sont insensibles à la casse (contient).
      */
     @Transactional(readOnly = true)
-    public PageResponse<CertificatCreditDto> search(String nif, String numeroMarche, String conventionRef,
+    public PageResponse<CertificatCreditDto> search(String nif, String entreprise, String numeroMarche,
+                                                    String conventionRef,
                                                     String projet, Long autoriteContractanteId,
                                                     StatutCertificat statut, Instant from, Instant to,
                                                     int page, int size, AuthenticatedUser user) {
         List<CertificatCredit> scoped = resolveCertificatList(user, null);
         List<CertificatCreditDto> filtered = scoped.stream()
                 .filter(c -> matchesText(nif, c.getEntreprise() != null ? c.getEntreprise().getNif() : null))
+                .filter(c -> matchesEntreprise(entreprise, c))
                 .filter(c -> matchesText(numeroMarche, marcheNumero(c)))
                 .filter(c -> matchesText(conventionRef, conventionReference(c)))
                 .filter(c -> matchesText(projet, conventionProjet(c)))
@@ -144,6 +146,24 @@ public class CertificatCreditService {
                 .map(this::toDto)
                 .collect(Collectors.toList());
         return PageResponse.of(filtered, page, size);
+    }
+
+    /**
+     * Critère « entreprise » : raison sociale <b>ou</b> NIF, insensible à la casse, en « contient ».
+     *
+     * <p>Chercher par NIF suppose de le connaître ; en pratique on cherche par nom. Les deux champs
+     * sont donc interrogés par le même critère, plutôt que d'imposer à l'utilisateur de savoir
+     * lequel il détient.
+     */
+    private boolean matchesEntreprise(String critere, CertificatCredit c) {
+        if (critere == null || critere.isBlank()) {
+            return true;
+        }
+        Entreprise e = c.getEntreprise();
+        if (e == null) {
+            return false;
+        }
+        return matchesText(critere, e.getRaisonSociale()) || matchesText(critere, e.getNif());
     }
 
     /**
