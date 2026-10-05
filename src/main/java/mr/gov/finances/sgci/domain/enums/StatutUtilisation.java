@@ -12,6 +12,13 @@ public enum StatutUtilisation {
     EN_CONTROLE_DGD,
     /** Entreprise a fourni le chèque certifié (banque, N°, montant). */
     CHEQUE_SAISI,
+    /**
+     * La DGTCP a contrôlé le dossier — chèque et bulletin visé — et l'a transmis au Président.
+     *
+     * <p>Nommé comme {@link #ENVOYEE_AU_TRESOR}, son jumeau structurel : un statut est lu par celui
+     * qui doit agir ensuite, et celui-ci dit au Président que la main est à lui.
+     */
+    TRANSMISE_AU_PRESIDENT,
     /** DGTCP a validé le chèque et envoyé la demande au Trésor. */
     ENVOYEE_AU_TRESOR,
     /** DGTCP a saisi les quittances Trésor — débit financier imminent. */
@@ -28,9 +35,9 @@ public enum StatutUtilisation {
     /**
      * Le Président a émis le certificat d'utilisation (numérotation {@code CU-nnn/AAAA}).
      *
-     * <p>Étape strictement présidentielle, postérieure au calcul financier de la DGTCP
-     * ({@link #LIQUIDEE} en douane, {@link #APUREE} en TVA intérieure) : celui qui calcule
-     * n'est pas celui qui émet.
+     * <p>Acte strictement présidentiel, placé avant l'étape de paiement : le certificat est la
+     * pièce présentée au Trésor en douane, à la DGI en TVA intérieure. Il suit
+     * {@link #TRANSMISE_AU_PRESIDENT} en douane, {@link #VALIDEE} en TVA intérieure.
      */
     CERTIFICAT_EMIS,
     REJETEE,

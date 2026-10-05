@@ -40,6 +40,8 @@ public enum TypeDocument {
     BULLETIN_ANNOTE,
     CHEQUE_CERTIFIE,
     QUITTANCE_TRESOR,
+    /** Quittance de la DGI attestant le paiement de la TVA intérieure. */
+    QUITTANCE_DGI,
     DECLARATION_DOUANE,
     FACTURE,
     CONNAISSEMENT,

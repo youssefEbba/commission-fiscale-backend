@@ -57,6 +57,7 @@ public class WorkflowNotificationDispatcher {
             case CERTIFICAT_REJET_TEMP_RESOLU -> NotificationType.REJET_TEMP_RESOLU;
 
             case UTIL_DOUANE_SOUMISE, UTIL_DOUANE_STATUT_CHANGE, UTIL_DOUANE_VISA_DGD, UTIL_DOUANE_CHEQUE,
+                 UTIL_DOUANE_TRANSMISE_PRESIDENT,
                  UTIL_DOUANE_TRESOR, UTIL_DOUANE_QUITTANCES, UTIL_DOUANE_LIQUIDEE,
                  UTIL_DOUANE_CERTIFICAT_EMIS, UTIL_DOUANE_CLOTUREE,
                  UTIL_DOUANE_REJET_DEFINITIF -> NotificationType.UTILISATION_STATUT_CHANGE;
@@ -110,6 +111,8 @@ public class WorkflowNotificationDispatcher {
             case UTIL_DOUANE_STATUT_CHANGE, UTIL_DOUANE_VISA_DGD, UTIL_DOUANE_CHEQUE, UTIL_DOUANE_TRESOR,
                  UTIL_DOUANE_QUITTANCES, UTIL_DOUANE_LIQUIDEE, UTIL_DOUANE_CLOTUREE ->
                     "Utilisation douane " + dossier + " — statut : " + label(ctx.getNewStatus());
+            case UTIL_DOUANE_TRANSMISE_PRESIDENT ->
+                    "Dossier transmis au Président par la DGTCP — utilisation douane " + dossier;
             case UTIL_DOUANE_CERTIFICAT_EMIS ->
                     "Certificat d'utilisation émis — utilisation douane " + dossier;
             case UTIL_DOUANE_REJET_TEMP -> "Rejet temporaire — utilisation douane " + dossier;

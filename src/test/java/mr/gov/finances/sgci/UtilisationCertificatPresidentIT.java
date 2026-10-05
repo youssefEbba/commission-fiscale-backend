@@ -76,7 +76,7 @@ class UtilisationCertificatPresidentIT {
     @Test
     @Transactional
     void douaneChequeSaisi_presidentEmet_numeroAttribueEtStatutCertificatEmis() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
 
         UtilisationCreditDto dto = service.emettreCertificatUtilisation(util.getId(), president);
 
@@ -99,7 +99,7 @@ class UtilisationCertificatPresidentIT {
     @Test
     @Transactional
     void seulLePresidentEmet() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
 
         assertThatThrownBy(() -> service.emettreCertificatUtilisation(util.getId(), dgtcp))
                 .isInstanceOf(ApiException.class)
@@ -109,13 +109,13 @@ class UtilisationCertificatPresidentIT {
                     assertThat(api.getCode()).isEqualTo(ApiErrorCode.ROLE_FORBIDDEN);
                 });
         assertThat(utilisationRepository.findById(util.getId()).orElseThrow().getStatut())
-                .isEqualTo(StatutUtilisation.CHEQUE_SAISI);
+                .isEqualTo(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
     }
 
     @Test
     @Transactional
     void emissionIdempotente_secondAppelRendLeMemeNumero() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
 
         String premier = service.emettreCertificatUtilisation(util.getId(), president)
                 .getNumeroCertificatUtilisation();
@@ -140,7 +140,7 @@ class UtilisationCertificatPresidentIT {
     @Test
     @Transactional
     void routeStatutGenerique_refuseCertificatEmis() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
 
         assertThatThrownBy(() ->
                 service.updateStatut(util.getId(), StatutUtilisation.CERTIFICAT_EMIS, president))
@@ -157,7 +157,7 @@ class UtilisationCertificatPresidentIT {
     @Test
     @Transactional
     void envoiAuTresorRefuseTantQueLeCertificatNestPasEmis() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
         util.setNumeroCheque("CHQ-001");
         utilisationRepository.save(util);
 
@@ -173,7 +173,7 @@ class UtilisationCertificatPresidentIT {
     @Test
     @Transactional
     void certificatEmis_puisEnvoiAuTresorAccepte() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
         util.setNumeroCheque("CHQ-002");
         utilisationRepository.save(util);
 
@@ -294,7 +294,7 @@ class UtilisationCertificatPresidentIT {
     @Test
     @Transactional
     void substitutionAdmin_motifObligatoire() throws Exception {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
 
         assertThatThrownBy(() ->
                 service.adminEmettreCertificatUtilisation(util.getId(), "  ", null, admin))
@@ -311,7 +311,7 @@ class UtilisationCertificatPresidentIT {
     @Test
     @Transactional
     void substitutionAdmin_refuseeAuxAutresRoles() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
 
         assertThatThrownBy(() ->
                 service.adminEmettreCertificatUtilisation(util.getId(), "motif", null, dgtcp))
@@ -329,9 +329,9 @@ class UtilisationCertificatPresidentIT {
         assertThat(bloque.isEmissible()).isFalse();
         assertThat(bloque.getCodeBlocage()).isEqualTo("STATUT_INCOMPATIBLE");
         assertThat(bloque.getMotifBlocage()).isNotBlank();
-        assertThat(bloque.getStatutPrealableAttendu()).isEqualTo(StatutUtilisation.CHEQUE_SAISI);
+        assertThat(bloque.getStatutPrealableAttendu()).isEqualTo(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
 
-        UtilisationDouaniere prete = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        UtilisationDouaniere prete = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
         CertificatUtilisationEmissionDto ok = service.etatEmissionCertificat(prete.getId(), president);
         assertThat(ok.isEmissible()).isTrue();
         assertThat(ok.getCodeBlocage()).isNull();

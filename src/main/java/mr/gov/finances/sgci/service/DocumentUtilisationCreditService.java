@@ -4,6 +4,7 @@ import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.domain.document.DocumentVisibilitePolicy;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
@@ -12,6 +13,7 @@ import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.ModeApposition;
+import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
@@ -202,19 +204,25 @@ public class DocumentUtilisationCreditService {
         if (user == null || user.getRole() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
-        if (user.getRole() != Role.ENTREPRISE) {
-            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Remplacement interdit: réservé à l'Entreprise");
+        // Le sous-traitant dépose et soumet, et la commission relais agit pour l'entreprise :
+        // les exclure du remplacement était une incohérence, pas une règle.
+        if (user.getRole() != Role.ENTREPRISE
+                && user.getRole() != Role.SOUS_TRAITANT
+                && user.getRole() != Role.COMMISSION_RELAIS) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Remplacement interdit: réservé au déposant");
         }
         if (utilisation.getStatut() != StatutUtilisation.INCOMPLETE) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Remplacement interdit: l'utilisation n'est pas en statut INCOMPLETE");
         }
-        boolean asked = decisionRepository.findByUtilisationCreditId(utilisation.getId()).stream()
+        // Tant qu'un rejet est ouvert, toute pièce est corrigeable. Restreindre aux seuls codes
+        // demandés empêchait l'entreprise de corriger une erreur qu'elle est seule à avoir vue.
+        boolean rejetOuvert = decisionRepository.findByUtilisationCreditId(utilisation.getId()).stream()
                 .anyMatch(d -> d.getDecision() == DecisionCorrectionType.REJET_TEMP
-                        && d.getRejetTempStatus() == RejetTempStatus.OUVERT
-                        && d.getDocumentsDemandes() != null
-                        && d.getDocumentsDemandes().contains(codeDocument));
-        if (!asked) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Remplacement interdit: aucun acteur n'a demandé ce document");
+                        && d.getRejetTempStatus() == RejetTempStatus.OUVERT);
+        if (!rejetOuvert) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Remplacement interdit: aucun rejet temporaire n'est ouvert");
         }
     }
 
@@ -234,9 +242,21 @@ public class DocumentUtilisationCreditService {
         return ProcessusDocument.UTILISATION_CI;
     }
 
+    /**
+     * Les documents d'un dossier, filtrés selon ce que l'appelant a le droit de voir.
+     *
+     * <p>La signature exige l'acteur à dessein : la version précédente n'en prenait pas, et c'est
+     * exactement ce qui rendait le masquage impossible à poser ici.
+     */
     @Transactional(readOnly = true)
-    public List<DocumentUtilisationCreditDto> findByUtilisationCreditId(Long utilisationCreditId) {
+    public List<DocumentUtilisationCreditDto> findByUtilisationCreditId(Long utilisationCreditId,
+                                                                        AuthenticatedUser user) {
+        StatutUtilisation statut = utilisationRepository.findById(utilisationCreditId)
+                .map(UtilisationCredit::getStatut)
+                .orElse(null);
+        Role role = user != null ? user.getRole() : null;
         return repository.findByUtilisationCreditId(utilisationCreditId).stream()
+                .filter(d -> DocumentVisibilitePolicy.visiblePour(d.getCodeDocument(), statut, role))
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }

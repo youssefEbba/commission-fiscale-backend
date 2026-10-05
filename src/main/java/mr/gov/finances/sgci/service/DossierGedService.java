@@ -8,6 +8,7 @@ import mr.gov.finances.sgci.domain.entity.*;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.*;
+import mr.gov.finances.sgci.domain.document.DocumentVisibilitePolicy;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.DocumentDto;
@@ -122,7 +123,7 @@ public class DossierGedService {
         List<DossierGed> list = resolveDossierList(user);
         return list.stream()
                 .sorted(Comparator.comparing(DossierGed::getDateCreation, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
-                .map(this::toDto)
+                .map(d -> toDto(d, user != null ? user.getRole() : null))
                 .collect(Collectors.toList());
     }
 
@@ -133,7 +134,7 @@ public class DossierGedService {
         if (!canAccessDossier(dossier, user)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: dossier hors périmètre");
         }
-        return toDto(dossier);
+        return toDto(dossier, user != null ? user.getRole() : null);
     }
 
     private List<DossierGed> resolveDossierList(AuthenticatedUser user) {
@@ -189,12 +190,12 @@ public class DossierGedService {
         return resolveDossierList(user).stream().anyMatch(d -> d.getId().equals(dossier.getId()));
     }
 
-    private DossierGedDto toDto(DossierGed dossier) {
+    private DossierGedDto toDto(DossierGed dossier, Role role) {
         Long entrepriseId = dossier.getEntreprise() != null ? dossier.getEntreprise().getId() : null;
         Long demandeCorrectionId = dossier.getDemandeCorrection() != null ? dossier.getDemandeCorrection().getId() : null;
         Long certificatId = dossier.getCertificatCredit() != null ? dossier.getCertificatCredit().getId() : null;
 
-        List<DossierEtapeGed> etapes = buildEtapes(dossier);
+        List<DossierEtapeGed> etapes = buildEtapes(dossier, role);
 
         return DossierGedDto.builder()
                 .id(dossier.getId())
@@ -207,7 +208,7 @@ public class DossierGedService {
                 .build();
     }
 
-    private List<DossierEtapeGed> buildEtapes(DossierGed dossier) {
+    private List<DossierEtapeGed> buildEtapes(DossierGed dossier, Role role) {
         List<DossierEtapeGed> etapes = new ArrayList<>();
 
         List<DocumentDto> correctionDocs = documentsCorrection(dossier);
@@ -230,8 +231,8 @@ public class DossierGedService {
                 mergeByDateDesc(documentsConvention(dossier), documentsReferentielProjets(dossier))));
         etapes.add(step("EMISSION_CERTIFICAT", "Émission du certificat de crédit", documentsCertificat(dossier)));
 
-        etapes.add(step("UTILISATION_DOUANE", "Utilisation du crédit – Douane", documentsUtilisation(dossier, TypeUtilisation.DOUANIER)));
-        etapes.add(step("UTILISATION_TVA", "Utilisation du crédit – TVA", documentsUtilisation(dossier, TypeUtilisation.TVA_INTERIEURE)));
+        etapes.add(step("UTILISATION_DOUANE", "Utilisation du crédit – Douane", documentsUtilisation(dossier, TypeUtilisation.DOUANIER, role)));
+        etapes.add(step("UTILISATION_TVA", "Utilisation du crédit – TVA", documentsUtilisation(dossier, TypeUtilisation.TVA_INTERIEURE, role)));
 
         etapes.add(step("MODIFICATION_AVENANT", "Modification / Avenant / Note", documentsAvenants(dossier)));
 
@@ -293,7 +294,7 @@ public class DossierGedService {
                 .collect(Collectors.toList());
     }
 
-    private List<DocumentDto> documentsUtilisation(DossierGed dossier, TypeUtilisation type) {
+    private List<DocumentDto> documentsUtilisation(DossierGed dossier, TypeUtilisation type, Role role) {
         if (dossier == null || dossier.getCertificatCredit() == null || dossier.getCertificatCredit().getId() == null) {
             return List.of();
         }
@@ -310,6 +311,7 @@ public class DossierGedService {
             }
             documentUtilisationCreditRepository.findByUtilisationCreditId(u.getId())
                     .stream()
+                    .filter(d -> DocumentVisibilitePolicy.visiblePour(d.getCodeDocument(), u.getStatut(), role))
                     .map(this::toDocumentDto)
                     .forEach(docs::add);
         }
