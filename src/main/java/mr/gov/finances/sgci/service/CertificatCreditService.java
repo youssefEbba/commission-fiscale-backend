@@ -1088,10 +1088,6 @@ public class CertificatCreditService {
         }
     }
 
-    /**
-     * Si le récapitulatif (lignes b, d, g) et les montants agrégés sont renseignés, vérifie
-     * {@code montantCordon ≈ b + d} (crédit extérieur) et {@code montantTVAInterieure ≈ g − d} (crédit intérieur net).
-     */
     /** (d) utilisé pour les formules récap : accord figé, sinon anciennes lignes sans colonne accordee. */
     private static BigDecimal resolveTvaImportationDouanePourRecap(CertificatCredit c) {
         if (c == null) {
@@ -1103,6 +1099,24 @@ public class CertificatCreditService {
         return c.getTvaImportationDouane();
     }
 
+    /**
+     * Vérifie que le récapitulatif fiscal et les enveloppes agrégées disent la même chose.
+     *
+     * <p>Deux égalités : le crédit extérieur {@code montantCordon = b + c + d} — droits et taxes de
+     * douane hors TVA, taxes de consommation, TVA à l'import — et le crédit intérieur net
+     * {@code montantTVAInterieure = g − d}. Les taxes de consommation sont une <em>part</em> du
+     * crédit extérieur, au même titre que les droits : un crédit de 200 peut se ventiler en 100 de
+     * droits, 50 de TVA douane et 50 de taxes de consommation, et c'est cette ventilation qui doit
+     * tomber juste avant que le DGTCP n'ouvre le certificat.
+     *
+     * <p>Une ligne laissée vide est une incohérence, pas une dispense : la version précédente ne
+     * contrôlait rien tant que {@code b} ou {@code d} était nul, et la base en porte la trace — des
+     * certificats ouverts dont le crédit extérieur n'est ventilé nulle part. Seules les taxes de
+     * consommation admettent l'absence, lue comme zéro : la plupart des marchés n'en comportent pas.
+     *
+     * <p>La tolérance de {@link #RECAP_TOLERANCE_MRU} absorbe les arrondis de saisie, pas un écart
+     * de ventilation.
+     */
     private void assertRecapitulatifCoherence(CertificatCredit c) {
         if (c == null) {
             return;
@@ -1113,12 +1127,24 @@ public class CertificatCreditService {
         BigDecimal g = c.getTvaCollecteeTravaux();
         BigDecimal mc = c.getMontantCordon();
         BigDecimal mt = c.getMontantTVAInterieure();
-        if (b != null && d != null && mc != null) {
-            BigDecimal e = b.add(d).add(nz(cons));
+        if (mc != null && mc.signum() > 0) {
+            if (b == null || d == null) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Récapitulatif incomplet : le crédit extérieur (" + mc + ") doit être ventilé en "
+                                + "droits et taxes de douane hors TVA (b), taxes de consommation (c) et TVA à "
+                                + "l'import (d) — "
+                                + (b == null ? "les droits et taxes de douane ne sont pas renseignés"
+                                             : "la TVA à l'import n'est pas renseignée")
+                                + ". Saisir zéro si la ligne est sans objet.");
+            }
+            BigDecimal e = b.add(nz(cons)).add(d);
             if (!approxEqual(e, mc)) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                        "Récapitulatif incohérent : montantCordon doit correspondre au crédit extérieur (b + c + d) = "
-                                + e.setScale(2, RoundingMode.HALF_UP) + " (montantCordon=" + mc + ")");
+                        "Récapitulatif incohérent : le crédit extérieur (" + mc + ") doit égaler la somme "
+                                + "des droits et taxes de douane (" + b + "), des taxes de consommation ("
+                                + nz(cons) + ") et de la TVA à l'import (" + d + ") = "
+                                + e.setScale(2, RoundingMode.HALF_UP) + ". Écart de "
+                                + mc.subtract(e).abs().setScale(2, RoundingMode.HALF_UP) + ".");
             }
         }
         // La TVA nette (g - d) ne concerne que les dossiers comportant un crédit intérieur.

@@ -80,7 +80,6 @@ public class DataInitializer implements CommandLineRunner {
     private final DossierGedService dossierGedService;
     private final ReferentielTypeDocumentService referentielTypeDocumentService;
     private final DocumentRequirementLegacyMigration documentRequirementLegacyMigration;
-    private final NotificationSchemaMigration notificationSchemaMigration;
     private final EntrepriseLegacyGroupementMigration entrepriseLegacyGroupementMigration;
     private final ReferenceBackfillMigration referenceBackfillMigration;
     private final Environment environment;
@@ -103,7 +102,6 @@ public class DataInitializer implements CommandLineRunner {
         seedRolePermissions();
         referentielTypeDocumentService.seedMissingFromEnum();
         documentRequirementLegacyMigration.migrateIfNeeded();
-        notificationSchemaMigration.migrateIfNeeded();
         // Avant tout seed / création d'entreprise : retire les colonnes NOT NULL obsolètes.
         entrepriseLegacyGroupementMigration.migrateIfNeeded();
         seedDocumentRequirements();
@@ -695,7 +693,8 @@ public class DataInitializer implements CommandLineRunner {
 
         /*
          * Récapitulatif fiscal complet (lignes a–g) aligné sur docs/CERTIFICAT_RECAP_REFERENTIEL_METIER.md :
-         * e = b + d (crédit extérieur), h = g − d (crédit intérieur), total e + h = 4_242_105.
+         * e = b + c + d (crédit extérieur, ici sans taxes de consommation), h = g − d (crédit intérieur),
+         * total e + h = 4_242_105.
          */
         BigDecimal valeurDouaneFournitures = BigDecimal.valueOf(9_746_681L);     // (a)
         BigDecimal droitsEtTaxesDouaneHorsTva = BigDecimal.valueOf(2_241_737L);  // (b)
