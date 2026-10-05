@@ -40,7 +40,7 @@ public class CertificatCreditDto {
     private BigDecimal montantMarcheHt;
     private BigDecimal tvaCollecteeTravaux;
 
-    /** Dérivé si (b) et (d) sont renseignés : crédit extérieur e = b + d (cohérent avec montantCordon). */
+    /** Dérivé si (b) et (d) sont renseignés : crédit extérieur e = b + c + d (cohérent avec montantCordon). */
     private BigDecimal creditExterieurRecap;
 
     /** Dérivé si (g) et (d) sont renseignés : TVA nette intérieure h = g − d (cohérent avec montantTVAInterieure). */

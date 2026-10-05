@@ -48,7 +48,10 @@ public class CertificatCredit {
     private Instant dateMiseEnPlace;
 
     /**
-     * Enveloppe « crédit cordon / extérieur » (récap. fiscal : ligne e = b + d, imputations douane).
+     * Enveloppe « crédit cordon / extérieur » (récap. fiscal : ligne e = b + c + d, imputations douane).
+     *
+     * <p>La ventilation est exigée exacte avant l'ouverture du crédit : droits et taxes de douane
+     * hors TVA (b), taxes de consommation (c) et TVA à l'import (d) doivent en restituer le total.
      */
     @Column(precision = 19, scale = 4)
     private BigDecimal montantCordon;
