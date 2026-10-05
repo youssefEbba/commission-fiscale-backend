@@ -80,7 +80,6 @@ public class DataInitializer implements CommandLineRunner {
     private final DossierGedService dossierGedService;
     private final ReferentielTypeDocumentService referentielTypeDocumentService;
     private final DocumentRequirementLegacyMigration documentRequirementLegacyMigration;
-    private final NotificationSchemaMigration notificationSchemaMigration;
     private final EntrepriseLegacyGroupementMigration entrepriseLegacyGroupementMigration;
     private final ReferenceBackfillMigration referenceBackfillMigration;
     private final Environment environment;
@@ -103,7 +102,6 @@ public class DataInitializer implements CommandLineRunner {
         seedRolePermissions();
         referentielTypeDocumentService.seedMissingFromEnum();
         documentRequirementLegacyMigration.migrateIfNeeded();
-        notificationSchemaMigration.migrateIfNeeded();
         // Avant tout seed / création d'entreprise : retire les colonnes NOT NULL obsolètes.
         entrepriseLegacyGroupementMigration.migrateIfNeeded();
         seedDocumentRequirements();

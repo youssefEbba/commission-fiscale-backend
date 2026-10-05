@@ -132,13 +132,13 @@ public class GlobalExceptionHandler {
         if (mapped != null) {
             return mapped;
         }
-        log.warn("Rollback transactionnel sans cause métier explicite", ex);
-        String root = rootCauseMessage(ex);
+        log.warn("Rollback transactionnel sans cause métier explicite — cause racine : {}",
+                rootCauseMessage(ex), ex);
         return body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(),
                 ApiErrorCode.BUSINESS_RULE_VIOLATION,
                 "Opération annulée (incohérence transactionnelle). Vérifiez les données ou réessayez.",
-                root));
+                null));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
@@ -170,14 +170,17 @@ public class GlobalExceptionHandler {
                 return body(ErrorResponse.of(api.getStatus(), api.getCode(), api.getMessage(), api.getDetails()));
             }
             if (cause instanceof DataIntegrityViolationException dive) {
-                String msg = dive.getMostSpecificCause() != null
-                        ? dive.getMostSpecificCause().getMessage()
-                        : dive.getMessage();
+                // Le message du driver nomme la table, la colonne et parfois la requête entière :
+                // il appartient au journal, pas à la réponse HTTP.
+                log.warn("Violation de contrainte base de données : {}",
+                        dive.getMostSpecificCause() != null
+                                ? dive.getMostSpecificCause().getMessage()
+                                : dive.getMessage());
                 return body(ErrorResponse.of(
                         HttpStatus.CONFLICT.value(),
                         ApiErrorCode.CONFLICT,
                         "Conflit de données (référence ou contrainte unique).",
-                        msg));
+                        null));
             }
             cause = cause.getCause();
         }
@@ -193,11 +196,43 @@ public class GlobalExceptionHandler {
         if (ex instanceof UnexpectedRollbackException ur) {
             return handleUnexpectedRollback(ur);
         }
+        // Ce chemin renvoie le message de l'exception, parce qu'il porte les erreurs métier
+        // historiques, écrites pour l'utilisateur. Une panne technique n'en est pas une : son
+        // message est celui du driver ou d'Hibernate, et contient la requête SQL complète.
+        if (estDOrigineTechnique(ex)) {
+            log.error("Panne technique remontée à l'API", ex);
+            return body(ErrorResponse.of(
+                    HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                    ApiErrorCode.INTERNAL_ERROR,
+                    "Opération impossible : incident technique. L'administrateur a été notifié "
+                            + "par le journal du serveur.",
+                    null));
+        }
         return body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(),
                 ApiErrorCode.BUSINESS_RULE_VIOLATION,
                 ex.getMessage() != null ? ex.getMessage() : ApiErrorCode.BUSINESS_RULE_VIOLATION,
                 null));
+    }
+
+    /**
+     * Vrai si l'exception vient de la couche de persistance plutôt que d'une règle métier.
+     *
+     * <p>Reconnaître la panne à son origine, et non à son message, évite d'avoir à deviner
+     * quelles formules un driver peut produire : {@code SQLException}, les exceptions
+     * {@code org.hibernate.*} et les {@code DataAccessException} de Spring sont techniques par
+     * construction.
+     */
+    static boolean estDOrigineTechnique(Throwable ex) {
+        for (Throwable cause = ex; cause != null && cause != cause.getCause(); cause = cause.getCause()) {
+            if (cause instanceof java.sql.SQLException
+                    || cause instanceof org.springframework.dao.DataAccessException
+                    || cause.getClass().getName().startsWith("org.hibernate.")
+                    || cause.getClass().getName().startsWith("jakarta.persistence.")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
