@@ -191,6 +191,20 @@ public class DataInitializer implements CommandLineRunner {
         seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "CERTIFICAT_UTILISATION", false,
                 EnumSet.of(TypeFichierAutorise.PDF, TypeFichierAutorise.IMAGE),
                 "Certificat d'utilisation signé et cacheté par le Président", 8);
+        // Les pièces produites par l'administration. Elles étaient écrites directement en base par
+        // UtilisationCreditService, donc absentes du référentiel : impossibles à déposer par la
+        // route normale, et impossibles à réclamer dans un rejet temporaire. Même raison que
+        // ci-dessus pour obligatoire = false — elles n'existent qu'en cours ou en fin de circuit,
+        // alors que le contrôle de complétude s'exerce à l'entrée.
+        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "BULLETIN_ANNOTE", false,
+                EnumSet.of(TypeFichierAutorise.PDF, TypeFichierAutorise.IMAGE),
+                "Bulletin de liquidation annoté par la DGD", 9);
+        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "CHEQUE_CERTIFIE", false,
+                EnumSet.of(TypeFichierAutorise.PDF, TypeFichierAutorise.IMAGE),
+                "Chèque certifié couvrant la part à payer", 10);
+        seedDocReq(ProcessusDocument.UTILISATION_CI_DOUANE, "QUITTANCE_TRESOR", false,
+                EnumSet.of(TypeFichierAutorise.PDF, TypeFichierAutorise.IMAGE),
+                "Quittance du Trésor", 11);
 
         seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, "FACTURE", false,
                 all, "Facture fournisseur", 1);
@@ -201,6 +215,9 @@ public class DataInitializer implements CommandLineRunner {
         seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, "CERTIFICAT_UTILISATION", false,
                 EnumSet.of(TypeFichierAutorise.PDF, TypeFichierAutorise.IMAGE),
                 "Certificat d'utilisation signé et cacheté par le Président", 4);
+        seedDocReq(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, "QUITTANCE_DGI", false,
+                EnumSet.of(TypeFichierAutorise.PDF, TypeFichierAutorise.IMAGE),
+                "Quittance de la DGI attestant le paiement", 5);
 
         seedDocReq(ProcessusDocument.MODIFICATION_CI, "NOTE_SERVICE", false,
                 all, "Note de service", 1);
@@ -1324,6 +1341,8 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("utilisation.douane.dgtcp.solde.update", "Mettre à jour le solde Douane");
         createPermission("utilisation.douane.entreprise.cheque", "Saisir le chèque certifié (après visa DGD)");
         createPermission("utilisation.douane.dgtcp.envoyer.tresor", "Envoyer la demande au Trésor");
+        createPermission("utilisation.douane.dgtcp.transmettre.president",
+                "Contrôler le dossier (bulletin visé, chèque certifié) et le transmettre au Président");
         createPermission("utilisation.douane.dgtcp.quittances", "Saisir les quittances Trésor");
         createPermission("utilisation.douane.entreprise.reception", "Accuser réception du certificat d'utilisation");
         createPermission("utilisation.douane.dgtcp.history.view", "Consulter l'historique des liquidations");
@@ -1778,6 +1797,7 @@ public class DataInitializer implements CommandLineRunner {
                 "utilisation.douane.dgtcp.resolve",
                 "utilisation.douane.dgtcp.envoyer.tresor",
                 "utilisation.douane.dgtcp.quittances",
+                "utilisation.douane.dgtcp.transmettre.president",
                 "utilisation.interieur.dgtcp.queue.view",
                 "utilisation.interieur.dgtcp.verify",
                 "utilisation.interieur.dgtcp.validate",

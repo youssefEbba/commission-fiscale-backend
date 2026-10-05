@@ -170,6 +170,22 @@ public class UtilisationCreditController {
     }
 
     /**
+     * Étape DGTCP : contrôle du dossier et transmission au Président.
+     * <p>
+     * La DGTCP atteste que le bulletin est visé par la DGD et le chèque certifié saisi, puis
+     * présente le dossier au Président qui émettra le certificat. Idempotent : un second appel
+     * renvoie le même statut. Statut résultant : TRANSMISE_AU_PRESIDENT.
+     */
+    @PostMapping("/{id}/transmission-president")
+    @PreAuthorize("hasAuthority('utilisation.douane.dgtcp.transmettre.president')")
+    public UtilisationCreditDto transmettreAuPresident(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.transmettreAuPresident(id, user);
+    }
+
+    /**
      * Étape DGTCP : validation du chèque et envoi au Trésor.
      * Statut résultant : ENVOYEE_AU_TRESOR.
      */
@@ -340,7 +356,7 @@ public class UtilisationCreditController {
             @PathVariable Long id,
             @AuthenticationPrincipal AuthenticatedUser user) {
         service.findById(id, user);
-        return documentService.findByUtilisationCreditId(id);
+        return documentService.findByUtilisationCreditId(id, user);
     }
 
     @PostMapping(value = "/{id}/documents", consumes = "multipart/form-data")

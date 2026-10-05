@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
+import mr.gov.finances.sgci.domain.document.DocumentVisibilitePolicy;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.repository.DocumentUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
@@ -83,6 +84,12 @@ public class DocumentDownloadController {
                 ? utilisation.getCertificatCredit().getEntreprise().getId() : null;
         if (mienne == null || (!mienne.equals(demandeur) && !mienne.equals(titulaire))) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Justificatif hors périmètre");
+        }
+        // Le dossier est bien le sien ; reste à savoir si cette pièce-là lui est communicable.
+        if (!DocumentVisibilitePolicy.visiblePour(doc.getCodeDocument(),
+                utilisation != null ? utilisation.getStatut() : null, role)) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED,
+                    "Pièce produite par l'administration : elle sera communicable après la liquidation du dossier");
         }
     }
 

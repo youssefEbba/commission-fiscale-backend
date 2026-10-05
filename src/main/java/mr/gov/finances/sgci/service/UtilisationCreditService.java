@@ -14,11 +14,13 @@ import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationDouaniere;
 import mr.gov.finances.sgci.domain.entity.UtilisationTVAInterieure;
+import mr.gov.finances.sgci.domain.document.DocumentVisibilitePolicy;
 import mr.gov.finances.sgci.domain.enums.AffectationTaxe;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
+import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
@@ -120,7 +122,9 @@ public class UtilisationCreditService {
             Long sousTraitantEntrepriseId
     ) {
         List<UtilisationCredit> rows = resolveVisibleEntities(auth);
-        List<UtilisationCreditDto> dtos = rows.stream().map(this::toDto).collect(Collectors.toList());
+        List<UtilisationCreditDto> dtos = rows.stream()
+                .map(u -> appliquerVisibiliteDocuments(toDto(u), u.getStatut(), auth))
+                .collect(Collectors.toList());
         if (auth != null && auth.getRole() == Role.ENTREPRISE && sousTraitantEntrepriseId != null) {
             dtos = dtos.stream()
                     .filter(d -> Boolean.TRUE.equals(d.getDemandeurEstSousTraitant())
@@ -175,7 +179,7 @@ public class UtilisationCreditService {
         if (user != null) {
             assertCanViewUtilisation(user, entity);
         }
-        return toDto(entity);
+        return appliquerVisibiliteDocuments(toDto(entity), entity.getStatut(), user);
     }
 
     @Transactional(readOnly = true)
@@ -413,13 +417,30 @@ public class UtilisationCreditService {
     }
 
     private static final Set<StatutUtilisation> STATUTS_UTILISATION_EDITABLE = EnumSet.of(
-            StatutUtilisation.BROUILLON, StatutUtilisation.DEMANDEE);
+            StatutUtilisation.BROUILLON, StatutUtilisation.DEMANDEE, StatutUtilisation.INCOMPLETE);
 
+    /**
+     * Le contenu d'une demande n'est modifiable qu'avant instruction, ou pendant un rejet temporaire.
+     *
+     * <p>{@code INCOMPLETE} n'est posé que par un rejet temporaire, et la résolution le quitte vers
+     * {@code A_RECONTROLER} : le cas « incomplète sans rejet ouvert » ne devrait pas exister. On le
+     * vérifie quand même, pour que le refus nomme sa cause au lieu d'un message générique.
+     */
     private void assertUtilisationContentEditable(UtilisationCredit entity) {
         if (entity == null || !STATUTS_UTILISATION_EDITABLE.contains(entity.getStatut())) {
             throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE,
                     "Modification impossible : statut incompatible ou traitement déjà engagé");
         }
+        if (entity.getStatut() == StatutUtilisation.INCOMPLETE && !aUnRejetTemporaireOuvert(entity.getId())) {
+            throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE,
+                    "Modification impossible : aucun rejet temporaire n'est ouvert sur cette demande");
+        }
+    }
+
+    private boolean aUnRejetTemporaireOuvert(Long utilisationCreditId) {
+        return decisionUtilisationCreditRepository.findByUtilisationCreditId(utilisationCreditId).stream()
+                .anyMatch(d -> d.getDecision() == DecisionCorrectionType.REJET_TEMP
+                        && d.getRejetTempStatus() == RejetTempStatus.OUVERT);
     }
 
     private void assertDeposantPeutModifierUtilisation(AuthenticatedUser auth, UtilisationCredit entity) {
@@ -523,9 +544,19 @@ public class UtilisationCreditService {
                     assertLignesBulletinAffectationEntreprise(request.getLignes(), true);
                     eligibilityHelper.assertSoldesDouaneProposes(certificat, request.getLignes());
                 }
+                // Les lignes sont supprimées et recréées : l'annotation de la DGD disparaît avec
+                // elles. Les agrégats calculés à partir des anciennes lignes survivraient, faux —
+                // on les invalide, et c'est cela qui empêche le dossier d'avancer. Toutes les
+                // portes en aval refusent déjà un dossier aux agrégats nuls : liquiderDouane exige
+                // totalPrisEnCharge > 0, la transmission DGTCP exige CHEQUE_SAISI, et un nouveau
+                // visa DGD recalcule tout. Aucun contrôle supplémentaire n'est nécessaire.
+                boolean visaDejaPose = d.getTotalPrisEnCharge() != null;
                 d.getLignes().clear();
                 repository.save(d); // flush orphan removal before re-attaching
                 attachLignes(d, request.getLignes());
+                if (visaDejaPose) {
+                    invaliderVisaEtCheque(d);
+                }
                 // Recompute montant from lines total
                 if (d.getMontant() == null) {
                     BigDecimal total = request.getLignes().stream()
@@ -982,6 +1013,32 @@ public class UtilisationCreditService {
     }
 
     /** Persists the list of bulletin lines for a douanière utilisation. */
+    /**
+     * Remet le dossier à l'état d'avant visa après réécriture des lignes du bulletin.
+     *
+     * <p>Les agrégats ne sont pas « remis à zéro » mais à {@code null} : zéro serait un montant,
+     * donc une affirmation fausse, là que {@code null} dit « pas encore calculé ». Le chèque suit,
+     * puisque {@code totalAPayer} change : le montant déjà remis ne correspond plus à rien, et la
+     * pièce est désactivée plutôt que supprimée, pour conserver la trace de ce qui avait été remis.
+     */
+    private void invaliderVisaEtCheque(UtilisationDouaniere d) {
+        d.setTotalPrisEnCharge(null);
+        d.setTotalAPayer(null);
+        d.setMontantTVA(null);
+        d.setMontantDroits(null);
+
+        d.setBanqueNom(null);
+        d.setNumeroCheque(null);
+        d.setMontantCheque(null);
+        d.setDateCheque(null);
+        documentUtilisationCreditRepository
+                .findByUtilisationCreditIdAndCodeDocumentAndActifTrue(d.getId(), "CHEQUE_CERTIFIE")
+                .ifPresent(doc -> {
+                    doc.setActif(false);
+                    documentUtilisationCreditRepository.save(doc);
+                });
+    }
+
     private void attachLignes(UtilisationDouaniere d, List<CreateUtilisationCreditRequest.LigneBulletinRequest> ligneRequests) {
         if (ligneRequests == null || ligneRequests.isEmpty()) {
             return;
@@ -1069,6 +1126,23 @@ public class UtilisationCreditService {
 
         workflow.validateTransition(entity.getStatut(), StatutUtilisation.VISE);
         assertActorCanTransition(entity, StatutUtilisation.VISE, user);
+
+        // Le bulletin annoté matérialise la décision de la DGD : il est exigé au visa, et le
+        // contrôle est posé ici pour qu'un fichier manquant n'engage aucune mutation.
+        //
+        // L'exemption n'est pas une facilité : le graphe autorise l'auto-transition VISE → VISE
+        // pour permettre à la DGD de ré-annoter le bulletin tant que l'entreprise n'a pas payé.
+        // Exiger le fichier inconditionnellement casserait cette ré-annotation.
+        boolean bulletinDejaDepose = documentUtilisationCreditRepository
+                .findByUtilisationCreditIdAndCodeDocumentAndActifTrue(id, "BULLETIN_ANNOTE")
+                .isPresent();
+        if ((file == null || file.isEmpty()) && !bulletinDejaDepose) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Le bulletin annoté est obligatoire au visa DGD");
+        }
+        if (file != null && !file.isEmpty()) {
+            assertJustificatifAccepte(file);
+        }
 
         List<LiquiderUtilisationDouaneRequest.DecisionLigneRequest> decisions;
         try {
@@ -1245,6 +1319,60 @@ public class UtilisationCreditService {
     }
 
     /**
+     * Étape DGTCP : contrôle du dossier et transmission au Président.
+     *
+     * <p>La DGTCP vérifie que le dossier est complet — bulletin visé par la DGD, chèque certifié
+     * couvrant la part à payer — avant de le présenter au Président, qui émettra le certificat.
+     * Aucune opération financière ici : les soldes ne bougent qu'à la liquidation.
+     *
+     * <p>Statut résultant : {@link StatutUtilisation#TRANSMISE_AU_PRESIDENT}.
+     */
+    @Transactional
+    public UtilisationCreditDto transmettreAuPresident(Long id, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
+                        "Utilisation non trouvée: " + id));
+        if (!(entity instanceof UtilisationDouaniere d)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Cette utilisation n'est pas de type Douane");
+        }
+        // Idempotence : un double clic du front ne doit pas produire un 409.
+        if (entity.getStatut() == StatutUtilisation.TRANSMISE_AU_PRESIDENT) {
+            return toDto(entity);
+        }
+        if (entity.getStatut() != StatutUtilisation.CHEQUE_SAISI) {
+            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.STATUT_INCOMPATIBLE,
+                    "La transmission suppose le chèque certifié saisi par l'entreprise. Statut actuel : "
+                            + entity.getStatut());
+        }
+        workflow.validateTransition(entity.getStatut(), StatutUtilisation.TRANSMISE_AU_PRESIDENT);
+        assertActorCanTransition(entity, StatutUtilisation.TRANSMISE_AU_PRESIDENT, user);
+        if (user == null || user.getRole() != Role.DGTCP) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Seul DGTCP peut transmettre le dossier au Président");
+        }
+
+        // La substance du contrôle : c'est ce que la DGTCP atteste en transmettant.
+        if (d.getNumeroCheque() == null || d.getNumeroCheque().isBlank()
+                || d.getMontantCheque() == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Le chèque certifié doit être saisi avant la transmission au Président");
+        }
+        if (documentUtilisationCreditRepository
+                .findByUtilisationCreditIdAndCodeDocumentAndActifTrue(id, "BULLETIN_ANNOTE").isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Le bulletin annoté par la DGD doit être au dossier avant la transmission");
+        }
+
+        d.setStatut(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
+        entity = repository.save(d);
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
+        notifyUtilisationStatutChange(entity, StatutUtilisation.TRANSMISE_AU_PRESIDENT, user);
+        return result;
+    }
+
+    /**
      * Étape DGTCP : validation du chèque reçu et envoi au Trésor.
      * Statut résultant : {@link StatutUtilisation#ENVOYEE_AU_TRESOR}.
      */
@@ -1316,6 +1444,18 @@ public class UtilisationCreditService {
 
         // Supprimer les anciennes quittances et recréer
         quittanceTresorRepository.deleteByUtilisationDouaniere_Id(d.getId());
+
+        // Et désactiver les pièces GED correspondantes. Sans cela elles restent toutes actives et
+        // s'accumulent : depuis que QUITTANCE_TRESOR est paramétré, un dépôt par la route normale
+        // interrogerait un code à plusieurs lignes actives et tomberait en 500.
+        List<mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit> quittancesPrecedentes =
+                documentUtilisationCreditRepository
+                        .findByUtilisationCreditIdAndCodeDocumentAndActifTrueOrderByVersionDescIdDesc(
+                                d.getId(), "QUITTANCE_TRESOR");
+        if (!quittancesPrecedentes.isEmpty()) {
+            quittancesPrecedentes.forEach(doc -> doc.setActif(false));
+            documentUtilisationCreditRepository.saveAll(quittancesPrecedentes);
+        }
 
         for (int i = 0; i < items.size(); i++) {
             SaisirQuittancesRequest.QuittanceItem item = items.get(i);
@@ -1604,7 +1744,8 @@ public class UtilisationCreditService {
     }
 
     /**
-      * L'étape dont l'émission dépend : le chèque saisi en douane, la validation en TVA intérieure.
+      * L'étape dont l'émission dépend : la transmission par la DGTCP en douane, la validation en
+      * TVA intérieure.
       *
       * <p>Le certificat d'utilisation est la pièce que l'entreprise présente au Trésor ou à la DGI
       * pour obtenir sa quittance : il doit donc exister <b>avant</b> cette présentation, et non
@@ -1612,7 +1753,7 @@ public class UtilisationCreditService {
       */
     private static StatutUtilisation statutPrealableEmission(UtilisationCredit u) {
         return u.getType() == TypeUtilisation.DOUANIER
-                ? StatutUtilisation.CHEQUE_SAISI
+                ? StatutUtilisation.TRANSMISE_AU_PRESIDENT
                 : StatutUtilisation.VALIDEE;
     }
 
@@ -1626,7 +1767,7 @@ public class UtilisationCreditService {
                                 + ". Rôle courant : " + (user != null ? user.getRole() : null));
             case "STATUT_INCOMPATIBLE":
                 return ApiException.badRequest(ApiErrorCode.STATUT_INCOMPATIBLE,
-                        "L'émission suppose le calcul de la DGTCP acquis (statut "
+                        "L'émission suppose le dossier instruit et transmis (statut "
                                 + statutPrealableEmission(u) + "). Statut actuel : " + u.getStatut());
             default:
                 return ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
@@ -1706,6 +1847,12 @@ public class UtilisationCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Émission du certificat d'utilisation : veuillez utiliser POST /{id}/certificat-utilisation");
         }
+        // La DGTCP détient les permissions listées par PATCH /{id}/statut : sans ce garde-fou elle
+        // atteindrait le statut en contournant les contrôles de transmettreAuPresident.
+        if (statut == StatutUtilisation.TRANSMISE_AU_PRESIDENT) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Transmission au Président : veuillez utiliser POST /{id}/transmission-president");
+        }
         if (statut == StatutUtilisation.CLOTUREE) {
             assertCertificatEmisAvantCloture(entity);
         }
@@ -1724,7 +1871,11 @@ public class UtilisationCreditService {
 
     @Transactional(readOnly = true)
     public List<QuittanceTresorDto> getQuittances(Long utilisationId, AuthenticatedUser user) {
-        findById(utilisationId, user);
+        UtilisationCreditDto dossier = findById(utilisationId, user);
+        // Les montants et références restent lisibles : c'est le justificatif scanné qui est
+        // réservé, pas le fait qu'une quittance existe.
+        boolean justificatifsVisibles = DocumentVisibilitePolicy.visiblePour(
+                "QUITTANCE_TRESOR", dossier.getStatut(), user != null ? user.getRole() : null);
         return quittanceTresorRepository.findByUtilisationDouaniere_IdOrderByDateQuittanceAscIdAsc(utilisationId)
                 .stream()
                 .map(q -> QuittanceTresorDto.builder()
@@ -1734,10 +1885,43 @@ public class UtilisationCreditService {
                         .montant(q.getMontant())
                         .referencePaiement(q.getReferencePaiement())
                         .utilisationDouaniereId(utilisationId)
-                        .documentChemin(q.getDocumentChemin())
-                        .documentNomFichier(q.getDocumentNomFichier())
+                        .documentChemin(justificatifsVisibles ? q.getDocumentChemin() : null)
+                        .documentNomFichier(justificatifsVisibles ? q.getDocumentNomFichier() : null)
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Retire du DTO les justificatifs que l'appelant n'a pas à voir.
+     *
+     * <p>Post-traitement, et non seconde branche de construction : {@code toDto} sert aussi à
+     * alimenter le journal d'audit, qui doit conserver la forme complète. On construit donc une fois,
+     * on journalise, puis on masque pour la réponse.
+     */
+    private UtilisationCreditDto appliquerVisibiliteDocuments(UtilisationCreditDto dto,
+                                                              StatutUtilisation statut,
+                                                              AuthenticatedUser user) {
+        if (dto == null) {
+            return null;
+        }
+        Role role = user != null ? user.getRole() : null;
+        if (DocumentVisibilitePolicy.acteurVoitTout(role)) {
+            return dto;
+        }
+        if (!DocumentVisibilitePolicy.visiblePour("QUITTANCE_TRESOR", statut, role)
+                && dto.getQuittances() != null) {
+            dto.getQuittances().forEach(q -> {
+                q.setDocumentChemin(null);
+                q.setDocumentNomFichier(null);
+            });
+        }
+        if (!DocumentVisibilitePolicy.visiblePour("QUITTANCE_DGI", statut, role)
+                && dto.getQuittanceDgi() != null) {
+            dto.getQuittanceDgi().setDocumentChemin(null);
+            dto.getQuittanceDgi().setDocumentNomFichier(null);
+            dto.getQuittanceDgi().setDocumentId(null);
+        }
+        return dto;
     }
 
     private ProcessusDocument resolveProcessus(UtilisationCredit utilisation) {
@@ -1768,7 +1952,8 @@ public class UtilisationCreditService {
                     StatutUtilisation.INCOMPLETE, StatutUtilisation.A_RECONTROLER,
                     StatutUtilisation.EN_VERIFICATION,
                     StatutUtilisation.VISE, StatutUtilisation.EN_CONTROLE_DGD,
-                    StatutUtilisation.CHEQUE_SAISI, StatutUtilisation.ENVOYEE_AU_TRESOR,
+                    StatutUtilisation.CHEQUE_SAISI, StatutUtilisation.TRANSMISE_AU_PRESIDENT,
+                    StatutUtilisation.ENVOYEE_AU_TRESOR,
                     StatutUtilisation.QUITTANCES_ENREGISTREES,
                     StatutUtilisation.LIQUIDEE, StatutUtilisation.CERTIFICAT_EMIS,
                     StatutUtilisation.CLOTUREE,
@@ -1806,7 +1991,8 @@ public class UtilisationCreditService {
                 return;
             }
             // Étapes DGTCP
-            if (to == StatutUtilisation.ENVOYEE_AU_TRESOR
+            if (to == StatutUtilisation.TRANSMISE_AU_PRESIDENT
+                    || to == StatutUtilisation.ENVOYEE_AU_TRESOR
                     || to == StatutUtilisation.QUITTANCES_ENREGISTREES
                     || to == StatutUtilisation.LIQUIDEE) {
                 if (role != Role.DGTCP) {

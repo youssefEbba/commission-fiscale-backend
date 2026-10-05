@@ -429,6 +429,7 @@ public class WorkflowNotificationHelper {
                 case "DEMANDEE" -> WorkflowEventCode.UTIL_DOUANE_SOUMISE;
                 case "EN_CONTROLE_DGD", "VISE" -> WorkflowEventCode.UTIL_DOUANE_VISA_DGD;
                 case "CHEQUE_SAISI" -> WorkflowEventCode.UTIL_DOUANE_CHEQUE;
+                case "TRANSMISE_AU_PRESIDENT" -> WorkflowEventCode.UTIL_DOUANE_TRANSMISE_PRESIDENT;
                 case "ENVOYEE_AU_TRESOR" -> WorkflowEventCode.UTIL_DOUANE_TRESOR;
                 case "QUITTANCES_ENREGISTREES" -> WorkflowEventCode.UTIL_DOUANE_QUITTANCES;
                 case "LIQUIDEE" -> WorkflowEventCode.UTIL_DOUANE_LIQUIDEE;
@@ -455,8 +456,10 @@ public class WorkflowNotificationHelper {
         if (douane) {
             return switch (statut) {
                 case "DEMANDEE", "EN_CONTROLE_DGD", "VISE" -> List.of(Role.DGD);
-                // Le chèque est saisi : la main passe au Président, qui doit émettre le certificat.
-                case "CHEQUE_SAISI" -> List.of(Role.PRESIDENT);
+                // Le chèque est saisi : la DGTCP contrôle le dossier avant de le transmettre.
+                case "CHEQUE_SAISI" -> List.of(Role.DGTCP);
+                // Dossier transmis : la main passe au Président, qui doit émettre le certificat.
+                case "TRANSMISE_AU_PRESIDENT" -> List.of(Role.PRESIDENT);
                 // Certificat émis : la DGTCP peut le présenter au Trésor.
                 case "CERTIFICAT_EMIS" -> List.of(Role.DGTCP);
                 case "ENVOYEE_AU_TRESOR", "QUITTANCES_ENREGISTREES", "CLOTUREE" -> List.of(Role.DGTCP);
