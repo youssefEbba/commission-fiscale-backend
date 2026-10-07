@@ -155,6 +155,9 @@ public class DataInitializer implements CommandLineRunner {
                 all, "Lettre d’adoption (Président)", 13);
         seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "CREDIT_INTERIEUR", false,
                 all, "Crédit d’impôt intérieur (visa DGI)", 14);
+        // Produit par le système à la soumission, jamais réclamé au déposant : obligatoire = false.
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "RECU_DEPOT", false,
+                all, "Reçu de dépôt de la demande", 15);
 
         /* GED / exigences pièces : ne pas retirer — utilisées par mise en place, utilisations, etc. */
         seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, "LETTRE_SAISINE", false,
@@ -1236,6 +1239,7 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("convention.view.all", "Consulter toutes les conventions");
         createPermission("convention.validate", "Valider une convention");
         createPermission("convention.reject", "Rejeter une convention");
+        createPermission("convention.activate", "Activer ou désactiver une convention");
         createPermission("convention.document.upload", "Déposer les documents convention");
 
         createPermission("correction.submit", "Soumettre une demande de correction fiscale");
@@ -1769,6 +1773,7 @@ public class DataInitializer implements CommandLineRunner {
         assign(Role.DGTCP,
                 "signature.manage",
                 "convention.view.all",
+                "convention.activate",
                 "marche.view",
                 "correction.dgtcp.queue.view",
                 "correction.dgtcp.review",

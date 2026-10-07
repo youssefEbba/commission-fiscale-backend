@@ -22,8 +22,10 @@ public class DocumentRequirementController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('document.requirements.view') or hasAuthority('permissions.manage')")
-    public List<DocumentRequirementDto> getByProcessus(@RequestParam ProcessusDocument processus) {
-        return service.findByProcessus(processus);
+    public List<DocumentRequirementDto> getByProcessus(
+            @RequestParam ProcessusDocument processus,
+            @RequestParam(name = "depot", required = false, defaultValue = "false") boolean depotSeulement) {
+        return service.findByProcessus(processus, depotSeulement);
     }
 
     @PostMapping

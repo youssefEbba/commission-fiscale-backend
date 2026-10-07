@@ -60,6 +60,19 @@ public class Convention {
     @JoinColumn(name = "cree_par_autorite_contractante_id")
     private AutoriteContractante creeParAutoriteContractante;
 
+    /**
+     * Disponibilité de la convention, distincte de {@link #statut} qui porte la validation.
+     *
+     * <p>Nullable à dessein : la colonne est postérieure aux conventions déjà en base, et une colonne
+     * {@code NOT NULL} ajoutée sur une table peuplée les aurait toutes mises à {@code false}, donc
+     * fermées d'un coup. {@code null} se lit « active » — voir
+     * {@code ConventionDisponibilitePolicy} — et {@code ConventionActivationBackfillMigration}
+     * régularise les lignes anciennes au démarrage.
+     */
+    @Column(name = "actif")
+    @Builder.Default
+    private Boolean actif = Boolean.TRUE;
+
     private Long valideParUserId;
     private Instant dateValidation;
 

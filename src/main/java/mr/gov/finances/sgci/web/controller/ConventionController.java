@@ -70,6 +70,24 @@ public class ConventionController {
         return service.updateStatut(id, statut, userId, motifRejet);
     }
 
+    /**
+     * Ouvre ou ferme une convention aux nouveaux rattachements.
+     *
+     * <p>Permission dédiée plutôt que {@code convention.validate} : fermer un financement n'est pas
+     * valider une convention, et les deux portes doivent pouvoir être confiées à des rôles
+     * différents depuis l'écran des rôles — c'est le « paramétrable » demandé en recette.
+     */
+    @PatchMapping("/{id}/activation")
+    @PreAuthorize("hasAuthority('convention.activate')")
+    public ConventionDto changerActivation(
+            @PathVariable Long id,
+            @RequestParam boolean actif,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        Long userId = user != null ? user.getUserId() : null;
+        return service.changerActivation(id, actif, userId);
+    }
+
     @GetMapping("/{id}/documents")
     @PreAuthorize("hasAnyAuthority('convention.view', 'convention.view.all')")
     public List<DocumentConventionDto> getDocuments(@PathVariable Long id) {

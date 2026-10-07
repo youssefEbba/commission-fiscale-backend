@@ -38,6 +38,8 @@ public class ConventionDto {
     private Instant dateCreation;
     private Long valideParUserId;
     private Instant dateValidation;
+    /** Fermée aux nouveaux rattachements et masquée aux autorités contractantes quand faux. */
+    private Boolean actif;
     private String motifRejet;
     private List<DocumentConventionDto> documents;
 }

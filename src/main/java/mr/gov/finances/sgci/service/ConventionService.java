@@ -5,6 +5,7 @@ import mr.gov.finances.sgci.web.exception.ApiException;
 
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
+import mr.gov.finances.sgci.domain.convention.ConventionDisponibilitePolicy;
 import mr.gov.finances.sgci.domain.entity.Convention;
 import mr.gov.finances.sgci.domain.entity.DocumentConvention;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
@@ -90,23 +91,35 @@ public class ConventionService {
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         Role role = u.getRole();
 
-        // Référentiel partagé : conventions (et entreprises côté API dédiée) visibles par toutes les AC / délégués.
+        // Chaque autorité ne voit que son périmètre : ce qu'elle a créé ou ce dont elle est titulaire.
+        // Les conventions étaient jusqu'ici un référentiel partagé — décision revue en recette.
         if (role == Role.AUTORITE_CONTRACTANTE
                 || role == Role.AUTORITE_UPM
                 || role == Role.AUTORITE_UEP) {
             if (u.getAutoriteContractante() == null) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
             }
-            if (statut == null) {
-                return conventionRepository.findAll();
-            }
-            return conventionRepository.findByStatut(statut);
+            Long acId = u.getAutoriteContractante().getId();
+            List<Convention> perimetre = statut == null
+                    ? conventionRepository.findAllPourAutorite(acId)
+                    : conventionRepository.findAllPourAutoriteAndStatut(acId, statut);
+            return masquerDesactivees(perimetre, role);
         }
 
-        if (statut == null) {
-            return conventionRepository.findAll();
+        List<Convention> toutes = statut == null
+                ? conventionRepository.findAll()
+                : conventionRepository.findByStatut(statut);
+        return masquerDesactivees(toutes, role);
+    }
+
+    /** Une convention fermée ne reste visible que des agents de la Commission. */
+    private List<Convention> masquerDesactivees(List<Convention> conventions, Role role) {
+        if (ConventionDisponibilitePolicy.voitLesDesactivees(role)) {
+            return conventions;
         }
-        return conventionRepository.findByStatut(statut);
+        return conventions.stream()
+                .filter(ConventionDisponibilitePolicy::estActive)
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -133,12 +146,43 @@ public class ConventionService {
         if (u == null || u.getRole() == null) {
             return false;
         }
+        Convention convention = conventionRepository.findById(conventionId).orElse(null);
+        if (convention == null) {
+            return false;
+        }
+        // Sans ce contrôle, restreindre la liste n'aurait aucune valeur : l'accès direct par
+        // identifiant rouvrirait tout ce que la liste vient de masquer.
         if (u.getRole() == Role.AUTORITE_CONTRACTANTE
                 || u.getRole() == Role.AUTORITE_UPM
                 || u.getRole() == Role.AUTORITE_UEP) {
-            return u.getAutoriteContractante() != null && conventionRepository.findById(conventionId).isPresent();
+            if (u.getAutoriteContractante() == null) {
+                return false;
+            }
+            Long acId = u.getAutoriteContractante().getId();
+            boolean dansLePerimetre =
+                    (convention.getAutoriteContractante() != null
+                            && acId.equals(convention.getAutoriteContractante().getId()))
+                    || (convention.getCreeParAutoriteContractante() != null
+                            && acId.equals(convention.getCreeParAutoriteContractante().getId()));
+            return dansLePerimetre && ConventionDisponibilitePolicy.visiblePour(convention, u.getRole());
         }
-        return true;
+        return ConventionDisponibilitePolicy.visiblePour(convention, u.getRole());
+    }
+
+    /**
+     * Ouvre ou ferme une convention aux nouveaux rattachements.
+     *
+     * <p>Idempotent : le front peut double-cliquer, et rejouer l'état courant ne doit rien casser.
+     */
+    @Transactional
+    public ConventionDto changerActivation(Long id, boolean actif, Long userId) {
+        Convention convention = conventionRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + id));
+        convention.setActif(actif);
+        convention = conventionRepository.save(convention);
+        ConventionDto result = toDto(convention);
+        auditService.log(AuditAction.UPDATE, "Convention", String.valueOf(id), result);
+        return result;
     }
 
     @Transactional
@@ -310,6 +354,7 @@ public class ConventionService {
                 .dateCreation(convention.getDateCreation())
                 .valideParUserId(convention.getValideParUserId())
                 .dateValidation(convention.getDateValidation())
+                .actif(ConventionDisponibilitePolicy.estActive(convention))
                 .motifRejet(convention.getMotifRejet())
                 .documents(convention.getDocuments() != null
                         ? convention.getDocuments().stream().map(this::toDto).collect(Collectors.toList())

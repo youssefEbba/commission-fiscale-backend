@@ -3,6 +3,7 @@ package mr.gov.finances.sgci.service;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.document.DocumentCodeValidator;
 import mr.gov.finances.sgci.domain.entity.DocumentRequirement;
+import mr.gov.finances.sgci.domain.document.DocumentDepotPolicy;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.TypeFichierAutorise;
 import mr.gov.finances.sgci.repository.DocumentRequirementRepository;
@@ -27,6 +28,17 @@ public class DocumentRequirementService {
 
     @Transactional(readOnly = true)
     public List<DocumentRequirementDto> findByProcessus(ProcessusDocument processus) {
+        return findByProcessus(processus, false);
+    }
+
+    /**
+     * Les pièces paramétrées d'un processus, éventuellement réduites à ce que le déposant apporte.
+     *
+     * <p>{@code depotSeulement} est explicite et non déduit du rôle : l'écran de paramétrage doit
+     * continuer à voir <em>tous</em> les codes, sans quoi un administrateur croirait un type disparu
+     * et le recréerait en double. Le formulaire de dépôt, lui, demande la liste filtrée.
+     */
+    public List<DocumentRequirementDto> findByProcessus(ProcessusDocument processus, boolean depotSeulement) {
         List<DocumentRequirement> direct = repository.findByProcessusOrderByOrdreAffichageAsc(processus);
         if (direct.isEmpty()) {
             ProcessusDocument fallback = resolveFallback(processus);
@@ -34,7 +46,10 @@ public class DocumentRequirementService {
                 direct = repository.findByProcessusOrderByOrdreAffichageAsc(fallback);
             }
         }
-        return direct.stream().map(this::toDto).collect(Collectors.toList());
+        return direct.stream()
+                .filter(r -> !depotSeulement || DocumentDepotPolicy.deposableParLeDemandeur(r.getCodeDocument()))
+                .map(this::toDto)
+                .collect(Collectors.toList());
     }
 
     private ProcessusDocument resolveFallback(ProcessusDocument processus) {
@@ -123,6 +138,7 @@ public class DocumentRequirementService {
                 .typesAutorises(e.getTypesAutorises())
                 .description(e.getDescription())
                 .ordreAffichage(e.getOrdreAffichage())
+                .deposableParLeDemandeur(DocumentDepotPolicy.deposableParLeDemandeur(e.getCodeDocument()))
                 .build();
     }
 }

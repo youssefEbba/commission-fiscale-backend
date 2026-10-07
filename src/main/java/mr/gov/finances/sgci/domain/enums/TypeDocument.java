@@ -57,5 +57,7 @@ public enum TypeDocument {
     LISTE_CREDITS_A_CLOTURER,
     /** Certificat d'utilisation signé et cacheté par le Président (processus 6). */
     CERTIFICAT_UTILISATION,
+    /** Reçu remis au déposant à chaque soumission d'une demande de correction. */
+    RECU_DEPOT,
     AUTRE_DOCUMENT
 }
