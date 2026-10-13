@@ -21,6 +21,12 @@ public class UpdateMarcheRequest {
     @NotNull(message = "Le numéro de marché est obligatoire")
     private String numeroMarche;
 
+    /**
+     * Délibérément sans {@code @NotBlank}, à la différence de {@link CreateMarcheRequest} : 23 des 27
+     * marchés existants n'ont pas d'intitulé, et l'exiger ici les rendrait non modifiables tant que
+     * personne ne leur en invente un. {@code MarcheService.update} refuse en revanche d'effacer un
+     * intitulé déjà renseigné.
+     */
     private String intitule;
 
     private LocalDate dateSignature;

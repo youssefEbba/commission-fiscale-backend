@@ -48,19 +48,7 @@ public class VerificationPubliqueController {
         return service.verifier(code);
     }
 
-    /**
-     * Adresse de l'appelant, en tenant compte d'un éventuel proxy.
-     *
-     * <p>{@code X-Forwarded-For} est déclaré par le client et donc falsifiable : il n'est retenu que
-     * parce que l'application tourne derrière nginx, qui le réécrit. Sans ce reverse proxy, la
-     * limitation serait contournable d'un simple en-tête.
-     */
     private static String adresseAppelante(HttpServletRequest request) {
-        String transmise = request.getHeader("X-Forwarded-For");
-        if (transmise != null && !transmise.isBlank()) {
-            int virgule = transmise.indexOf(',');
-            return (virgule > 0 ? transmise.substring(0, virgule) : transmise).trim();
-        }
-        return request.getRemoteAddr();
+        return VerificationPubliqueRateLimiter.adresseAppelante(request);
     }
 }

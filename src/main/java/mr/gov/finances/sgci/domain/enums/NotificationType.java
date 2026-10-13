@@ -15,5 +15,9 @@ public enum NotificationType {
     REJET_TEMP_RESOLU,
     REJET_TEMP_REPONSE,
     PASSWORD_RESET_REQUEST,
-    PASSWORD_RESET_TRAITEE
+    PASSWORD_RESET_TRAITEE,
+    /** Une demande de rattachement attend la décision du Président. */
+    RATTACHEMENT_DEMANDE,
+    /** La décision est prise sur une demande de rattachement. */
+    RATTACHEMENT_TRAITEE
 }

@@ -33,16 +33,19 @@ public class AutoriteContractanteController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAuthority('autorite.create')")
     public AutoriteContractanteDto create(@Valid @RequestBody AutoriteContractanteDto dto) {
         return service.create(dto);
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('autorite.update')")
     public AutoriteContractanteDto update(@PathVariable Long id, @Valid @RequestBody AutoriteContractanteDto dto) {
         return service.update(id, dto);
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('autorite.delete')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
         service.deleteById(id);

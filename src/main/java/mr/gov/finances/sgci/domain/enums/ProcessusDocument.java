@@ -14,5 +14,7 @@ public enum ProcessusDocument {
     UTILISATION_CI_INTERIEUR,
     TRANSFERT_CREDIT,
     SOUS_TRAITANCE,
-    CLOTURE_CI
+    CLOTURE_CI,
+    /** Justificatifs joints à une demande de rattachement, déposés sans compte. */
+    RATTACHEMENT_COMPTE
 }

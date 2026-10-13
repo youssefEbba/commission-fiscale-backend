@@ -4,6 +4,7 @@ import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.domain.convention.ConventionDisponibilitePolicy;
 import mr.gov.finances.sgci.domain.entity.Convention;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.DocumentMarche;
@@ -429,6 +430,10 @@ public class MarcheService {
 
         Convention convention = conventionRepository.findById(request.getConventionId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + request.getConventionId()));
+        if (!ConventionDisponibilitePolicy.estActive(convention)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    ConventionDisponibilitePolicy.MOTIF_DESACTIVEE);
+        }
 
         DemandeCorrection demande = null;
         if (request.getDemandeCorrectionId() != null) {
@@ -489,6 +494,13 @@ public class MarcheService {
         }
         if (marche.getStatut() == StatutMarche.ANNULE && request.getStatut() != StatutMarche.ANNULE) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Marché annulé: changement de statut interdit");
+        }
+        // L'intitulé est obligatoire à la création. En modification il ne l'est pas, pour que les
+        // marchés antérieurs à cette règle restent éditables — mais on n'en efface pas un existant.
+        if (marche.getIntitule() != null && !marche.getIntitule().isBlank()
+                && (request.getIntitule() == null || request.getIntitule().isBlank())) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "L'intitulé ne peut pas être effacé");
         }
         marche.setNumeroMarche(request.getNumeroMarche());
         marche.setIntitule(request.getIntitule());

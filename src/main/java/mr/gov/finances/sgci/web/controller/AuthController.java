@@ -12,7 +12,6 @@ import mr.gov.finances.sgci.web.dto.LoginRequest;
 import mr.gov.finances.sgci.web.dto.LoginResponse;
 import mr.gov.finances.sgci.web.dto.PasswordResetRequestBody;
 import mr.gov.finances.sgci.web.dto.PasswordResetRequestResponse;
-import mr.gov.finances.sgci.web.dto.RegisterRequest;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -38,12 +37,6 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
-    }
-
-    @PostMapping("/register")
-    @ResponseStatus(HttpStatus.CREATED)
-    public LoginResponse register(@Valid @RequestBody RegisterRequest request) {
-        return authService.register(request);
     }
 
     @PostMapping("/password-reset/check-email")

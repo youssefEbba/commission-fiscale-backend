@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>SGCI — Demande de rattachement</title>
+</head>
+<body style="font-family: Arial, sans-serif; color: #222;">
+<p>Bonjour <span th:text="${username}">utilisateur</span>,</p>
+
+<div th:if="${approuve}">
+    <p>Votre demande de rattachement a été <strong>approuvée</strong> par le Président de la Commission Fiscale.</p>
+    <p>Vous pouvez désormais vous connecter avec l'identifiant et le mot de passe choisis lors de votre demande.</p>
+</div>
+
+<div th:unless="${approuve}">
+    <p>Votre demande de rattachement a été <strong>refusée</strong> par le Président de la Commission Fiscale.</p>
+    <p th:if="${motif != null and !#strings.isEmpty(motif)}">
+        <strong>Motif :</strong> <span th:text="${motif}"></span>
+    </p>
+    <p>Vous pouvez déposer une nouvelle demande en corrigeant les éléments signalés.</p>
+</div>
+
+<p style="color:#666;font-size:12px;margin-top:24px;">
+    Ministère des Finances — Commission Fiscale — SGCI
+</p>
+</body>
+</html>

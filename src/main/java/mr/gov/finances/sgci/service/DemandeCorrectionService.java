@@ -18,6 +18,7 @@ import mr.gov.finances.sgci.domain.entity.Marche;
 import mr.gov.finances.sgci.domain.entity.ModeleFiscal;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrectionRejet;
 import mr.gov.finances.sgci.domain.entity.Recapitulatif;
+import mr.gov.finances.sgci.domain.convention.ConventionDisponibilitePolicy;
 import mr.gov.finances.sgci.domain.entity.Convention;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
@@ -222,6 +223,10 @@ public class DemandeCorrectionService {
         Titulaire titulaire = resolveTitulaire(request.getGroupementId(), request.getEntrepriseId());
         Convention convention = conventionRepository.findById(request.getConventionId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée"));
+        if (!ConventionDisponibilitePolicy.estActive(convention)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    ConventionDisponibilitePolicy.MOTIF_DESACTIVEE);
+        }
         Marche marche = null;
         if (request.getMarcheId() != null) {
             marche = marcheRepository.findById(request.getMarcheId())
@@ -454,6 +459,10 @@ public class DemandeCorrectionService {
         Titulaire titulaire = resolveTitulaire(request.getGroupementId(), request.getEntrepriseId());
         Convention convention = conventionRepository.findById(request.getConventionId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée"));
+        if (!ConventionDisponibilitePolicy.estActive(convention)) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    ConventionDisponibilitePolicy.MOTIF_DESACTIVEE);
+        }
         entity.setAutoriteContractante(autorite);
         entity.setEntreprise(titulaire.entreprise());
         entity.setGroupement(titulaire.groupement());

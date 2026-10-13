@@ -196,6 +196,43 @@ public class EmailService {
         }
     }
 
+    /**
+     * Informe le demandeur de la décision prise sur son rattachement.
+     *
+     * <p>Une seule méthode pour l'accord et le refus : le demandeur refusé n'a pas de compte, donc
+     * pas de notification applicative — le courriel est le seul canal, et il doit partir dans les
+     * deux cas sous la même forme.
+     */
+    public void sendRattachementDecision(String toEmail, String username, boolean approuve, String motif) {
+        if (!mailProperties.isEnabled()) {
+            return;
+        }
+        String recipient = resolveRecipient(toEmail);
+        if (recipient == null) {
+            return;
+        }
+        try {
+            Context ctx = new Context();
+            ctx.setVariable("username", username != null ? username : "");
+            ctx.setVariable("approuve", approuve);
+            ctx.setVariable("motif", motif != null ? motif : "");
+            String html = templateEngine.process("mail/rattachement-decision", ctx);
+
+            MimeMessage mime = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mime, StandardCharsets.UTF_8.name());
+            helper.setFrom(mailProperties.getFrom());
+            helper.setTo(recipient);
+            helper.setSubject(approuve
+                    ? "[SGCI] Votre rattachement a été approuvé"
+                    : "[SGCI] Votre demande de rattachement a été refusée");
+            helper.setText(html, true);
+            mailSender.send(mime);
+            log.info("E-mail rattachement ({}) envoyé à {}", approuve ? "approuvé" : "refusé", recipient);
+        } catch (MessagingException | RuntimeException e) {
+            log.warn("Échec envoi e-mail rattachement à {}: {}", recipient, e.getMessage());
+        }
+    }
+
     private String resolveRecipient(String toEmail) {
         String override = mailProperties.getOverrideRecipient();
         if (override != null && !override.isBlank()) {

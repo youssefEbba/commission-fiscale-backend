@@ -57,5 +57,13 @@ public enum TypeDocument {
     LISTE_CREDITS_A_CLOTURER,
     /** Certificat d'utilisation signé et cacheté par le Président (processus 6). */
     CERTIFICAT_UTILISATION,
+    /** Reçu remis au déposant à chaque soumission d'une demande de correction. */
+    RECU_DEPOT,
+    /** Pièce d'identité du demandeur d'un rattachement de compte. */
+    PIECE_IDENTITE,
+    /** Mandat par lequel l'entité habilite le demandeur à la représenter. */
+    MANDAT_REPRESENTATION,
+    /** Registre du commerce, pour le rattachement à une entreprise. */
+    REGISTRE_COMMERCE,
     AUTRE_DOCUMENT
 }

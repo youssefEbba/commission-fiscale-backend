@@ -19,6 +19,24 @@ public interface ConventionRepository extends JpaRepository<Convention, Long> {
 
     List<Convention> findAllByAutoriteContractanteId(Long autoriteContractanteId);
 
+    /**
+     * Le périmètre d'une autorité contractante : ce qu'elle a créé ou ce dont elle est titulaire.
+     *
+     * <p>Les deux, et non la seule créatrice : 210 des 215 conventions en base n'ont aucune AC
+     * créatrice renseignée, le champ étant postérieur. Filtrer sur elle seule aurait vidé la liste
+     * de toutes les autorités.
+     */
+    @Query("select c from Convention c where c.autoriteContractante.id = :acId "
+            + "or c.creeParAutoriteContractante.id = :acId")
+    List<Convention> findAllPourAutorite(@Param("acId") Long acId);
+
+    @Query("select c from Convention c where (c.autoriteContractante.id = :acId "
+            + "or c.creeParAutoriteContractante.id = :acId) and c.statut = :statut")
+    List<Convention> findAllPourAutoriteAndStatut(@Param("acId") Long acId,
+                                                  @Param("statut") StatutConvention statut);
+
+    List<Convention> findByActifIsNull();
+
     List<Convention> findAllByAutoriteContractanteIdAndStatut(Long autoriteContractanteId, StatutConvention statut);
 
     @Query("select distinct m.convention from Marche m join m.delegues md where md.delegue.id = :delegueId")
