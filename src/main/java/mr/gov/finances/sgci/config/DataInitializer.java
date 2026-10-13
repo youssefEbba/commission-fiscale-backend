@@ -159,6 +159,17 @@ public class DataInitializer implements CommandLineRunner {
         seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "RECU_DEPOT", false,
                 all, "Reçu de dépôt de la demande", 15);
 
+        /* Rattachement d'une personne à une entité : justificatifs déposés sans compte.
+         * Le mandat est la seule pièce obligatoire — c'est elle qui établit que l'entité habilite
+         * le demandeur. Les deux autres éclairent la décision sans la conditionner, et l'ADMIN_SI
+         * peut réviser ce paramétrage sans livraison. */
+        seedDocReq(ProcessusDocument.RATTACHEMENT_COMPTE, "MANDAT_REPRESENTATION", true,
+                all, "Mandat habilitant le demandeur à représenter l'entité", 1);
+        seedDocReq(ProcessusDocument.RATTACHEMENT_COMPTE, "PIECE_IDENTITE", false,
+                all, "Pièce d'identité du demandeur", 2);
+        seedDocReq(ProcessusDocument.RATTACHEMENT_COMPTE, "REGISTRE_COMMERCE", false,
+                all, "Registre du commerce (rattachement à une entreprise)", 3);
+
         /* GED / exigences pièces : ne pas retirer — utilisées par mise en place, utilisations, etc. */
         seedDocReq(ProcessusDocument.MISE_EN_PLACE_CI, "LETTRE_SAISINE", false,
                 all, "Lettre de saisine", 1);
@@ -1448,6 +1459,10 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("entreprise.create", "Créer une entreprise");
         createPermission("entreprise.update", "Modifier une entreprise");
         createPermission("entreprise.delete", "Supprimer une entreprise");
+        createPermission("autorite.create", "Créer une autorité contractante");
+        createPermission("autorite.update", "Modifier une autorité contractante");
+        createPermission("autorite.delete", "Supprimer une autorité contractante");
+        createPermission("rattachement.validate", "Approuver ou refuser une demande de rattachement");
         createPermission("groupement.list", "Consulter la liste des groupements");
         createPermission("groupement.create", "Créer un groupement");
         createPermission("groupement.update", "Modifier un groupement");
@@ -1498,7 +1513,9 @@ public class DataInitializer implements CommandLineRunner {
                 "devise.create",
                 "taux_change.view",
                 "delegue.list",
-                "delegue.create",
+                // Plus de "delegue.create" : rattacher une personne à une entité relève du
+                // Président depuis la réunion de recette. L'AC garde la lecture, la mise à jour des
+                // coordonnées et la désactivation immédiate d'un agent qui part.
                 "delegue.update",
                 "delegue.disable",
                 "correction.submit",
@@ -1715,24 +1732,14 @@ public class DataInitializer implements CommandLineRunner {
                 "convention.reject",
                 "correction.view.audit",
                 "archivage.view",
-                "user.create",
-                "user.update",
-                "user.disable",
-                "user.reset",
-                "user.list",
-                "user.role.assign",
-                "role.create",
-                "role.permissions.update",
-                "role.list",
-                "role.disable",
+                // Retirés : user.*, role.*, permissions.manage et le CRUD entreprise. Avec
+                // user.role.assign et permissions.manage, la DGI pouvait s'attribuer n'importe quel
+                // droit — très probablement un copier-coller du bloc administrateur. Elle garde la
+                // consultation des entreprises et de la traçabilité, qui relèvent de son métier.
                 "security.audit.view",
                 "security.logins.view",
-                "permissions.manage",
                 "permissions.view",
                 "entreprise.list",
-                "entreprise.create",
-                "entreprise.update",
-                "entreprise.delete",
                 "groupement.list",
                 "groupement.create",
                 "groupement.update",

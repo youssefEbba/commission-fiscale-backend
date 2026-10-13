@@ -53,7 +53,11 @@ public class ColonnesTexteSchemaMigration implements ApplicationRunner {
     static final List<ColonneTexte> REGISTRE = List.of(
             new ColonneTexte("notification", "type", 64, true),
             new ColonneTexte("notification", "entity_type", 64, true),
-            new ColonneTexte("utilisation_credit", "statut", 32, true));
+            new ColonneTexte("utilisation_credit", "statut", 32, true),
+            // Ce lot ajoute une valeur à ProcessusDocument : sans cette ligne, le seed des
+            // justificatifs de rattachement échouerait sur « Data truncated for column ».
+            new ColonneTexte("document_requirement", "processus", 255, true),
+            new ColonneTexte("demande_rattachement", "statut", 32, true));
 
     public void migrateIfNeeded() {
         REGISTRE.forEach(this::widenStringColumnIfNeeded);

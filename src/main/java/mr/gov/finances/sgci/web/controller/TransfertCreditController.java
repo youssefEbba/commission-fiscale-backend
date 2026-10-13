@@ -33,6 +33,7 @@ public class TransfertCreditController {
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('transfert.solde.view', 'transfert.dgtcp.queue.view', "
+            + "'transfert.dgd.visa', 'transfert.dgi.visa', "
             + "'transfert.president.validate', 'transfert.president.reject', 'archivage.view')")
     public List<TransfertCreditDto> getAll(@AuthenticationPrincipal AuthenticatedUser user) {
         return service.findAll(user);
@@ -40,6 +41,7 @@ public class TransfertCreditController {
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('transfert.solde.view', 'transfert.dgtcp.queue.view', "
+            + "'transfert.dgd.visa', 'transfert.dgi.visa', "
             + "'transfert.president.validate', 'transfert.president.reject', 'archivage.view')")
     public TransfertCreditDto getById(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
         return service.findById(id, user);
@@ -47,6 +49,7 @@ public class TransfertCreditController {
 
     @GetMapping("/by-certificat/{certificatCreditId}")
     @PreAuthorize("hasAnyAuthority('transfert.solde.view', 'transfert.dgtcp.queue.view', "
+            + "'transfert.dgd.visa', 'transfert.dgi.visa', "
             + "'transfert.president.validate', 'transfert.president.reject', 'archivage.view')")
     public TransfertCreditDto getByCertificat(
             @PathVariable Long certificatCreditId,
@@ -114,6 +117,7 @@ public class TransfertCreditController {
 
     @GetMapping("/{id}/documents")
     @PreAuthorize("hasAnyAuthority('transfert.solde.view', 'transfert.dgtcp.queue.view', "
+            + "'transfert.dgd.visa', 'transfert.dgi.visa', "
             + "'transfert.president.validate', 'transfert.president.reject', 'archivage.view')")
     public List<DocumentTransfertCreditDto> getDocuments(@PathVariable Long id) {
         return documentService.findByTransfertCreditId(id);

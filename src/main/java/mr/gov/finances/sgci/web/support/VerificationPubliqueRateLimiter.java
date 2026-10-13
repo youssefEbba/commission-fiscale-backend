@@ -33,6 +33,25 @@ public class VerificationPubliqueRateLimiter {
     private record Compteur(Instant debut, AtomicInteger appels) {}
 
     /** {@code true} si l'appel est accepté, {@code false} s'il dépasse le quota. */
+    /**
+     * Adresse de l'appelant, en tenant compte d'un éventuel proxy.
+     *
+     * <p>{@code X-Forwarded-For} est déclaré par le client et donc falsifiable : il n'est retenu que
+     * parce que l'application tourne derrière nginx, qui le réécrit. Sans ce reverse proxy, la
+     * limitation serait contournable d'un simple en-tête.
+     *
+     * <p>Posé ici, et non dans un contrôleur, parce que toutes les routes publiques doivent lire
+     * cette adresse de la même façon : une seconde copie finirait par en diverger.
+     */
+    public static String adresseAppelante(jakarta.servlet.http.HttpServletRequest request) {
+        String transmise = request.getHeader("X-Forwarded-For");
+        if (transmise != null && !transmise.isBlank()) {
+            int virgule = transmise.indexOf(',');
+            return (virgule > 0 ? transmise.substring(0, virgule) : transmise).trim();
+        }
+        return request.getRemoteAddr();
+    }
+
     public boolean autorise(String ip) {
         if (ip == null || ip.isBlank()) {
             return true;

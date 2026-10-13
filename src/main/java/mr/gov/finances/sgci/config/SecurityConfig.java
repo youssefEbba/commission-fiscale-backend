@@ -42,6 +42,9 @@ public class SecurityConfig {
                         // le Trésor, la DGI ou la douane contrôlent une pièce au guichet sans
                         // compte. Réponse sans aucune donnée financière, et débit limité par IP.
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/public/verification").permitAll()
+                        // Dépôt et consultation d'une demande de rattachement : le demandeur n'a pas
+                        // encore de compte, c'est tout l'objet de la demande. Limité en débit par IP.
+                        .requestMatchers("/api/public/rattachement", "/api/public/rattachement/**").permitAll()
                         .requestMatchers("/api/local-files/**").authenticated()
                         .requestMatchers("/h2-console/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()

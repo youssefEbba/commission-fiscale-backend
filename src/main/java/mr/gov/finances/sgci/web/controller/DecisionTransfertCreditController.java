@@ -33,6 +33,7 @@ public class DecisionTransfertCreditController {
 
     @GetMapping("/{id}/decisions")
     @PreAuthorize("hasAnyAuthority('transfert.solde.view', 'transfert.dgtcp.queue.view', "
+            + "'transfert.dgd.visa', 'transfert.dgi.visa', "
             + "'transfert.president.validate', 'transfert.president.reject', 'archivage.view')")
     public List<DecisionCreditDto> getDecisions(
             @PathVariable Long id,
@@ -43,7 +44,10 @@ public class DecisionTransfertCreditController {
 
     @PostMapping("/{id}/decisions")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyAuthority('transfert.dgtcp.update', 'transfert.president.validate', 'transfert.president.reject')")
+    // Les quatre rôles du circuit réclament des compléments, pas seulement le Trésor : c'est ce que
+    // DecisionTransfertCreditService impose déjà par ORDRE_VISAS. Cette liste ne l'avait jamais suivi.
+    @PreAuthorize("hasAnyAuthority('transfert.dgd.visa', 'transfert.dgi.visa', "
+            + "'transfert.dgtcp.update', 'transfert.president.validate', 'transfert.president.reject')")
     public DecisionCreditDto saveDecision(
             @PathVariable Long id,
             @Valid @RequestBody DecisionCreditRequest request,
@@ -85,7 +89,10 @@ public class DecisionTransfertCreditController {
     }
 
     @PutMapping("/decisions/{decisionId}/resolve")
-    @PreAuthorize("hasAnyAuthority('transfert.dgtcp.update', 'transfert.president.validate')")
+    // Le service exige que le rôle qui résout soit celui qui a posé le rejet : une DGD qui ne
+    // pourrait pas résoudre le sien laisserait le circuit bloqué pour toujours.
+    @PreAuthorize("hasAnyAuthority('transfert.dgd.visa', 'transfert.dgi.visa', "
+            + "'transfert.dgtcp.update', 'transfert.president.validate')")
     public DecisionCreditDto resolveRejetTemp(
             @PathVariable Long decisionId,
             @AuthenticationPrincipal AuthenticatedUser user

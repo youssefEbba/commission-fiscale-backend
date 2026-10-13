@@ -3,6 +3,8 @@ package mr.gov.finances.sgci.config;
 import jakarta.persistence.Column;
 import mr.gov.finances.sgci.config.ColonnesTexteSchemaMigration.ColonneTexte;
 import mr.gov.finances.sgci.config.ColonnesTexteSchemaMigration.ColumnInfo;
+import mr.gov.finances.sgci.domain.entity.DemandeRattachement;
+import mr.gov.finances.sgci.domain.entity.DocumentRequirement;
 import mr.gov.finances.sgci.domain.entity.Notification;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import org.junit.jupiter.api.Test;
@@ -31,7 +33,9 @@ class ColonnesTexteSchemaMigrationTest {
     private static final Map<String, FieldRef> ORIGINE = Map.of(
             "notification.type", new FieldRef(Notification.class, "type"),
             "notification.entity_type", new FieldRef(Notification.class, "entityType"),
-            "utilisation_credit.statut", new FieldRef(UtilisationCredit.class, "statut"));
+            "utilisation_credit.statut", new FieldRef(UtilisationCredit.class, "statut"),
+            "document_requirement.processus", new FieldRef(DocumentRequirement.class, "processus"),
+            "demande_rattachement.statut", new FieldRef(DemandeRattachement.class, "statut"));
 
     private record FieldRef(Class<?> entite, String champ) {
     }

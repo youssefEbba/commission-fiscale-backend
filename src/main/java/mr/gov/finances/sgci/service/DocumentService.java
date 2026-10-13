@@ -70,7 +70,8 @@ public class DocumentService {
         Document previous = documentRepository.findByDemandeCorrectionIdAndCodeDocumentAndActifTrue(demandeCorrectionId, codeDocument)
                 .orElse(null);
         if (previous != null) {
-            if (!isPresidentLettreAdoptionReplacement(demande, codeDocument, user)) {
+            if (!isPresidentLettreAdoptionReplacement(demande, codeDocument, user)
+                    && !estRecuDeDepot(codeDocument)) {
                 assertReplacementAllowed(demande, codeDocument, user);
             }
             previous.setActif(false);
@@ -253,6 +254,22 @@ public class DocumentService {
                         "La lettre d'adoption ne peut être déposée qu'en statut EN_VALIDATION");
             }
         }
+    }
+
+    /**
+     * Le reçu de dépôt échappe à la règle de remplacement.
+     *
+     * <p>Chaque soumission en produit un, et il doit être conservé : la règle générale exige un rejet
+     * temporaire ouvert réclamant expressément le code remplacé, ce qui n'arrive jamais pour un reçu —
+     * personne ne demande à l'étre. Sans cette exemption, la deuxième soumission d'une même demande
+     * échouerait sur « aucun rejet temporaire ouvert ne demande ce document ».
+     *
+     * <p>Le reçu précédent passe en historique ({@code actif = false}) sans être perdu :
+     * {@code findByDemandeCorrectionId} rend toutes les versions, de sorte que le déposant retrouve
+     * la preuve de <em>chacun</em> de ses dépôts, et non seulement du dernier.
+     */
+    private static boolean estRecuDeDepot(String codeDocument) {
+        return "RECU_DEPOT".equals(codeDocument);
     }
 
     private static boolean isPresidentLettreAdoptionReplacement(
