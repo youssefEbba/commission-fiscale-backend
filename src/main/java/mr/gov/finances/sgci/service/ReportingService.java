@@ -4,9 +4,11 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.domain.enums.Granularite;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.service.reporting.CalendrierPeriodes;
 import mr.gov.finances.sgci.service.reporting.ReportingPredicates;
 import mr.gov.finances.sgci.service.reporting.ReportingQueryRunner;
 import mr.gov.finances.sgci.service.reporting.ReportingScope;
@@ -25,6 +27,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -140,16 +143,20 @@ public class ReportingService {
                           extract(month from coalesce(d.dateDepot, d.dateCreation))
                  order by 1, 2
                 """;
-        List<TimeSeriesPointDto> out = new ArrayList<>();
+        Map<String, Long> parMois = new LinkedHashMap<>();
         for (Object[] row : runner.lignes(hql, scope, Map.of())) {
             int y = ((Number) row[0]).intValue();
             int m = ((Number) row[1]).intValue();
-            long c = ((Number) row[2]).longValue();
-            out.add(TimeSeriesPointDto.builder()
-                    .period(String.format("%04d-%02d", y, m))
-                    .count(c)
-                    .build());
+            parMois.merge(CalendrierPeriodes.cleMois(y, m), ((Number) row[2]).longValue(), Long::sum);
         }
+        // Les mois sans demande étaient simplement absents : la courbe reliait alors deux mois
+        // distants en ligne droite, et l'arrêt qui séparait disparaissait de l'écran.
+        Map<String, Long> comble = CalendrierPeriodes.replier(
+                parMois, scope.from(), scope.to(), Granularite.MOIS);
+
+        List<TimeSeriesPointDto> out = new ArrayList<>();
+        comble.forEach((periode, compte) -> out.add(
+                TimeSeriesPointDto.builder().period(periode).count(compte).build()));
         out.sort(Comparator.comparing(TimeSeriesPointDto::getPeriod));
         return out;
     }

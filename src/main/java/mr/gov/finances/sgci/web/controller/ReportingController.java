@@ -4,15 +4,28 @@ import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.ReportingService;
 import mr.gov.finances.sgci.domain.enums.AxeEngagement;
+import mr.gov.finances.sgci.domain.enums.BlocReporting;
+import mr.gov.finances.sgci.domain.enums.Granularite;
 import mr.gov.finances.sgci.service.reporting.AFermerService;
 import mr.gov.finances.sgci.service.reporting.BlocagesService;
 import mr.gov.finances.sgci.service.reporting.EngagementEtatService;
+import mr.gov.finances.sgci.service.reporting.ProductionPeriodeService;
+import mr.gov.finances.sgci.service.reporting.ReportingDossierService;
+import mr.gov.finances.sgci.service.reporting.export.CsvReportWriter;
+import mr.gov.finances.sgci.service.reporting.export.PdfReportWriter;
+import mr.gov.finances.sgci.service.reporting.export.XlsxReportWriter;
+import mr.gov.finances.sgci.service.reporting.model.ReportingDossier;
 import mr.gov.finances.sgci.web.dto.reporting.AFermerDto;
 import mr.gov.finances.sgci.web.dto.reporting.BlocagesDto;
 import mr.gov.finances.sgci.web.dto.reporting.EngagementEtatDto;
+import mr.gov.finances.sgci.web.dto.reporting.ProductionPeriodeDto;
 import mr.gov.finances.sgci.web.dto.reporting.ReportingSummaryDto;
 import mr.gov.finances.sgci.web.dto.reporting.TimeSeriesPointDto;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -22,6 +35,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Set;
 import java.util.List;
 
 /**
@@ -37,6 +53,11 @@ public class ReportingController {
     private final EngagementEtatService engagementEtatService;
     private final BlocagesService blocagesService;
     private final AFermerService aFermerService;
+    private final ProductionPeriodeService productionPeriodeService;
+    private final ReportingDossierService reportingDossierService;
+    private final XlsxReportWriter xlsxReportWriter;
+    private final CsvReportWriter csvReportWriter;
+    private final PdfReportWriter pdfReportWriter;
 
     /**
      * Synthèse multi-domaines sur une fenêtre temporelle.
@@ -143,5 +164,111 @@ public class ReportingController {
     ) {
         return aFermerService.aFermer(user, from, to, autoriteContractanteId, entrepriseId,
                 horizonJours, dormanceJours);
+    }
+
+    /**
+     * Les volumes et les masses financières par période, et l'évolution d'une période à l'autre.
+     *
+     * <p>Les périodes sans donnée sont présentes, à zéro : une série qui les saute dessine une
+     * courbe continue là où il y a eu un arrêt. Et une variation vaut {@code null}, non
+     * {@code -100 %}, quand la période précédente est vide — l'absence de référence n'est pas un
+     * effondrement.
+     */
+    @GetMapping("/production")
+    @PreAuthorize("hasAuthority('reporting.view')")
+    public ProductionPeriodeDto production(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(required = false) Long autoriteContractanteId,
+            @RequestParam(required = false) Long entrepriseId,
+            @RequestParam(required = false) Granularite granularite
+    ) {
+        return productionPeriodeService.production(user, from, to, autoriteContractanteId,
+                entrepriseId, granularite);
+    }
+
+    // ── les exports ────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * L'état complet en classeur.
+     *
+     * <p>Les trois exports partagent un seul assemblage, {@link ReportingDossierService} : c'est ce
+     * qui rend impossible la dérive classique où un fichier finit par contredire l'écran parce
+     * qu'il a sa propre requête.
+     *
+     * <p>L'état est assemblé <b>avant</b> que le flux ne s'ouvre, et non pendant : la transaction
+     * se termine au retour de cette méthode, alors que l'écriture dans la réponse se produit après.
+     * Assembler paresseusement reviendrait à lire la base hors transaction.
+     */
+    @GetMapping("/export.xlsx")
+    @PreAuthorize("hasAuthority('reporting.view')")
+    public ResponseEntity<StreamingResponseBody> exportXlsx(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(required = false) Long autoriteContractanteId,
+            @RequestParam(required = false) Long entrepriseId,
+            @RequestParam(required = false) Set<BlocReporting> blocs
+    ) {
+        ReportingDossier dossier = reportingDossierService.assembler(
+                user, from, to, autoriteContractanteId, entrepriseId, blocs);
+        return fichier(nom("xlsx"),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                sortie -> xlsxReportWriter.ecrire(dossier, sortie));
+    }
+
+    /** Le même état en CSV, en format long — un CSV n'a pas d'onglets. */
+    @GetMapping("/export.csv")
+    @PreAuthorize("hasAuthority('reporting.view')")
+    public ResponseEntity<StreamingResponseBody> exportCsv(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(required = false) Long autoriteContractanteId,
+            @RequestParam(required = false) Long entrepriseId,
+            @RequestParam(required = false) Set<BlocReporting> blocs
+    ) {
+        ReportingDossier dossier = reportingDossierService.assembler(
+                user, from, to, autoriteContractanteId, entrepriseId, blocs);
+        return fichier(nom("csv"), "text/csv; charset=UTF-8",
+                sortie -> csvReportWriter.ecrire(dossier, sortie));
+    }
+
+    /**
+     * Le même état en PDF, pour la séance.
+     *
+     * <p><b>Francophone seulement</b>, et c'est une limite assumée : la bibliothèque de rendu
+     * n'inverse pas le sens d'écriture et ne lie pas les lettres arabes. Un PDF arabe demande une
+     * couche de mise en forme supplémentaire, et c'est un travail distinct. L'écran reste bilingue.
+     */
+    @GetMapping("/export.pdf")
+    @PreAuthorize("hasAuthority('reporting.view')")
+    public ResponseEntity<StreamingResponseBody> exportPdf(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(required = false) Long autoriteContractanteId,
+            @RequestParam(required = false) Long entrepriseId,
+            @RequestParam(required = false) Set<BlocReporting> blocs
+    ) {
+        ReportingDossier dossier = reportingDossierService.assembler(
+                user, from, to, autoriteContractanteId, entrepriseId, blocs);
+        return fichier(nom("pdf"), "application/pdf",
+                sortie -> pdfReportWriter.ecrire(dossier, sortie));
+    }
+
+    private static String nom(String extension) {
+        return "reporting-" + DateTimeFormatter.ofPattern("yyyyMMdd")
+                .withZone(ZoneId.systemDefault()).format(Instant.now()) + "." + extension;
+    }
+
+    private static ResponseEntity<StreamingResponseBody> fichier(
+            String nomFichier, String typeContenu, StreamingResponseBody corps) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(nomFichier).build().toString())
+                .header(HttpHeaders.CONTENT_TYPE, typeContenu)
+                .body(corps);
     }
 }
