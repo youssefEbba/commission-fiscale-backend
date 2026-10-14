@@ -54,6 +54,15 @@ public class CertificatCreditDto {
     private String entrepriseRaisonSociale;
 
     private Long demandeCorrectionId;
+
+    /**
+     * Report de la déclaration portée par la demande de correction d'origine.
+     *
+     * <p>Dérivé, jamais stocké sur le certificat : la donnée a une seule source. C'est lui qui
+     * permet d'avertir, au moment d'ouvrir le crédit, que le dossier comporte des équipements
+     * sous régime.
+     */
+    private Boolean equipementsPresents;
     private Long marcheId;
 
     private String autoriteContractanteNom;

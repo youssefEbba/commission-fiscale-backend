@@ -65,5 +65,7 @@ public enum TypeDocument {
     MANDAT_REPRESENTATION,
     /** Registre du commerce, pour le rattachement à une entreprise. */
     REGISTRE_COMMERCE,
+    /** Liste des équipements et véhicules sous régime (plaques TT) acquis pendant le marché. */
+    LISTE_EQUIPEMENTS,
     AUTRE_DOCUMENT
 }

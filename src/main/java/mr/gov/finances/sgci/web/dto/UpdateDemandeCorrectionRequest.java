@@ -47,6 +47,9 @@ public class UpdateDemandeCorrectionRequest {
     /** Crédit extérieur / douanier demandé (défaut 0). Si 0, la DGD est exclue du workflow. */
     private BigDecimal creditExterieur;
 
+    /** Équipements ou véhicules sous régime déclarés sur le marché. */
+    private Boolean equipementsPresents;
+
     @NotNull(message = "Le modèle fiscal est obligatoire")
     private ModeleFiscalDto modeleFiscal;
 

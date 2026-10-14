@@ -118,10 +118,13 @@ class ConventionPerimetreIT {
 
     @Test
     @Transactional
-    void conventionDesactivee_masqueeAlAutorite() {
+    void conventionDesactivee_resteVisibleDeSonAutorite() {
+        // Règle revue le jour où l'AC a reçu le droit de désactiver : la masquer l'aurait empêchée de
+        // rouvrir ce qu'elle venait de fermer. Elle reste dans la liste, à l'écran de la badger ; ce
+        // sont les sélecteurs de rattachement qui l'excluent.
         Convention c = convention(mienne, mienne, false);
 
-        assertThat(references(service.findAll(ac, null))).doesNotContain(c.getReference());
+        assertThat(references(service.findAll(ac, null))).contains(c.getReference());
     }
 
     @Test
@@ -157,7 +160,7 @@ class ConventionPerimetreIT {
     void reactivation_rendLaConventionDeNouveauVisible() {
         Convention c = convention(mienne, mienne, false);
 
-        service.changerActivation(c.getId(), true, 1L);
+        service.changerActivation(c.getId(), true, dgtcp);
 
         assertThat(references(service.findAll(ac, null))).contains(c.getReference());
     }
@@ -175,14 +178,28 @@ class ConventionPerimetreIT {
     }
 
     @Test
-    void seulsLesAgentsDeLaCommissionVoientLesFermees() {
-        for (Role role : List.of(Role.DGD, Role.DGTCP, Role.DGI, Role.DGB, Role.PRESIDENT, Role.ADMIN_SI)) {
-            assertThat(ConventionDisponibilitePolicy.voitLesDesactivees(role)).as("rôle %s", role).isTrue();
-        }
-        for (Role role : List.of(Role.AUTORITE_CONTRACTANTE, Role.AUTORITE_UPM, Role.AUTORITE_UEP,
-                Role.ENTREPRISE, Role.SOUS_TRAITANT)) {
-            assertThat(ConventionDisponibilitePolicy.voitLesDesactivees(role)).as("rôle %s", role).isFalse();
-        }
+    @Transactional
+    void lautoriteContractantePeutReactiverLaSienne() {
+        // Le geste que le masquage rendait impossible.
+        Convention c = convention(mienne, mienne, false);
+
+        service.changerActivation(c.getId(), true, ac);
+
+        assertThat(conventionRepository.findById(c.getId()).orElseThrow().getActif()).isTrue();
+    }
+
+    @Test
+    @Transactional
+    void uneAutoriteNeFermePasLaConventionDuneAutre() {
+        // Sans contrôle de périmètre, la permission suffirait à fermer par identifiant la convention
+        // de n'importe quelle autre autorité.
+        AutoriteContractante autre = autreAutorite();
+        Convention c = convention(autre, autre, true);
+
+        assertThatThrownBy(() -> service.changerActivation(c.getId(), false, ac))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getCode())
+                        .isEqualTo(ApiErrorCode.ACCESS_DENIED));
     }
 
     // ── fixtures ───────────────────────────────────────────────────────────────────────────────

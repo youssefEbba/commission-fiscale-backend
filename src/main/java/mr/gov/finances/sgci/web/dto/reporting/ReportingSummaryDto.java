@@ -32,7 +32,15 @@ public class ReportingSummaryDto {
     private long transfertsTotal;
     private long sousTraitancesTotal;
     private ReportingAuditStatsDto audit;
-    /** null si l’utilisateur n’a pas le droit des agrégats financiers nationaux */
+    /**
+     * Totaux financiers des certificats du périmètre, jamais {@code null} hors périmètre fermé.
+     *
+     * <p>Le commentaire précédent annonçait « null si l'utilisateur n'a pas le droit des agrégats
+     * financiers nationaux ». C'était faux — le calcul est inconditionnel — et la règle qu'il
+     * décrivait n'a pas lieu d'exister : ces sommes portent sur les seuls certificats que
+     * l'utilisateur a le droit de voir, donc une entreprise y lit les siens, et c'est normal.
+     * Seul un périmètre fermé rend des zéros.
+     */
     private CertificatFinancialTotalsDto certificatFinancials;
     /** Indique si les filtres demandés ont été appliqués (rôles nationaux) */
     private boolean filtersApplied;

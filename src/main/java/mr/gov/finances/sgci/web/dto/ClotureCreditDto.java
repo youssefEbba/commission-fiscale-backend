@@ -33,4 +33,20 @@ public class ClotureCreditDto {
     private Long certificatCreditId;
 
     private String certificatNumero;
+
+    /**
+     * Vrai si la demande de correction d'origine déclarait des équipements sous régime (plaques TT).
+     *
+     * <p>C'est à la clôture que l'information compte : fermer un crédit dont des équipements restent
+     * sous régime est précisément ce que la Commission veut être en mesure de voir avant de signer.
+     */
+    private Boolean equipementsPresents;
+
+    /**
+     * La demande de correction d'origine, pour que l'écran atteigne la liste des équipements.
+     *
+     * <p>Les pièces sont rattachées à la demande, pas au certificat : l'écran de clôture a besoin de
+     * cet identifiant pour ouvrir la liste sans rappeler d'abord le certificat.
+     */
+    private Long demandeCorrectionId;
 }

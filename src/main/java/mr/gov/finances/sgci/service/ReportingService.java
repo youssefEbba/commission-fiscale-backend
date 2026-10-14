@@ -4,13 +4,13 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 import lombok.RequiredArgsConstructor;
-import mr.gov.finances.sgci.domain.entity.Utilisateur;
-import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
-import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
-import mr.gov.finances.sgci.security.EffectiveIdentityService;
+import mr.gov.finances.sgci.service.reporting.ReportingPredicates;
+import mr.gov.finances.sgci.service.reporting.ReportingQueryRunner;
+import mr.gov.finances.sgci.service.reporting.ReportingScope;
+import mr.gov.finances.sgci.service.reporting.ReportingScopeFactory;
 import mr.gov.finances.sgci.web.dto.reporting.CertificatFinancialTotalsDto;
 import mr.gov.finances.sgci.web.dto.reporting.NamedCountDto;
 import mr.gov.finances.sgci.web.dto.reporting.ReportingAuditStatsDto;
@@ -23,75 +23,79 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * La synthèse multi-domaines et la série temporelle des demandes.
+ *
+ * <p>Le cadrage par rôle, les fragments de périmètre et l'exécution des requêtes vivent désormais
+ * dans {@code service.reporting} : {@link ReportingScopeFactory}, {@link ReportingPredicates} et
+ * {@link ReportingQueryRunner}. Ils y ont été extraits pour que les blocs de contenu ajoutés
+ * ensuite partagent exactement le même périmètre — un périmètre recalculé par bloc est la façon la
+ * plus sûre de faire fuir les chiffres d'un dossier qu'on n'a pas le droit de voir.
+ */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ReportingService {
 
+    /** Réservé aux statistiques d'audit, seule partie à ne porter aucun périmètre métier. */
     @PersistenceContext
     private EntityManager entityManager;
-    private final UtilisateurRepository utilisateurRepository;
-    private final EffectiveIdentityService effectiveIdentityService;
 
-    private record Scope(Instant from, Instant to, Long autoriteContractanteId, Long entrepriseId,
-                         Long delegueUserId, boolean nationalView, boolean filtersApplied,
-                         boolean includeNationalAudit) {
-    }
+    private final ReportingScopeFactory scopeFactory;
+    private final ReportingPredicates predicates;
+    private final ReportingQueryRunner runner;
 
     public ReportingSummaryDto getSummary(AuthenticatedUser auth, Instant from, Instant to,
                                           Long autoriteContractanteId, Long entrepriseId) {
-        Utilisateur u = utilisateurRepository.findById(auth.getUserId())
-                .orElseThrow(() -> new IllegalStateException("Utilisateur non trouvé"));
-        Scope scope = buildScope(auth, u, from, to, autoriteContractanteId, entrepriseId);
+        ReportingScope scope = scopeFactory.build(auth, from, to, autoriteContractanteId, entrepriseId);
 
         ReportingDemandeStatsDto demandeStats = buildDemandeStats(scope);
-        List<NamedCountDto> certByStatut = groupedCounts(
+        List<NamedCountDto> certByStatut = runner.groupedCounts(
                 "select c.statut, count(c) from CertificatCredit c where "
-                        + certificatWhere("c", scope)
+                        + predicates.certificat("c", scope)
                         + " group by c.statut", scope);
         long certTotal = certByStatut.stream().mapToLong(NamedCountDto::getCount).sum();
-        long certPres = countSingle(
+        long certPres = runner.countSingle(
                 "select count(c) from CertificatCredit c where c.statut = :st and "
-                        + certificatWhere("c", scope),
+                        + predicates.certificat("c", scope),
                 scope, Map.of("st", StatutCertificat.EN_VALIDATION_PRESIDENT));
 
-        List<NamedCountDto> utilByStatut = groupedCounts(
+        List<NamedCountDto> utilByStatut = runner.groupedCounts(
                 "select u.statut, count(u) from UtilisationCredit u where "
-                        + utilisationWhere("u", scope)
+                        + predicates.utilisation("u", scope)
                         + " group by u.statut", scope);
-        List<NamedCountDto> utilByType = groupedCounts(
+        List<NamedCountDto> utilByType = runner.groupedCounts(
                 "select u.type, count(u) from UtilisationCredit u where "
-                        + utilisationWhere("u", scope)
+                        + predicates.utilisation("u", scope)
                         + " group by u.type", scope);
         long utilTotal = utilByStatut.stream().mapToLong(NamedCountDto::getCount).sum();
 
-        List<NamedCountDto> convByStatut = groupedCounts(
+        List<NamedCountDto> convByStatut = runner.groupedCounts(
                 "select conv.statut, count(conv) from Convention conv where "
-                        + conventionWhere("conv", scope)
+                        + predicates.convention("conv", scope)
                         + " group by conv.statut", scope);
 
-        List<NamedCountDto> refByStatut = groupedCounts(
+        List<NamedCountDto> refByStatut = runner.groupedCounts(
                 "select rp.statut, count(rp) from ReferentielProjet rp where "
-                        + referentielWhere("rp", scope)
+                        + predicates.referentiel("rp", scope)
                         + " group by rp.statut", scope);
 
-        List<NamedCountDto> marcheByStatut = groupedCounts(
+        List<NamedCountDto> marcheByStatut = runner.groupedCounts(
                 "select m.statut, count(m) from Marche m join m.demandeCorrection d where "
-                        + demandeWhere("d", scope, true)
+                        + predicates.demande("d", scope, true)
                         + " group by m.statut", scope);
 
-        long transferts = countSingle(
+        long transferts = runner.countSingle(
                 "select count(c) from CertificatCredit c where c.transfertCredit is not null and "
-                        + certificatWhere("c", scope), scope, Map.of());
-        long soustrait = countSingle(
+                        + predicates.certificat("c", scope), scope, Map.of());
+        long soustrait = runner.countSingle(
                 "select count(c) from CertificatCredit c where c.sousTraitance is not null and "
-                        + certificatWhere("c", scope), scope, Map.of());
+                        + predicates.certificat("c", scope), scope, Map.of());
 
         ReportingAuditStatsDto audit = scope.includeNationalAudit()
                 ? buildAuditStats(scope.from(), scope.to())
@@ -124,76 +128,36 @@ public class ReportingService {
 
     public List<TimeSeriesPointDto> getDemandeTimeseries(AuthenticatedUser auth, Instant from, Instant to,
                                                          Long autoriteContractanteId, Long entrepriseId) {
-        Utilisateur u = utilisateurRepository.findById(auth.getUserId())
-                .orElseThrow(() -> new IllegalStateException("Utilisateur non trouvé"));
-        Scope scope = buildScope(auth, u, from, to, autoriteContractanteId, entrepriseId);
+        ReportingScope scope = scopeFactory.build(auth, from, to, autoriteContractanteId, entrepriseId);
         String hql = """
                 select extract(year from coalesce(d.dateDepot, d.dateCreation)),
                        extract(month from coalesce(d.dateDepot, d.dateCreation)),
                        count(d)
                 from DemandeCorrection d
                 where coalesce(d.dateDepot, d.dateCreation) between :from and :to
-                """ + demandeExtraFilters(scope, "d") + """
+                """ + predicates.demandeExtraFilters(scope, "d") + """
                  group by extract(year from coalesce(d.dateDepot, d.dateCreation)),
                           extract(month from coalesce(d.dateDepot, d.dateCreation))
                  order by 1, 2
                 """;
-        Query q = entityManager.createQuery(hql);
-        bindScopeParams(q, scope);
-        @SuppressWarnings("unchecked")
-        List<Object[]> rows = q.getResultList();
         List<TimeSeriesPointDto> out = new ArrayList<>();
-        for (Object[] row : rows) {
+        for (Object[] row : runner.lignes(hql, scope, Map.of())) {
             int y = ((Number) row[0]).intValue();
             int m = ((Number) row[1]).intValue();
             long c = ((Number) row[2]).longValue();
-            String period = String.format("%04d-%02d", y, m);
-            out.add(TimeSeriesPointDto.builder().period(period).count(c).build());
+            out.add(TimeSeriesPointDto.builder()
+                    .period(String.format("%04d-%02d", y, m))
+                    .count(c)
+                    .build());
         }
         out.sort(Comparator.comparing(TimeSeriesPointDto::getPeriod));
         return out;
     }
 
-    private Scope buildScope(AuthenticatedUser auth, Utilisateur u, Instant from, Instant to,
-                            Long reqAc, Long reqEnt) {
-        Instant t0 = to != null ? to : Instant.now();
-        Instant f0 = from != null ? from : t0.minus(365, ChronoUnit.DAYS);
-        Role role = auth.getRole();
-        boolean national = role == Role.PRESIDENT || role == Role.ADMIN_SI || role == Role.DGD
-                || role == Role.DGTCP || role == Role.DGI || role == Role.DGB;
-        boolean auditNational = national;
-        Long ac = null;
-        Long ent = null;
-        Long delegueId = null;
-        boolean filtersApplied = false;
-
-        if (national) {
-            ac = reqAc;
-            ent = reqEnt;
-            filtersApplied = reqAc != null || reqEnt != null;
-        } else if (role == Role.ENTREPRISE || role == Role.SOUS_TRAITANT) {
-            ent = effectiveIdentityService.resolveEntrepriseId(auth, u);
-        } else if (role == Role.AUTORITE_CONTRACTANTE || role == Role.AUTORITE_UPM
-                || role == Role.AUTORITE_UEP) {
-            ac = effectiveIdentityService.resolveAutoriteContractanteId(auth, u);
-            if (ac == null) {
-                throw new IllegalStateException("Autorité contractante requise pour ce rôle");
-            }
-            if (role == Role.AUTORITE_UPM || role == Role.AUTORITE_UEP) {
-                delegueId = u.getId();
-            }
-        } else {
-            ent = effectiveIdentityService.resolveEntrepriseId(auth, u);
-            ac = effectiveIdentityService.resolveAutoriteContractanteId(auth, u);
-        }
-
-        return new Scope(f0, t0, ac, ent, delegueId, national, filtersApplied, auditNational);
-    }
-
-    private ReportingDemandeStatsDto buildDemandeStats(Scope scope) {
-        List<NamedCountDto> byStatut = groupedCounts(
+    private ReportingDemandeStatsDto buildDemandeStats(ReportingScope scope) {
+        List<NamedCountDto> byStatut = runner.groupedCounts(
                 "select d.statut, count(d) from DemandeCorrection d where "
-                        + demandeWhere("d", scope, true)
+                        + predicates.demande("d", scope, true)
                         + " group by d.statut", scope);
         long total = byStatut.stream().mapToLong(NamedCountDto::getCount).sum();
         long adop = countForStatutDemande(scope, StatutDemande.ADOPTEE)
@@ -215,160 +179,30 @@ public class ReportingService {
                 .build();
     }
 
-    private long countForStatutDemande(Scope scope, StatutDemande statut) {
-        return countSingle(
+    private long countForStatutDemande(ReportingScope scope, StatutDemande statut) {
+        return runner.countSingle(
                 "select count(d) from DemandeCorrection d where d.statut = :st and "
-                        + demandeWhere("d", scope, true),
+                        + predicates.demande("d", scope, true),
                 scope, Map.of("st", statut));
     }
 
-    /** Conjoints « and … » pour périmètre AC / entreprise / délégué (sans fenêtre temporelle). */
-    private String demandeExtraFilters(Scope scope, String alias) {
-        StringBuilder sb = new StringBuilder();
-        if (scope.autoriteContractanteId() != null) {
-            sb.append(" and ").append(alias).append(".autoriteContractante.id = :scopeAc");
-        }
-        if (scope.entrepriseId() != null) {
-            sb.append(" and ").append(alias).append(".entreprise.id = :scopeEnt");
-        }
-        if (scope.delegueUserId() != null) {
-            sb.append(" and exists (select 1 from Marche m join m.delegues md where m.demandeCorrection = ")
-                    .append(alias).append(" and md.delegue.id = :scopeDelegue)");
-        }
-        return sb.toString();
-    }
-
-    private String demandeWhere(String alias, Scope scope, boolean dateFilter) {
-        StringBuilder sb = new StringBuilder();
-        if (dateFilter) {
-            sb.append("coalesce(").append(alias).append(".dateDepot, ")
-                    .append(alias).append(".dateCreation) between :from and :to");
-        }
-        String more = demandeExtraFilters(scope, alias);
-        if (sb.isEmpty()) {
-            return more.isEmpty() ? "1=1" : more.substring(5);
-        }
-        return sb + more;
-    }
-
-    private String certificatWhere(String alias, Scope scope) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("(").append(alias).append(".dateEmission between :from and :to)");
-        if (scope.entrepriseId() != null) {
-            sb.append(" and ").append(alias).append(".entreprise.id = :scopeEnt");
-        }
-        if (scope.autoriteContractanteId() != null) {
-            sb.append(" and exists (select 1 from DemandeCorrection d where d = ")
-                    .append(alias).append(".demandeCorrection and d.autoriteContractante.id = :scopeAc)");
-        }
-        if (scope.delegueUserId() != null) {
-            sb.append(" and exists (select 1 from DemandeCorrection d join d.marche m join m.delegues md ")
-                    .append("where d = ").append(alias).append(".demandeCorrection ")
-                    .append("and md.delegue.id = :scopeDelegue)");
-        }
-        return sb.toString();
-    }
-
-    private String utilisationWhere(String alias, Scope scope) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(alias).append(".dateDemande between :from and :to");
-        if (scope.entrepriseId() != null) {
-            sb.append(" and ").append(alias).append(".entreprise.id = :scopeEnt");
-        }
-        if (scope.autoriteContractanteId() != null) {
-            sb.append(" and exists (select 1 from DemandeCorrection d where d = ")
-                    .append(alias).append(".certificatCredit.demandeCorrection ")
-                    .append("and d.autoriteContractante.id = :scopeAc)");
-        }
-        if (scope.delegueUserId() != null) {
-            sb.append(" and exists (select 1 from DemandeCorrection d join d.marche m join m.delegues md ")
-                    .append("where d = ").append(alias).append(".certificatCredit.demandeCorrection ")
-                    .append("and md.delegue.id = :scopeDelegue)");
-        }
-        return sb.toString();
-    }
-
-    private String conventionWhere(String alias, Scope scope) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(alias).append(".dateCreation between :from and :to");
-        if (scope.autoriteContractanteId() != null) {
-            sb.append(" and ").append(alias).append(".autoriteContractante.id = :scopeAc");
-        }
-        if (scope.entrepriseId() != null) {
-            sb.append(" and exists (select 1 from DemandeCorrection d where d.convention = ")
-                    .append(alias).append(" and d.entreprise.id = :scopeEnt)");
-        }
-        if (scope.delegueUserId() != null) {
-            sb.append(" and exists (select 1 from DemandeCorrection d join d.marche m join m.delegues md ")
-                    .append("where d.convention = ").append(alias)
-                    .append(" and md.delegue.id = :scopeDelegue)");
-        }
-        return sb.toString();
-    }
-
-    private String referentielWhere(String alias, Scope scope) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(alias).append(".dateDepot between :from and :to");
-        if (scope.autoriteContractanteId() != null) {
-            sb.append(" and ").append(alias).append(".autoriteContractante.id = :scopeAc");
-        }
-        if (scope.entrepriseId() != null) {
-            sb.append(" and exists (select 1 from DemandeCorrection d where d.convention = ")
-                    .append(alias).append(".convention and d.entreprise.id = :scopeEnt)");
-        }
-        if (scope.delegueUserId() != null) {
-            sb.append(" and exists (select 1 from DemandeCorrection d join d.marche m join m.delegues md ")
-                    .append("where d.convention = ").append(alias).append(".convention ")
-                    .append("and md.delegue.id = :scopeDelegue)");
-        }
-        return sb.toString();
-    }
-
-    private void bindScopeParams(Query q, Scope scope) {
-        q.setParameter("from", scope.from());
-        q.setParameter("to", scope.to());
-        if (scope.autoriteContractanteId() != null) {
-            q.setParameter("scopeAc", scope.autoriteContractanteId());
-        }
-        if (scope.entrepriseId() != null) {
-            q.setParameter("scopeEnt", scope.entrepriseId());
-        }
-        if (scope.delegueUserId() != null) {
-            q.setParameter("scopeDelegue", scope.delegueUserId());
-        }
-    }
-
-    private long countSingle(String hql, Scope scope, Map<String, Object> extra) {
-        Query q = entityManager.createQuery(hql);
-        bindScopeParams(q, scope);
-        extra.forEach(q::setParameter);
-        return ((Number) q.getSingleResult()).longValue();
-    }
-
-    private List<NamedCountDto> groupedCounts(String hql, Scope scope) {
-        Query q = entityManager.createQuery(hql);
-        bindScopeParams(q, scope);
-        @SuppressWarnings("unchecked")
-        List<Object[]> rows = q.getResultList();
-        List<NamedCountDto> out = new ArrayList<>();
-        for (Object[] row : rows) {
-            String key = row[0] != null ? row[0].toString() : "NULL";
-            long c = ((Number) row[1]).longValue();
-            out.add(NamedCountDto.builder().key(key).count(c).build());
-        }
-        out.sort(Comparator.comparing(NamedCountDto::getKey));
-        return out;
-    }
-
-    private CertificatFinancialTotalsDto buildCertFinancials(Scope scope) {
+    private CertificatFinancialTotalsDto buildCertFinancials(ReportingScope scope) {
         String hql = """
                 select coalesce(sum(c.montantCordon),0), coalesce(sum(c.montantTVAInterieure),0),
                        coalesce(sum(c.soldeCordon),0), coalesce(sum(c.soldeTVA),0), count(c)
                 from CertificatCredit c where
-                """ + certificatWhere("c", scope);
-        Query q = entityManager.createQuery(hql);
-        bindScopeParams(q, scope);
-        Object[] row = (Object[]) q.getSingleResult();
+                """ + predicates.certificat("c", scope);
+        Object[] row = runner.uneLigne(hql, scope, Map.of());
+        if (row == null) {
+            // Périmètre fermé : des zéros, et non les totaux nationaux.
+            return CertificatFinancialTotalsDto.builder()
+                    .sumMontantCordon(BigDecimal.ZERO)
+                    .sumMontantTvaInterieure(BigDecimal.ZERO)
+                    .sumSoldeCordon(BigDecimal.ZERO)
+                    .sumSoldeTva(BigDecimal.ZERO)
+                    .certificatCount(0)
+                    .build();
+        }
         return CertificatFinancialTotalsDto.builder()
                 .sumMontantCordon((BigDecimal) row[0])
                 .sumMontantTvaInterieure((BigDecimal) row[1])
@@ -378,6 +212,13 @@ public class ReportingService {
                 .build();
     }
 
+    /**
+     * Statistiques du journal d'audit, réservées aux rôles nationaux.
+     *
+     * <p>Seule partie du reporting à ne porter aucun périmètre métier : l'audit n'est filtré que par
+     * date. C'est pourquoi elle n'emprunte ni les prédicats ni le runner, et garde son accès direct
+     * à l'{@code EntityManager}.
+     */
     private ReportingAuditStatsDto buildAuditStats(Instant from, Instant to) {
         Query q1 = entityManager.createQuery(
                 "select a.action, count(a) from AuditLog a where a.timestamp between :from and :to group by a.action order by 1");

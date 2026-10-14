@@ -322,6 +322,8 @@ public class ClotureCreditService {
                 .dateEmission(c.getDateEmission())
                 .dateValidite(c.getDateValidite())
                 .entrepriseRaisonSociale(raisonSociale)
+                .equipementsPresents(equipementsDeclares(c))
+                .demandeCorrectionId(demandeDorigine(c))
                 .soldeCordon(soldeCordon)
                 .soldeTVA(soldeTva)
                 .tvaImportationDouane(tvaImport)
@@ -356,6 +358,34 @@ public class ClotureCreditService {
                 .approuvee(cc.getApprouvee())
                 .certificatCreditId(c != null ? c.getId() : null)
                 .certificatNumero(c != null ? c.getNumero() : null)
+                .equipementsPresents(equipementsDeclares(c))
+                .demandeCorrectionId(demandeDorigine(c))
                 .build();
+    }
+
+    /**
+     * La déclaration d'équipements portée par la demande de correction d'origine.
+     *
+     * <p>Lue, jamais recopiée : la donnée a une seule source, et la clôture se contente de la
+     * remonter à qui doit décider. {@code null} se lit « non », comme partout ailleurs.
+     */
+    private static Boolean equipementsDeclares(CertificatCredit certificat) {
+        if (certificat == null || certificat.getDemandeCorrection() == null) {
+            return null;
+        }
+        return certificat.getDemandeCorrection().getEquipementsPresents();
+    }
+
+    /**
+     * L'identifiant de la demande de correction d'origine, pour atteindre ses pièces.
+     *
+     * <p>Les documents sont rattachés à la demande : c'est par cet identifiant que l'écran de
+     * clôture ouvre la liste des équipements, sans rappeler le certificat pour la retrouver.
+     */
+    private static Long demandeDorigine(CertificatCredit certificat) {
+        if (certificat == null || certificat.getDemandeCorrection() == null) {
+            return null;
+        }
+        return certificat.getDemandeCorrection().getId();
     }
 }

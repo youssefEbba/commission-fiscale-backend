@@ -28,6 +28,9 @@ public class DemandeCorrectionDto {
     private BigDecimal creditInterieur;
     /** Crédit extérieur / douanier demandé (0 → DGD hors workflow). */
     private BigDecimal creditExterieur;
+
+    /** Vrai si des équipements sous régime sont déclarés : les écrans du circuit l'annoncent. */
+    private Boolean equipementsPresents;
     private StatutDemande statut;
     private boolean validationDgd;
     private boolean validationDgtcp;

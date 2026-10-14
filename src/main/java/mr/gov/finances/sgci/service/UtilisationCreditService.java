@@ -2050,34 +2050,6 @@ public class UtilisationCreditService {
         }
     }
 
-    private void debitSolde(UtilisationCredit utilisation) {
-        if (utilisation == null || utilisation.getCertificatCredit() == null) {
-            return;
-        }
-        CertificatCredit certificat = utilisation.getCertificatCredit();
-        BigDecimal montant = utilisation.getMontant() != null ? utilisation.getMontant() : BigDecimal.ZERO;
-        if (montant.compareTo(BigDecimal.ZERO) <= 0) {
-            return;
-        }
-
-        if (utilisation.getType() == TypeUtilisation.DOUANIER) {
-            BigDecimal solde = certificat.getSoldeCordon() != null ? certificat.getSoldeCordon() : BigDecimal.ZERO;
-            if (solde.compareTo(montant) < 0) {
-                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                        "Solde cordon insuffisant pour imputer l'utilisation (solde=" + solde + ", montant=" + montant + ")");
-            }
-            certificat.setSoldeCordon(solde.subtract(montant));
-        } else if (utilisation.getType() == TypeUtilisation.TVA_INTERIEURE) {
-            BigDecimal solde = certificat.getSoldeTVA() != null ? certificat.getSoldeTVA() : BigDecimal.ZERO;
-            if (solde.compareTo(montant) < 0) {
-                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                        "Solde TVA insuffisant pour imputer l'utilisation (solde=" + solde + ", montant=" + montant + ")");
-            }
-            certificat.setSoldeTVA(solde.subtract(montant));
-        }
-        certificatRepository.save(certificat);
-    }
-
     private UtilisationCreditDto toDto(UtilisationCredit u) {
         CertificatCredit cert = u.getCertificatCredit();
         Long titId = cert != null && cert.getEntreprise() != null ? cert.getEntreprise().getId() : null;

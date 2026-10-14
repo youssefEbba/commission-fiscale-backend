@@ -7,10 +7,8 @@ import lombok.extern.slf4j.Slf4j;
 import mr.gov.finances.sgci.domain.entity.AuditLog;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.repository.AuditLogRepository;
-import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.ActeurCourant;
 
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,16 +49,11 @@ public class AuditService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public void log(AuditAction action, String entityType, String entityId, Object objectSnapshot, String motif) {
-        String username = "system";
-        Long userId = null;
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.isAuthenticated() && auth.getPrincipal() instanceof AuthenticatedUser) {
-            AuthenticatedUser user = (AuthenticatedUser) auth.getPrincipal();
-            username = user.getUsername();
-            userId = user.getUserId();
-        } else if (auth != null && !"anonymousUser".equals(auth.getPrincipal())) {
-            username = auth.getName();
-        }
+        // Partagé avec l'historisation des statuts : deux traces du même geste doivent nommer le
+        // même acteur, sinon les rapprocher devient un exercice de divination.
+        ActeurCourant.Acteur acteur = ActeurCourant.lire();
+        String username = acteur.username();
+        Long userId = acteur.userId();
 
         String snapshotJson = null;
         if (objectSnapshot != null) {

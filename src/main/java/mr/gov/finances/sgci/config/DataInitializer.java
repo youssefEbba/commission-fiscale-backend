@@ -158,6 +158,10 @@ public class DataInitializer implements CommandLineRunner {
         // Produit par le système à la soumission, jamais réclamé au déposant : obligatoire = false.
         seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "RECU_DEPOT", false,
                 all, "Reçu de dépôt de la demande", 15);
+        // Facultative au référentiel, qui ne sait exprimer qu'une obligation inconditionnelle :
+        // elle ne devient obligatoire que si la case « équipements » est cochée (DemandeCorrectionService).
+        seedDocReq(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "LISTE_EQUIPEMENTS", false,
+                all, "Liste des équipements et véhicules sous régime", 16);
 
         /* Rattachement d'une personne à une entité : justificatifs déposés sans compte.
          * Le mandat est la seule pièce obligatoire — c'est elle qui établit que l'entité habilite
@@ -1491,6 +1495,12 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedRolePermissions() {
+        // Qui peut créer une convention peut la fermer : les trois rôles côté autorité contractante
+        // reçoivent convention.activate, borné à leur périmètre par ConventionService.
+        assign(Role.AUTORITE_CONTRACTANTE, "convention.activate");
+        assign(Role.AUTORITE_UPM, "convention.activate");
+        assign(Role.AUTORITE_UEP, "convention.activate");
+
         assign(Role.AUTORITE_CONTRACTANTE,
                 "projet.create",
                 "projet.document.upload",

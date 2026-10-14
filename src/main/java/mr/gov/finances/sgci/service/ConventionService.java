@@ -103,23 +103,13 @@ public class ConventionService {
             List<Convention> perimetre = statut == null
                     ? conventionRepository.findAllPourAutorite(acId)
                     : conventionRepository.findAllPourAutoriteAndStatut(acId, statut);
-            return masquerDesactivees(perimetre, role);
+            return perimetre;
         }
 
         List<Convention> toutes = statut == null
                 ? conventionRepository.findAll()
                 : conventionRepository.findByStatut(statut);
-        return masquerDesactivees(toutes, role);
-    }
-
-    /** Une convention fermée ne reste visible que des agents de la Commission. */
-    private List<Convention> masquerDesactivees(List<Convention> conventions, Role role) {
-        if (ConventionDisponibilitePolicy.voitLesDesactivees(role)) {
-            return conventions;
-        }
-        return conventions.stream()
-                .filter(ConventionDisponibilitePolicy::estActive)
-                .collect(Collectors.toList());
+        return toutes;
     }
 
     @Transactional(readOnly = true)
@@ -164,9 +154,9 @@ public class ConventionService {
                             && acId.equals(convention.getAutoriteContractante().getId()))
                     || (convention.getCreeParAutoriteContractante() != null
                             && acId.equals(convention.getCreeParAutoriteContractante().getId()));
-            return dansLePerimetre && ConventionDisponibilitePolicy.visiblePour(convention, u.getRole());
+            return dansLePerimetre;
         }
-        return ConventionDisponibilitePolicy.visiblePour(convention, u.getRole());
+        return true;
     }
 
     /**
@@ -175,9 +165,15 @@ public class ConventionService {
      * <p>Idempotent : le front peut double-cliquer, et rejouer l'état courant ne doit rien casser.
      */
     @Transactional
-    public ConventionDto changerActivation(Long id, boolean actif, Long userId) {
+    public ConventionDto changerActivation(Long id, boolean actif, AuthenticatedUser user) {
         Convention convention = conventionRepository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + id));
+        // Indispensable depuis que l'autorité contractante détient la permission : sans ce contrôle,
+        // elle fermerait par identifiant la convention de n'importe quelle autre autorité.
+        if (!canAccessConvention(id, user)) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED,
+                    "Accès refusé : convention hors périmètre");
+        }
         convention.setActif(actif);
         convention = conventionRepository.save(convention);
         ConventionDto result = toDto(convention);
