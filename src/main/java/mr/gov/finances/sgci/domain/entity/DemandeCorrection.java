@@ -54,6 +54,17 @@ public class DemandeCorrection {
     @Builder.Default
     private BigDecimal creditExterieur = BigDecimal.ZERO;
 
+    /**
+     * Équipements ou véhicules sous régime (plaques TT) acquis pendant le marché.
+     *
+     * <p>Nullable à dessein, là où les drapeaux de visa voisins sont des primitifs : une colonne
+     * {@code NOT NULL} ajoutée sur une table peuplée aurait été remplie de zéros, ce qui tombe juste
+     * ici mais par hasard. {@code null} dit la vérité sur les dossiers antérieurs — la question ne
+     * leur a pas été posée — et se lit partout comme « non », sans migration de rattrapage.
+     */
+    @Column(name = "equipements_presents")
+    private Boolean equipementsPresents;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default

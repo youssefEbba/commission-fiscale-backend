@@ -267,6 +267,7 @@ public class DemandeCorrectionService {
                 .intituleMarche(request.getIntituleMarche())
                 .creditInterieur(normalizeCredit(request.getCreditInterieur()))
                 .creditExterieur(normalizeCredit(request.getCreditExterieur()))
+                .equipementsPresents(request.getEquipementsPresents())
                 .autoriteContractante(autorite)
                 .entreprise(titulaire.entreprise())
                 .groupement(titulaire.groupement())
@@ -342,6 +343,31 @@ public class DemandeCorrectionService {
                     "Modèle fiscal et DQE obligatoires pour la soumission");
         }
         assertAuMoinsUnCredit(entity.getCreditInterieur(), entity.getCreditExterieur());
+        assertListeEquipementsSiDeclares(entity);
+    }
+
+    /**
+     * Si des équipements sous régime sont déclarés, leur liste doit être jointe.
+     *
+     * <p>L'obligation est conditionnelle, donc elle vit ici et non au référentiel, qui ne sait
+     * exprimer qu'une obligation inconditionnelle — même dispositif que le bulletin annoté exigé au
+     * visa DGD. Une case cochée sans pièce ne vaudrait rien pour celui qui ouvrira le crédit : il
+     * saurait qu'il existe des équipements sans pouvoir savoir lesquels.
+     *
+     * <p>Ne peut pas être contrôlée à la création : une demande naît en JSON et reçoit ses pièces
+     * ensuite. Les deux portes où les documents existent sont la soumission d'un brouillon et
+     * l'examen de recevabilité.
+     */
+    private void assertListeEquipementsSiDeclares(DemandeCorrection entity) {
+        if (entity == null || !Boolean.TRUE.equals(entity.getEquipementsPresents())) {
+            return;
+        }
+        List<String> presents = documentService.findActiveDocumentTypes(entity.getId());
+        if (!presents.contains(TypeDocument.LISTE_EQUIPEMENTS.name())) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Des équipements sous régime ont été déclarés sur cette demande : "
+                            + "la liste des équipements est obligatoire.");
+        }
     }
 
     private static BigDecimal normalizeCredit(BigDecimal value) {
@@ -470,6 +496,7 @@ public class DemandeCorrectionService {
         entity.setIntituleMarche(request.getIntituleMarche());
         entity.setCreditInterieur(normalizeCredit(request.getCreditInterieur()));
         entity.setCreditExterieur(normalizeCredit(request.getCreditExterieur()));
+        entity.setEquipementsPresents(request.getEquipementsPresents());
 
         Marche marcheCible = null;
         if (request.getMarcheId() != null) {
@@ -720,6 +747,7 @@ public class DemandeCorrectionService {
                     ProcessusDocument.CORRECTION_OFFRE_FISCALE,
                     documentService.findActiveDocumentTypes(entity.getId())
             );
+            assertListeEquipementsSiDeclares(entity);
         }
 
         boolean finale = Boolean.TRUE.equals(decisionFinale);
@@ -896,6 +924,7 @@ public class DemandeCorrectionService {
                 .intituleMarche(d.getIntituleMarche())
                 .creditInterieur(d.getCreditInterieur())
                 .creditExterieur(d.getCreditExterieur())
+                .equipementsPresents(d.getEquipementsPresents())
                 .statut(d.getStatut())
                 .validationDgd(d.isValidationDgd())
                 .validationDgtcp(d.isValidationDgtcp())

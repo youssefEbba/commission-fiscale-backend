@@ -93,6 +93,18 @@
             <version>8.5.9</version>
         </dependency>
         <!-- Lecture des relevés de crédit d'impôt de l'ancienne application (.xls binaire / .xlsx). -->
+        <!--
+            Génération des états PDF du reporting. Apache-2.0, comme POI : aucune obligation de
+            licence à faire arbitrer, ce qui compte pour un dépôt public et un commanditaire
+            ministériel. iText 7 est en AGPL-3.0 et a été écarté pour cette raison.
+            Version épinglée : le BOM Spring Boot ne gère pas pdfbox.
+        -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi</artifactId>

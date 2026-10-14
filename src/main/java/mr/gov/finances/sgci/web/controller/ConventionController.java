@@ -84,8 +84,7 @@ public class ConventionController {
             @RequestParam boolean actif,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
-        Long userId = user != null ? user.getUserId() : null;
-        return service.changerActivation(id, actif, userId);
+        return service.changerActivation(id, actif, user);
     }
 
     @GetMapping("/{id}/documents")

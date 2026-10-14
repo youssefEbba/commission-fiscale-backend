@@ -39,6 +39,23 @@ public class CertificatClotureQueueItemDto {
     /** true si le DGTCP peut proposer une clôture maintenant (règles métier). */
     private boolean eligiblePourCloture;
 
+    /**
+     * Vrai si la demande de correction d'origine déclarait des équipements sous régime (plaques TT).
+     *
+     * <p>C'est à la clôture que l'information compte : fermer un crédit dont des équipements restent
+     * sous régime est précisément ce que la Commission veut être en mesure de voir avant de signer.
+     */
+    private Boolean equipementsPresents;
+
+    /**
+     * La demande de correction d'origine, pour que l'écran atteigne la liste des équipements.
+     *
+     * <p>Les pièces sont rattachées à la demande, pas au certificat : sans cet identifiant, l'écran
+     * de clôture annoncerait des équipements sans permettre de les regarder, ou devrait rappeler le
+     * certificat pour les retrouver.
+     */
+    private Long demandeCorrectionId;
+
     /** Vide si {@link #eligiblePourCloture} ; sinon explications en français. */
     private List<String> motifsNonEligibilite;
 }

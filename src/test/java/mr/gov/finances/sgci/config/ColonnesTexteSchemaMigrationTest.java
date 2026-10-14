@@ -1,10 +1,12 @@
 package mr.gov.finances.sgci.config;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Enumerated;
 import mr.gov.finances.sgci.config.ColonnesTexteSchemaMigration.ColonneTexte;
 import mr.gov.finances.sgci.config.ColonnesTexteSchemaMigration.ColumnInfo;
 import mr.gov.finances.sgci.domain.entity.DemandeRattachement;
 import mr.gov.finances.sgci.domain.entity.DocumentRequirement;
+import mr.gov.finances.sgci.domain.entity.HistoriqueStatut;
 import mr.gov.finances.sgci.domain.entity.Notification;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import org.junit.jupiter.api.Test;
@@ -130,5 +132,57 @@ class ColonnesTexteSchemaMigrationTest {
                     .as("type %s", type).isFalse();
         }
         assertThat(new ColumnInfo(null, null).needsWiden(32)).isFalse();
+    }
+    // ── l'historisation des statuts ────────────────────────────────────────────────────────────
+
+    @Test
+    void historiqueStatutNeDeclareAucuneColonneEnumeree() {
+        // Ses deux colonnes de statut accueillent les valeurs de huit énumérations différentes
+        // — demande, certificat, utilisation, transfert, convention, marché, sous-traitance,
+        // référentiel projet — qu'aucun type Java ne couvre. Un @Enumerated serait rendu par
+        // Hibernate en colonne MySQL enum(...) native, qu'un redémarrage n'élargit jamais : ajouter
+        // un statut casserait l'écriture en production sans qu'aucun test ne le voie, puisque H2
+        // recrée son schéma à chaque exécution. C'est ici, et nulle part ailleurs, que ça se garde.
+        for (Field champ : HistoriqueStatut.class.getDeclaredFields()) {
+            assertThat(champ.getAnnotation(Enumerated.class))
+                    .as("le champ %s ne doit pas être @Enumerated", champ.getName())
+                    .isNull();
+        }
+    }
+
+    @Test
+    void historiqueStatutAccueilleLePlusLongDesStatuts() {
+        // QUITTANCE_DGI_ENREGISTREE, 25 caractères, est le plus long du modèle aujourd'hui.
+        // Si quelqu'un en ajoute un plus long que la colonne, ce test le dit avant la production.
+        int longueurDeclaree = longueurDuChamp("statutApres");
+        int plusLong = java.util.stream.Stream.of(
+                        mr.gov.finances.sgci.domain.enums.StatutDemande.values(),
+                        mr.gov.finances.sgci.domain.enums.StatutCertificat.values(),
+                        mr.gov.finances.sgci.domain.enums.StatutUtilisation.values(),
+                        mr.gov.finances.sgci.domain.enums.StatutTransfert.values(),
+                        mr.gov.finances.sgci.domain.enums.StatutConvention.values(),
+                        mr.gov.finances.sgci.domain.enums.StatutMarche.values(),
+                        mr.gov.finances.sgci.domain.enums.StatutSousTraitance.values(),
+                        mr.gov.finances.sgci.domain.enums.StatutReferentielProjet.values())
+                .flatMap(java.util.Arrays::stream)
+                .mapToInt(v -> v.name().length())
+                .max()
+                .orElseThrow();
+
+        assertThat(longueurDeclaree)
+                .as("statut_apres doit accueillir le plus long statut du modèle (%d caractères)", plusLong)
+                .isGreaterThanOrEqualTo(plusLong);
+        assertThat(longueurDuChamp("statutAvant")).isGreaterThanOrEqualTo(plusLong);
+    }
+
+    private static int longueurDuChamp(String nom) {
+        try {
+            Field champ = HistoriqueStatut.class.getDeclaredField(nom);
+            Column colonne = champ.getAnnotation(Column.class);
+            assertThat(colonne).as("le champ %s doit déclarer une longueur", nom).isNotNull();
+            return colonne.length();
+        } catch (NoSuchFieldException e) {
+            throw new AssertionError("champ " + nom + " absent de HistoriqueStatut", e);
+        }
     }
 }

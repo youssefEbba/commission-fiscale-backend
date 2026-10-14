@@ -1324,6 +1324,8 @@ public class CertificatCreditService {
                 .entrepriseId(e != null ? e.getId() : null)
                 .entrepriseRaisonSociale(e != null ? e.getRaisonSociale() : null)
                 .demandeCorrectionId(demandeCorrectionId)
+                .equipementsPresents(c.getDemandeCorrection() != null
+                        ? c.getDemandeCorrection().getEquipementsPresents() : null)
                 .marcheId(marcheId)
                 .autoriteContractanteNom(autorite != null ? autorite.getNom() : null)
                 .autoriteContractanteMinistereTutelleNom(autorite != null ? autorite.getMinistereTutelleNom() : null)

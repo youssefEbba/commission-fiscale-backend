@@ -30,7 +30,10 @@ public final class DocumentDepotPolicy {
             "OFFRE_FINANCIERE",
             "TABLEAU_MODELE",
             "DAO_DQE",
-            "LISTE_ITEMS");
+            "LISTE_ITEMS",
+            // Exigée seulement quand l'autorité contractante déclare des équipements : l'obligation
+            // est conditionnelle, donc en code, et le référentiel la laisse facultative.
+            "LISTE_EQUIPEMENTS");
 
     /** Produites par la Commission pendant l'instruction, donc jamais réclamées au dépôt. */
     public static final Set<String> CODES_PRODUITS_PAR_LA_COMMISSION = Set.of(

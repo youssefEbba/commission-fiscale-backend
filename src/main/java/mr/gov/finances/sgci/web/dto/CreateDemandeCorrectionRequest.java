@@ -44,6 +44,9 @@ public class CreateDemandeCorrectionRequest {
     /** Crédit extérieur / douanier demandé (défaut 0). Si 0, la DGD est exclue du workflow. */
     private BigDecimal creditExterieur;
 
+    /** Équipements ou véhicules sous régime déclarés sur le marché : impose la liste en pièce jointe. */
+    private Boolean equipementsPresents;
+
     /**
      * Si {@code true}, statut {@code BROUILLON} : pas de notification, champs fiscaux optionnels jusqu'à soumission.
      */
