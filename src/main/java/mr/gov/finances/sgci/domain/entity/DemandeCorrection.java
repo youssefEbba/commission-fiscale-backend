@@ -65,6 +65,20 @@ public class DemandeCorrection {
     @Column(name = "equipements_presents")
     private Boolean equipementsPresents;
 
+    /**
+     * Le régime douanier déclaré pour ces équipements : admission temporaire.
+     *
+     * <p>Distinct de {@link #equipementsPresents}, et pas redondant avec lui : du matériel peut
+     * être nécessaire au marché sans entrer sous admission temporaire — importé définitivement,
+     * ou déjà sur le territoire. C'est l'admission temporaire qui crée une obligation de
+     * réexportation, donc un suivi à la clôture du crédit.
+     *
+     * <p>Nullable pour la même raison que son voisin : sur les dossiers antérieurs la question
+     * n'a pas été posée, et {@code null} le dit sans qu'on ait à inventer une réponse.
+     */
+    @Column(name = "admission_temporaire")
+    private Boolean admissionTemporaire;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default

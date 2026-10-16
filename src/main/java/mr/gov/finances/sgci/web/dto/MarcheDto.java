@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.StatutMarche;
+import mr.gov.finances.sgci.domain.enums.TypeMarche;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -32,5 +33,8 @@ public class MarcheDto {
     @JsonAlias("montantContratTtc")
     private BigDecimal montantContratHt;
     private StatutMarche statut;
+
+    /** Fourniture, prestation ou travaux. {@code null} sur les marchés antérieurs. */
+    private TypeMarche typeMarche;
     private List<Long> delegueIds;
 }

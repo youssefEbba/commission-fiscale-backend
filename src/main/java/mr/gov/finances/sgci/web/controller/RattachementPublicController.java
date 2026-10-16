@@ -6,6 +6,7 @@ import mr.gov.finances.sgci.domain.enums.TypeEntiteRattachement;
 import mr.gov.finances.sgci.service.DemandeRattachementService;
 import mr.gov.finances.sgci.web.dto.CreateDemandeRattachementRequest;
 import mr.gov.finances.sgci.web.dto.DemandeRattachementDto;
+import mr.gov.finances.sgci.web.dto.SuiviRattachementDto;
 import mr.gov.finances.sgci.web.dto.DocumentRequirementDto;
 import mr.gov.finances.sgci.web.dto.EntitePubliqueDto;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
@@ -76,5 +77,17 @@ public class RattachementPublicController {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS.value(), ApiErrorCode.TROP_DE_REQUETES,
                     "Trop de requêtes depuis cette adresse. Réessayez dans une minute.");
         }
+    }
+
+    /**
+     * Le suivi d'une demande, sans compte : référence + courriel du dépôt.
+     *
+     * <p>Les deux sont exigés parce que la référence est séquentielle, donc devinable. Une
+     * référence inconnue et un courriel qui ne correspond pas rendent la même erreur, pour ne pas
+     * confirmer l'existence d'une référence à qui la cherche.
+     */
+    @GetMapping("/suivi")
+    public SuiviRattachementDto suivi(@RequestParam String reference, @RequestParam String email) {
+        return service.suivre(reference, email);
     }
 }

@@ -15,6 +15,7 @@ import java.util.Properties;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,7 +41,12 @@ class PasswordResetMailIT {
         when(mailSender.createMimeMessage()).thenReturn(new MimeMessage(session));
 
         emailService.sendPasswordResetApproved("user@test.local", "entreprise", "TempPass1234");
-        Thread.sleep(1500);
-        verify(mailSender, atLeastOnce()).send(any(MimeMessage.class));
+
+        // L'envoi est @Async : une attente fixe est une course, pas une synchronisation. Elle se
+        // gagnait tant que la suite restait courte, et s'est mise à se perdre quand elle a grossi —
+        // un échec qui ne dit rien du code testé et coûte une enquête à chaque fois.
+        // timeout() interroge jusqu'à ce que l'envoi ait lieu, et rend la main dès qu'il a lieu :
+        // déterministe, et plus rapide dans le cas normal.
+        verify(mailSender, timeout(10_000).atLeastOnce()).send(any(MimeMessage.class));
     }
 }

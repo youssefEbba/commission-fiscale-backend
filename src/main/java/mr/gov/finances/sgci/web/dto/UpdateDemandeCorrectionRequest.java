@@ -50,6 +50,9 @@ public class UpdateDemandeCorrectionRequest {
     /** Équipements ou véhicules sous régime déclarés sur le marché. */
     private Boolean equipementsPresents;
 
+    /** Régime déclaré : les équipements entrent sous admission temporaire. */
+    private Boolean admissionTemporaire;
+
     @NotNull(message = "Le modèle fiscal est obligatoire")
     private ModeleFiscalDto modeleFiscal;
 

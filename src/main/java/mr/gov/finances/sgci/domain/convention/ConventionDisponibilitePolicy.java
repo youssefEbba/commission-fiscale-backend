@@ -24,7 +24,7 @@ import java.util.Set;
  * masquer ce qu'elle venait de fermer l'aurait empêchée de le rouvrir, pour toujours.
  *
  * <p>Politique sans état, en code plutôt qu'en donnée, sur le modèle de
- * {@code DocumentVisibilitePolicy} : la règle ne doit pas pouvoir dériver par un {@code UPDATE}.
+ * {@code VisibiliteDocumentService} : la règle ne doit pas pouvoir dériver par un {@code UPDATE}.
  */
 public final class ConventionDisponibilitePolicy {
 

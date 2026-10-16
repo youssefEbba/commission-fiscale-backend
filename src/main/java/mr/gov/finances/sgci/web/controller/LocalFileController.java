@@ -1,7 +1,6 @@
 package mr.gov.finances.sgci.web.controller;
 
 import lombok.RequiredArgsConstructor;
-import mr.gov.finances.sgci.domain.document.DocumentVisibilitePolicy;
 import mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
@@ -9,6 +8,7 @@ import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.repository.DocumentUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.service.document.VisibiliteDocumentService;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
@@ -53,6 +53,7 @@ public class LocalFileController {
     private String uploadDir;
 
     private final DocumentUtilisationCreditRepository documentUtilisationCreditRepository;
+    private final VisibiliteDocumentService visibiliteDocumentService;
     private final UtilisateurRepository utilisateurRepository;
     private final EffectiveIdentityService effectiveIdentityService;
 
@@ -83,7 +84,7 @@ public class LocalFileController {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Authentification requise");
         }
         Role role = user.getRole();
-        if (DocumentVisibilitePolicy.acteurVoitTout(role)) {
+        if (VisibiliteDocumentService.acteurVoitTout(role)) {
             return;
         }
         Optional<DocumentUtilisationCredit> piece =
@@ -108,7 +109,7 @@ public class LocalFileController {
         if (mienne == null || (!mienne.equals(demandeur) && !mienne.equals(titulaire))) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Justificatif hors périmètre");
         }
-        if (!DocumentVisibilitePolicy.visiblePour(doc.getCodeDocument(),
+        if (!visibiliteDocumentService.visiblePour(VisibiliteDocumentService.processusDe(utilisation), doc.getCodeDocument(),
                 utilisation != null ? utilisation.getStatut() : null, role)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED,
                     "Pièce produite par l'administration : elle sera communicable après la liquidation du dossier");

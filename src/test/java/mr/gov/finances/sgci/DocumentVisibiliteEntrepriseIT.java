@@ -1,6 +1,8 @@
 package mr.gov.finances.sgci;
 
-import mr.gov.finances.sgci.domain.document.DocumentVisibilitePolicy;
+import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
+import mr.gov.finances.sgci.domain.enums.SensDocument;
+import mr.gov.finances.sgci.service.document.VisibiliteDocumentService;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.DocumentRequirement;
 import mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit;
@@ -53,6 +55,10 @@ class DocumentVisibiliteEntrepriseIT {
     private UtilisationCreditService utilisationService;
 
     @Autowired
+    private VisibiliteDocumentService visibilite;
+
+
+    @Autowired
     private DocumentUtilisationCreditService documentService;
 
     @Autowired
@@ -86,51 +92,71 @@ class DocumentVisibiliteEntrepriseIT {
     // ── le garde-fou contre l'oubli ────────────────────────────────────────────────────────────
 
     @Test
-    void toutCodeParametreEstClasse() {
-        List<String> codes = requirementRepository.findAll().stream()
-                .filter(r -> r.getProcessus() == ProcessusDocument.UTILISATION_CI_DOUANE
-                        || r.getProcessus() == ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE)
-                .map(DocumentRequirement::getCodeDocument)
-                .distinct()
-                .collect(Collectors.toList());
-
-        assertThat(codes).isNotEmpty();
-        for (String code : codes) {
-            boolean classe = DocumentVisibilitePolicy.CODES_ADMINISTRATION.contains(code)
-                    || DocumentVisibilitePolicy.CODES_ENTREPRISE.contains(code);
-            assertThat(classe)
-                    .as("Le code « %s » est paramétré mais n'est classé ni administration ni "
-                            + "entreprise : il serait visible par défaut", code)
-                    .isTrue();
+    void toutCodeParametreAUnSens() {
+        // Le garde-fou a changé de nature : il portait sur deux ensembles écrits en dur, il porte
+        // maintenant sur la donnée. Une pièce ajoutée au référentiel sans sens se comporte comme
+        // une entrée — visible —, ce qui est le défaut le moins nuisible, mais ce test oblige à
+        // trancher plutôt qu'à laisser le défaut décider.
+        for (ProcessusDocument processus : List.of(ProcessusDocument.UTILISATION_CI_DOUANE,
+                ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE,
+                ProcessusDocument.CORRECTION_OFFRE_FISCALE,
+                ProcessusDocument.MISE_EN_PLACE_CI)) {
+            for (DocumentRequirement req : requirementRepository
+                    .findByProcessusOrderByOrdreAffichageAsc(processus)) {
+                assertThat(req.sensEffectif())
+                        .as("la pièce %s du processus %s doit porter un sens",
+                                req.getCodeDocument(), processus)
+                        .isNotNull();
+            }
         }
     }
 
     @Test
-    void lesDeuxEnsemblesSontDisjoints() {
-        Set<String> intersection = DocumentVisibilitePolicy.CODES_ADMINISTRATION.stream()
-                .filter(DocumentVisibilitePolicy.CODES_ENTREPRISE::contains)
-                .collect(Collectors.toSet());
-
-        assertThat(intersection).isEmpty();
+    void lesPiecesProduitesParLaCommissionSontClasseesEnSortie() {
+        // La reprise des trois classements en dur doit avoir pris effet au démarrage.
+        assertSens(ProcessusDocument.UTILISATION_CI_DOUANE, "QUITTANCE_TRESOR", SensDocument.SORTIE);
+        assertSens(ProcessusDocument.UTILISATION_CI_DOUANE, "BULLETIN_ANNOTE", SensDocument.SORTIE);
+        assertSens(ProcessusDocument.UTILISATION_CI_DOUANE, "CERTIFICAT_UTILISATION", SensDocument.SORTIE);
+        assertSens(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, "QUITTANCE_DGI", SensDocument.SORTIE);
+        assertSens(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "LETTRE_ADOPTION", SensDocument.SORTIE);
+        assertSens(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "OFFRE_FISCALE_CORRIGEE", SensDocument.SORTIE);
+        assertSens(ProcessusDocument.MISE_EN_PLACE_CI, "CERTIFICAT_CREDIT_IMPOTS", SensDocument.SORTIE);
     }
 
-    // ── la règle elle-même ─────────────────────────────────────────────────────────────────────
+    @Test
+    void lesPiecesDuDeposantRestentEnEntree() {
+        assertSens(ProcessusDocument.UTILISATION_CI_DOUANE, "DECLARATION_DOUANE", SensDocument.ENTREE);
+        assertSens(ProcessusDocument.UTILISATION_CI_DOUANE, "CHEQUE_CERTIFIE", SensDocument.ENTREE);
+        assertSens(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "OFFRE_FISCALE", SensDocument.ENTREE);
+        // Le reçu de dépôt est dû au déposant immédiatement : le classer en sortie le lui
+        // masquerait jusqu'à l'adoption, ce qui serait un recul.
+        assertSens(ProcessusDocument.CORRECTION_OFFRE_FISCALE, "RECU_DEPOT", SensDocument.ENTREE);
+    }
+
+    private void assertSens(ProcessusDocument processus, String code, SensDocument attendu) {
+        assertThat(requirementRepository.findByProcessusAndCodeDocument(processus, code))
+                .as("la pièce %s doit être paramétrée pour %s", code, processus)
+                .isPresent()
+                .get()
+                .extracting(DocumentRequirement::sensEffectif)
+                .isEqualTo(attendu);
+    }
 
     @Test
     void avantLiquidation_lentrepriseNeVoitPasLesPiecesDeLadministration() {
-        assertThat(DocumentVisibilitePolicy.visiblePour(
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "BULLETIN_ANNOTE", StatutUtilisation.CHEQUE_SAISI, Role.ENTREPRISE)).isFalse();
-        assertThat(DocumentVisibilitePolicy.visiblePour(
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "QUITTANCE_TRESOR", StatutUtilisation.ENVOYEE_AU_TRESOR, Role.ENTREPRISE)).isFalse();
-        assertThat(DocumentVisibilitePolicy.visiblePour(
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "CERTIFICAT_UTILISATION", StatutUtilisation.CERTIFICAT_EMIS, Role.ENTREPRISE)).isFalse();
     }
 
     @Test
     void apresLiquidation_ellesDeviennentVisibles() {
-        assertThat(DocumentVisibilitePolicy.visiblePour(
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "BULLETIN_ANNOTE", StatutUtilisation.LIQUIDEE, Role.ENTREPRISE)).isTrue();
-        assertThat(DocumentVisibilitePolicy.visiblePour(
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "QUITTANCE_DGI", StatutUtilisation.APUREE, Role.ENTREPRISE)).isTrue();
     }
 
@@ -138,23 +164,23 @@ class DocumentVisibiliteEntrepriseIT {
     void aLaCloture_ellesLeRestent() {
         // Sans CLOTUREE dans la liste, les pièces se re-masqueraient à l'instant où l'entreprise
         // accuse réception — exactement le contraire de ce qu'on veut.
-        assertThat(DocumentVisibilitePolicy.visiblePour(
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "CERTIFICAT_UTILISATION", StatutUtilisation.CLOTUREE, Role.ENTREPRISE)).isTrue();
     }
 
     @Test
     void lesPiecesDeLentrepriseSontToujoursVisibles() {
-        assertThat(DocumentVisibilitePolicy.visiblePour(
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "CHEQUE_CERTIFIE", StatutUtilisation.CHEQUE_SAISI, Role.ENTREPRISE)).isTrue();
-        assertThat(DocumentVisibilitePolicy.visiblePour(
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "FACTURE", StatutUtilisation.DEMANDEE, Role.ENTREPRISE)).isTrue();
     }
 
     @Test
     void lesAdministrationsVoientTout() {
         for (Role role : List.of(Role.DGD, Role.DGTCP, Role.DGI, Role.DGB, Role.PRESIDENT, Role.ADMIN_SI)) {
-            assertThat(DocumentVisibilitePolicy.visiblePour(
-                    "BULLETIN_ANNOTE", StatutUtilisation.DEMANDEE, role))
+            assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
+                "BULLETIN_ANNOTE", StatutUtilisation.DEMANDEE, role))
                     .as("rôle %s", role).isTrue();
         }
     }
@@ -162,7 +188,7 @@ class DocumentVisibiliteEntrepriseIT {
     @Test
     void unRejetNouvrePasLesPieces() {
         // Le motif d'un rejet est porté par la décision, pas par les papiers de travail.
-        assertThat(DocumentVisibilitePolicy.visiblePour(
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "BULLETIN_ANNOTE", StatutUtilisation.REJETEE, Role.ENTREPRISE)).isFalse();
     }
 

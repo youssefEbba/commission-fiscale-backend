@@ -21,7 +21,10 @@ import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
+import mr.gov.finances.sgci.domain.entity.ParametreApplication;
+import mr.gov.finances.sgci.service.ParametreService;
 import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.SensDocument;
 import mr.gov.finances.sgci.domain.enums.StatutMarche;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutConvention;
@@ -38,6 +41,7 @@ import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.DocumentRequirementRepository;
 import mr.gov.finances.sgci.repository.EntrepriseRepository;
 import mr.gov.finances.sgci.repository.MarcheRepository;
+import mr.gov.finances.sgci.repository.ParametreApplicationRepository;
 import mr.gov.finances.sgci.repository.PermissionRepository;
 import mr.gov.finances.sgci.repository.ReferentielTaxeRepository;
 import mr.gov.finances.sgci.repository.RolePermissionRepository;
@@ -77,6 +81,7 @@ public class DataInitializer implements CommandLineRunner {
     private final ReferentielTaxeRepository referentielTaxeRepository;
     private final RolePermissionRepository rolePermissionRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ParametreApplicationRepository parametreApplicationRepository;
     private final DossierGedService dossierGedService;
     private final ReferentielTypeDocumentService referentielTypeDocumentService;
     private final DocumentRequirementLegacyMigration documentRequirementLegacyMigration;
@@ -105,6 +110,8 @@ public class DataInitializer implements CommandLineRunner {
         // Avant tout seed / création d'entreprise : retire les colonnes NOT NULL obsolètes.
         entrepriseLegacyGroupementMigration.migrateIfNeeded();
         seedDocumentRequirements();
+        marquerPiecesDeSortie();
+        seedParametresApplication();
         seedDefaultUsers();
         seedReferentielTaxes();
         if (Boolean.TRUE.equals(environment.getProperty("app.seed.demande-correction.enabled", Boolean.class, Boolean.TRUE))) {
@@ -121,6 +128,73 @@ public class DataInitializer implements CommandLineRunner {
             seedCertificatOuvertDemo();
         }
         referenceBackfillMigration.migrateIfNeeded();
+    }
+
+    /**
+     * Les coordonnées de contact du pied de page, jusqu'ici écrites en dur dans l'écran.
+     *
+     * <p>Semées avec les valeurs en vigueur, pour que la mise en service ne change rien à
+     * l'affichage. Idempotent comme le reste : une valeur modifiée depuis l'écran de paramétrage
+     * n'est jamais réécrite au redémarrage — sans quoi le paramétrage ne servirait à rien.
+     */
+    private void seedParametresApplication() {
+        seedParametre(ParametreService.CONTACT_ADRESSE, "Nouakchott, Mauritanie",
+                "Adresse affichée dans le pied de page");
+        seedParametre(ParametreService.CONTACT_EMAIL, "contact@commission-fiscale.gov.mr",
+                "Adresse de courriel de contact");
+        seedParametre(ParametreService.CONTACT_TELEPHONE, "+222 48 69 89 83",
+                "Numéro de téléphone de contact");
+    }
+
+    private void seedParametre(String cle, String valeur, String description) {
+        if (parametreApplicationRepository.existsByCle(cle)) {
+            return;
+        }
+        parametreApplicationRepository.save(ParametreApplication.builder()
+                .cle(cle)
+                .valeur(valeur)
+                .description(description)
+                .dateModification(Instant.now())
+                .build());
+    }
+
+    /**
+     * Classe en sortie les pièces que la Commission produit, sans jamais écraser un paramétrage.
+     *
+     * <p>La liste est reprise des trois classements qui existaient déjà en dur — les pièces
+     * « produites par la Commission » du formulaire de dépôt, les pièces « d'administration »
+     * masquées aux utilisations, et l'étagement de la GED. Rien n'y est inventé.
+     *
+     * <p><b>N'écrit que si le sens est nul</b>, c'est-à-dire si personne n'a tranché. Un
+     * administrateur qui classe délibérément une pièce en entrée ne doit pas voir sa décision
+     * reprise au redémarrage suivant : c'est précisément ce que fait
+     * {@code upgradeTransfertCreditDocumentsToObligatoires}, seul endroit du seed à forcer une
+     * valeur, et ce n'est pas un modèle à suivre ici.
+     *
+     * <p>{@code RECU_DEPOT} reste volontairement en entrée : c'est la preuve de dépôt du déposant,
+     * elle lui est due immédiatement. La classer en sortie la lui masquerait jusqu'à l'adoption.
+     */
+    private void marquerPiecesDeSortie() {
+        marquerSorties(ProcessusDocument.CORRECTION_OFFRE_FISCALE,
+                "OFFRE_FISCALE_CORRIGEE", "OFFRE_CORRIGEE", "CREDIT_INTERIEUR", "CREDIT_EXTERIEUR",
+                "LETTRE_ADOPTION", "FEUILLE_EVALUATION_SIGNEE");
+        marquerSorties(ProcessusDocument.MISE_EN_PLACE_CI,
+                "CERTIFICAT_CREDIT_IMPOTS");
+        marquerSorties(ProcessusDocument.UTILISATION_CI_DOUANE,
+                "BULLETIN_ANNOTE", "QUITTANCE_TRESOR", "CERTIFICAT_UTILISATION");
+        marquerSorties(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE,
+                "QUITTANCE_DGI", "CERTIFICAT_UTILISATION");
+    }
+
+    private void marquerSorties(ProcessusDocument processus, String... codes) {
+        for (String code : codes) {
+            documentRequirementRepository.findByProcessusAndCodeDocument(processus, code)
+                    .filter(req -> req.getSens() == null)
+                    .ifPresent(req -> {
+                        req.setSens(SensDocument.SORTIE);
+                        documentRequirementRepository.save(req);
+                    });
+        }
     }
 
     private void seedDocumentRequirements() {
@@ -1299,6 +1373,8 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("correction.admin_override", "Corriger un document ou une information d'une demande de correction, à tout moment (ADMIN_SI, motif obligatoire)");
         createPermission("correction.visa.admin_override", "Viser une demande de correction à la place d'un membre de la commission (DGD/DGTCP/DGI/DGB) ou adopter à la place du Président (ADMIN_SI, motif obligatoire, document exigé téléversé)");
         createPermission("signature.manage", "Gérer les images de signature PNG (créer/remplacer/désactiver) — sa propre signature, ou toute signature pour ADMIN_SI");
+        createPermission("parametre.manage",
+                "Gérer le paramétrage de l'application (coordonnées de contact du pied de page)");
         createPermission("certificat.admin_override", "Corriger un document ou une information d'un certificat de crédit, à tout moment (ADMIN_SI, motif obligatoire)");
         createPermission("certificat.visa.admin_override", "Viser un certificat de crédit à la place d'un membre de la commission (DGI/DGD/DGTCP) ou valider à la place du Président (ADMIN_SI, motif obligatoire, certificat signé téléversé)");
         // Séparée de la précédente : l'ouverture du crédit initialise les soldes, donc produit un
@@ -1860,6 +1936,7 @@ public class DataInitializer implements CommandLineRunner {
 
     assign(Role.ADMIN_SI,
         "signature.manage",
+        "parametre.manage",
         "document.requirements.view",
         "document.types.view",
         "document.types.manage",

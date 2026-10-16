@@ -258,9 +258,9 @@ public class ReportingDossierService {
                 "Conventions arrivant à échéance sous " + dto.getHorizonEcheanceJours() + " jours",
                 dto.getConventionsAEcheance(), null, null));
 
-        sections.add(sectionLignes("Équipements sous régime déclarés sur un crédit encore ouvert",
+        sections.add(sectionLignes("Matériel sous admission temporaire sur un crédit encore ouvert",
                 dto.getEquipementsSurCreditOuvert(), null,
-                "Dossiers où la question des équipements n'a jamais été posée : "
+                "Dossiers où le régime n'a jamais été renseigné : "
                         + dto.getEquipementsNonRenseignes()
                         + ". Sans ce dénominateur, le nombre ci-dessus se lirait comme un inventaire "
                         + "complet."));

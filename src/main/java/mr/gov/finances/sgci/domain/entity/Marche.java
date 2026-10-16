@@ -19,6 +19,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import mr.gov.finances.sgci.domain.enums.StatutMarche;
+import mr.gov.finances.sgci.domain.enums.TypeMarche;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -58,6 +59,20 @@ public class Marche {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private StatutMarche statut;
+
+    /**
+     * La nature de la prestation : fourniture, prestation de services ou travaux.
+     *
+     * <p>Nullable : les marchés déjà enregistrés n'en portent pas, et rien ne permet de le déduire
+     * de leur intitulé. Les forcer à une valeur par défaut fabriquerait une donnée fausse qui se
+     * retrouverait ensuite dans les états de la Commission.
+     *
+     * <p>Sa colonne est inscrite au registre de {@code ColonnesTexteSchemaMigration}, qui la
+     * convertit en VARCHAR au démarrage — voir {@link TypeMarche}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type_marche", length = 32)
+    private TypeMarche typeMarche;
 
     @ManyToOne
     @JoinColumn(name = "convention_id")

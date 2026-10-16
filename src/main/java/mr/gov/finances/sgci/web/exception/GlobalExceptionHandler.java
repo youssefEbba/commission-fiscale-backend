@@ -12,6 +12,8 @@ import org.springframework.security.authentication.InsufficientAuthenticationExc
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -245,6 +247,24 @@ public class GlobalExceptionHandler {
                 ApiErrorCode.VALIDATION_FAILED,
                 "Validation échouée",
                 details.isEmpty() ? null : details));
+    }
+
+    /**
+     * Une route qui n'existe pas rend 404, et non 500.
+     *
+     * <p>Sans ce gestionnaire, le filet {@code Exception.class} ci-dessous attrapait l'absence de
+     * route et la rendait en « Erreur interne ». Conséquence concrète, constatée : une équipe
+     * frontale a conclu qu'une route de suivi existait mais plantait, alors qu'elle n'avait jamais
+     * été écrite — et a construit son écran en attendant une correction qui n'avait pas lieu
+     * d'être. Un 500 dit « le serveur a échoué » ; un 404 dit « vous appelez autre chose ».
+     */
+    @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
+    public ResponseEntity<ErrorResponse> handleRouteInconnue(Exception ex) {
+        return body(ErrorResponse.of(
+                HttpStatus.NOT_FOUND.value(),
+                ApiErrorCode.RESOURCE_NOT_FOUND,
+                "Route inconnue",
+                null));
     }
 
     @ExceptionHandler(Exception.class)

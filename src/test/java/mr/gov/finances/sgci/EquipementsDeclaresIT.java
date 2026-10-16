@@ -77,23 +77,20 @@ class EquipementsDeclaresIT {
         ac = new AuthenticatedUser(agentAc.getId(), agentAc.getUsername(), agentAc.getRole());
     }
 
-    // ── la règle, à la recevabilité ────────────────────────────────────────────────────────────
+    // ── la liste n'est plus réclamée ───────────────────────────────────────────────────────────
 
     @Test
     @Transactional
-    void declarationSansListe_recevabiliteRefusee() {
+    void declarationSansListe_recevabiliteAcceptee() {
+        // Décision de la Commission : la liste reste une pièce du référentiel, mais elle n'est
+        // jamais exigée. La règle qui bloquait la recevabilité a donc été retirée, et ce test est
+        // l'inverse exact de celui qu'il remplace — il existe pour que personne ne la remette sans
+        // le vouloir, en croyant réparer un oubli.
         DemandeCorrection demande = demandeAu(StatutDemande.RECUE, true);
 
-        assertThatThrownBy(() -> service.updateStatut(
+        assertThatCode(() -> service.updateStatut(
                 demande.getId(), StatutDemande.RECEVABLE, dgd, null, null))
-                .isInstanceOf(ApiException.class)
-                .satisfies(e -> {
-                    ApiException api = (ApiException) e;
-                    assertThat(api.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-                    // Le message nomme la déclaration, pas seulement la pièce : sans cela, l'agent
-                    // chercherait une pièce obligatoire qui ne l'est pas pour les autres dossiers.
-                    assertThat(api.getMessage()).contains("équipements sous régime ont été déclarés");
-                });
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -131,17 +128,15 @@ class EquipementsDeclaresIT {
                 .doesNotThrowAnyException();
     }
 
-    // ── la même règle, à la soumission d'un brouillon ──────────────────────────────────────────
+    // ── ni à la soumission d'un brouillon ──────────────────────────────────────────────────────
 
     @Test
     @Transactional
-    void brouillonDeclarantSansListe_soumissionRefusee() {
+    void brouillonDeclarantSansListe_soumissionAcceptee() {
         DemandeCorrection demande = demandeAu(StatutDemande.BROUILLON, true);
 
-        assertThatThrownBy(() -> service.soumettreBrouillon(demande.getId(), ac))
-                .isInstanceOf(ApiException.class)
-                .satisfies(e -> assertThat(((ApiException) e).getMessage())
-                        .contains("liste des équipements est obligatoire"));
+        assertThatCode(() -> service.soumettreBrouillon(demande.getId(), ac))
+                .doesNotThrowAnyException();
     }
 
     // ── le drapeau voyage ──────────────────────────────────────────────────────────────────────

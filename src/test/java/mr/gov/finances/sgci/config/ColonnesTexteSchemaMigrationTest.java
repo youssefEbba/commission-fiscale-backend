@@ -7,6 +7,7 @@ import mr.gov.finances.sgci.config.ColonnesTexteSchemaMigration.ColumnInfo;
 import mr.gov.finances.sgci.domain.entity.DemandeRattachement;
 import mr.gov.finances.sgci.domain.entity.DocumentRequirement;
 import mr.gov.finances.sgci.domain.entity.HistoriqueStatut;
+import mr.gov.finances.sgci.domain.entity.Marche;
 import mr.gov.finances.sgci.domain.entity.Notification;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import org.junit.jupiter.api.Test;
@@ -37,7 +38,9 @@ class ColonnesTexteSchemaMigrationTest {
             "notification.entity_type", new FieldRef(Notification.class, "entityType"),
             "utilisation_credit.statut", new FieldRef(UtilisationCredit.class, "statut"),
             "document_requirement.processus", new FieldRef(DocumentRequirement.class, "processus"),
-            "demande_rattachement.statut", new FieldRef(DemandeRattachement.class, "statut"));
+            "demande_rattachement.statut", new FieldRef(DemandeRattachement.class, "statut"),
+            "marche.type_marche", new FieldRef(Marche.class, "typeMarche"),
+            "document_requirement.sens", new FieldRef(DocumentRequirement.class, "sens"));
 
     private record FieldRef(Class<?> entite, String champ) {
     }

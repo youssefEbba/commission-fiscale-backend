@@ -470,6 +470,7 @@ public class MarcheService {
                 .dateSignature(request.getDateSignature())
                 .montantContratHt(request.getMontantContratHt())
                 .statut(request.getStatut())
+                .typeMarche(request.getTypeMarche())
                 .convention(convention)
                 .demandeCorrection(demande)
                 .build();
@@ -507,6 +508,11 @@ public class MarcheService {
         marche.setDateSignature(request.getDateSignature());
         marche.setMontantContratHt(request.getMontantContratHt());
         marche.setStatut(request.getStatut());
+        // Comme pour l'intitulé : on accepte de renseigner un type absent, jamais d'effacer celui
+        // qui est déjà posé. Une modification partielle ne doit pas vider un champ qu'elle ignore.
+        if (request.getTypeMarche() != null) {
+            marche.setTypeMarche(request.getTypeMarche());
+        }
         marche = marcheRepository.save(marche);
         return toDto(marche);
     }
@@ -522,6 +528,7 @@ public class MarcheService {
                 .dateSignature(marche.getDateSignature())
                 .montantContratHt(marche.getMontantContratHt())
                 .statut(marche.getStatut())
+                .typeMarche(marche.getTypeMarche())
                 .delegueIds(marche.getDelegues() != null
                         ? marche.getDelegues().stream()
                         .map(md -> md.getDelegue() != null ? md.getDelegue().getId() : null)

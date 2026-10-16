@@ -125,6 +125,8 @@ public class DocumentRequirementService {
         }
         entity.setDescription(request.getDescription());
         entity.setOrdreAffichage(request.getOrdreAffichage());
+        // Null accepté : il signifie « non tranché », et se lit partout comme une pièce d'entrée.
+        entity.setSens(request.getSens());
     }
 
     private DocumentRequirementDto toDto(DocumentRequirement e) {
@@ -138,6 +140,7 @@ public class DocumentRequirementService {
                 .typesAutorises(e.getTypesAutorises())
                 .description(e.getDescription())
                 .ordreAffichage(e.getOrdreAffichage())
+                .sens(e.sensEffectif())
                 .deposableParLeDemandeur(DocumentDepotPolicy.deposableParLeDemandeur(e.getCodeDocument()))
                 .build();
     }

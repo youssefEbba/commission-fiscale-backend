@@ -11,6 +11,7 @@ import mr.gov.finances.sgci.repository.EntrepriseRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.DemandeRattachementService;
+import mr.gov.finances.sgci.web.dto.SuiviRattachementDto;
 import mr.gov.finances.sgci.web.dto.CreateDemandeRattachementRequest;
 import mr.gov.finances.sgci.web.dto.DemandeRattachementDto;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
@@ -27,6 +28,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -301,5 +303,121 @@ class DemandeRattachementIT {
                 .entiteSigle(sigleDejaPris)
                 .entiteMinistereTutelle("Ministère de tutelle")
                 .build();
+    }
+
+    // ── les deux formulaires d'inscription ─────────────────────────────────────────────────────
+
+    @Test
+    void uneEntrepriseNePeutPasDeclarerUnMinistereDeTutelle() {
+        // Les deux inscriptions ne demandent pas les mêmes informations, et l'écran présente donc
+        // deux formulaires. Sans cette garde, la distinction ne vivrait que dans le navigateur.
+        CreateDemandeRattachementRequest req = surEntiteExistante(null);
+        req.setEntiteMinistereTutelle("Ministère glissé par erreur");
+
+        assertThatThrownBy(() -> service.deposer(req, mandat()))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getMessage())
+                        .contains("ne concerne pas une entreprise"));
+    }
+
+    @Test
+    void uneAutoriteNePeutPasDeclarerUnNifNiUneActivite() {
+        // Le cas vraiment nuisible : « creerEntite » ignore le NIF pour une autorité contractante.
+        // Accepté en silence, le demandeur aurait saisi une donnée qui disparaît à l'approbation,
+        // sans que personne ne le lui dise.
+        CreateDemandeRattachementRequest avecNif = surAutoriteNouvelle(null);
+        avecNif.setEntiteNif("NIF-GLISSE");
+
+        assertThatThrownBy(() -> service.deposer(avecNif, mandat()))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getMessage())
+                        .contains("ne concernent pas une autorité contractante"));
+
+        CreateDemandeRattachementRequest avecActivite = surAutoriteNouvelle(null);
+        avecActivite.setEntiteActivite("Travaux publics");
+
+        assertThatThrownBy(() -> service.deposer(avecActivite, mandat()))
+                .isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    void chaqueFormulaireResteAccepteAvecSesPropresChamps() {
+        // L'inverse de la garde : elle ne doit pas refuser les dépôts légitimes.
+        assertThatCode(() -> service.deposer(surAutoriteNouvelle(null), mandat()))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> service.deposer(surEntiteExistante(null), mandat()))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void leDescriptifNestPasLuQuandUneEntiteExistanteEstChoisie() {
+        // La garde ne s'applique qu'à une entité à créer : un champ résiduel envoyé par l'écran
+        // après un changement de type ne doit pas faire échouer un rattachement à l'existant.
+        Entreprise cible = uneEntreprise();
+        CreateDemandeRattachementRequest req = surEntiteExistante(cible.getId());
+        req.setEntiteMinistereTutelle("Résidu du formulaire précédent");
+
+        assertThatCode(() -> service.deposer(req, mandat())).doesNotThrowAnyException();
+    }
+
+    // ── le suivi public ────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void leDemandeurSuitSaDemandeAvecSaReferenceEtSonCourriel() {
+        CreateDemandeRattachementRequest req = surEntiteExistante(uneEntreprise().getId());
+        DemandeRattachementDto depose = service.deposer(req, mandat());
+
+        SuiviRattachementDto suivi = service.suivre(depose.getReference(), req.getEmail());
+
+        assertThat(suivi.getReference()).isEqualTo(depose.getReference());
+        assertThat(suivi.getStatut()).isEqualTo(StatutDemandeRattachement.EN_ATTENTE);
+        assertThat(suivi.getRoleDemande()).isEqualTo(Role.ENTREPRISE);
+        assertThat(suivi.getEntiteNom()).isNotBlank();
+        assertThat(suivi.getDateDepot()).isNotNull();
+        assertThat(suivi.getDateTraitement()).isNull();
+    }
+
+    @Test
+    void leSuiviNeRendAucuneDonneePersonnelle() {
+        // La référence est séquentielle, donc devinable. Ce que rend cette route doit rester ce que
+        // le demandeur sait déjà : ni identifiant de connexion, ni téléphone, ni courriel.
+        CreateDemandeRattachementRequest req = surEntiteExistante(uneEntreprise().getId());
+        DemandeRattachementDto depose = service.deposer(req, mandat());
+
+        SuiviRattachementDto suivi = service.suivre(depose.getReference(), req.getEmail());
+
+        assertThat(suivi).hasNoNullFieldsOrPropertiesExcept(
+                "dateTraitement", "motifRefus");
+        assertThat(suivi.toString())
+                .doesNotContain(req.getUsername())
+                .doesNotContain(req.getEmail());
+    }
+
+    @Test
+    void unCourrielQuiNeCorrespondPasEchoueCommeUneReferenceInconnue() {
+        // Les deux erreurs doivent être indiscernables : les distinguer confirmerait l'existence
+        // d'une référence à qui la cherche, et le courriel ne servirait plus à rien.
+        CreateDemandeRattachementRequest req = surEntiteExistante(uneEntreprise().getId());
+        DemandeRattachementDto depose = service.deposer(req, mandat());
+
+        String messageMauvaisCourriel = messageDeRefus(depose.getReference(), "autre@example.mr");
+        String messageReferenceInconnue = messageDeRefus("RT-999-12/1999", req.getEmail());
+
+        assertThat(messageMauvaisCourriel).isEqualTo(messageReferenceInconnue);
+    }
+
+    @Test
+    void leSuiviExigeLesDeuxElements() {
+        assertThatThrownBy(() -> service.suivre(null, "a@b.mr")).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> service.suivre("RT-001-10/2026", " ")).isInstanceOf(ApiException.class);
+    }
+
+    private String messageDeRefus(String reference, String email) {
+        try {
+            service.suivre(reference, email);
+            throw new AssertionError("Le suivi aurait dû échouer");
+        } catch (ApiException e) {
+            return e.getMessage();
+        }
     }
 }
