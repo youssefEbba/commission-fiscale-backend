@@ -45,6 +45,10 @@ public class SecurityConfig {
                         // Dépôt et consultation d'une demande de rattachement : le demandeur n'a pas
                         // encore de compte, c'est tout l'objet de la demande. Limité en débit par IP.
                         .requestMatchers("/api/public/rattachement", "/api/public/rattachement/**").permitAll()
+                        // Coordonnees de contact du pied de page : lues sur la page de
+                        // connexion, donc avant authentification. La route ne rend que les
+                        // cles de la liste blanche de ParametreService, jamais la table.
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/public/parametres").permitAll()
                         .requestMatchers("/api/local-files/**").authenticated()
                         .requestMatchers("/h2-console/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()

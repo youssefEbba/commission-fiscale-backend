@@ -57,7 +57,15 @@ public class ColonnesTexteSchemaMigration implements ApplicationRunner {
             // Ce lot ajoute une valeur à ProcessusDocument : sans cette ligne, le seed des
             // justificatifs de rattachement échouerait sur « Data truncated for column ».
             new ColonneTexte("document_requirement", "processus", 255, true),
-            new ColonneTexte("demande_rattachement", "statut", 32, true));
+            new ColonneTexte("demande_rattachement", "statut", 32, true),
+            // Ce lot ajoute TypeMarche : sans cette ligne la colonne resterait un enum MySQL
+            // natif, et le quatrième type que la Commission demandera un jour casserait
+            // l'enregistrement d'un marché en production, invisible en test.
+            new ColonneTexte("marche", "type_marche", 32, false),
+            // Sens entrée/sortie des pièces : même raison que les autres. Rendue en enum(…) MySQL
+            // natif, la colonne refuserait toute troisième valeur ajoutée plus tard, et l'échec
+            // serait invisible en test puisque H2 recrée son schéma.
+            new ColonneTexte("document_requirement", "sens", 16, false));
 
     public void migrateIfNeeded() {
         REGISTRE.forEach(this::widenStringColumnIfNeeded);

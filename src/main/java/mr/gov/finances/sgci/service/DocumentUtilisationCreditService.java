@@ -4,7 +4,6 @@ import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 
 import lombok.RequiredArgsConstructor;
-import mr.gov.finances.sgci.domain.document.DocumentVisibilitePolicy;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
@@ -22,6 +21,7 @@ import mr.gov.finances.sgci.repository.DecisionUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.DocumentUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.service.document.VisibiliteDocumentService;
 import mr.gov.finances.sgci.web.dto.DocumentUtilisationCreditDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +37,7 @@ import java.util.stream.Collectors;
 public class DocumentUtilisationCreditService {
 
     private final DocumentUtilisationCreditRepository repository;
+    private final VisibiliteDocumentService visibiliteDocumentService;
     private final UtilisationCreditRepository utilisationRepository;
     private final DecisionUtilisationCreditRepository decisionRepository;
     private final MinioService minioService;
@@ -226,20 +227,9 @@ public class DocumentUtilisationCreditService {
         }
     }
 
+    /** Délègue à la résolution partagée : trois copies de cette règle finiraient par diverger. */
     private ProcessusDocument resolveProcessus(UtilisationCredit utilisation) {
-        if (utilisation == null || utilisation.getType() == null) {
-            return ProcessusDocument.UTILISATION_CI;
-        }
-        if (utilisation.getType() == TypeUtilisation.DOUANIER) {
-            return ProcessusDocument.UTILISATION_CI_DOUANE;
-        }
-        if (utilisation.getType() == TypeUtilisation.TVA_INTERIEURE) {
-            if (utilisation instanceof UtilisationTVAInterieure t && t.getTypeAchat() != null) {
-                return ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE;
-            }
-            return ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE;
-        }
-        return ProcessusDocument.UTILISATION_CI;
+        return VisibiliteDocumentService.processusDe(utilisation);
     }
 
     /**
@@ -251,12 +241,13 @@ public class DocumentUtilisationCreditService {
     @Transactional(readOnly = true)
     public List<DocumentUtilisationCreditDto> findByUtilisationCreditId(Long utilisationCreditId,
                                                                         AuthenticatedUser user) {
-        StatutUtilisation statut = utilisationRepository.findById(utilisationCreditId)
-                .map(UtilisationCredit::getStatut)
-                .orElse(null);
+        UtilisationCredit utilisation = utilisationRepository.findById(utilisationCreditId).orElse(null);
+        StatutUtilisation statut = utilisation != null ? utilisation.getStatut() : null;
         Role role = user != null ? user.getRole() : null;
-        return repository.findByUtilisationCreditId(utilisationCreditId).stream()
-                .filter(d -> DocumentVisibilitePolicy.visiblePour(d.getCodeDocument(), statut, role))
+        return visibiliteDocumentService.filtrer(resolveProcessus(utilisation), statut, role,
+                        repository.findByUtilisationCreditId(utilisationCreditId),
+                        DocumentUtilisationCredit::getCodeDocument)
+                .stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }

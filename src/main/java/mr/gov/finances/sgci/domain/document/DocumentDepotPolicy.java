@@ -11,7 +11,7 @@ import java.util.Set;
  * distinguait : {@code DocumentRequirement} ne porte ni phase ni déposant, et le formulaire de dépôt
  * réclamait donc au demandeur des documents qu'il ne peut pas avoir, puisqu'ils n'existent pas encore.
  *
- * <p>La règle vit en code, comme {@link DocumentVisibilitePolicy} : en donnée, elle deviendrait
+ * <p>La règle vit en code, comme {@code VisibiliteDocumentService} : en donnée, elle deviendrait
  * modifiable en exploitation et un code non classé rouvrirait le défaut à chaque nouveau paramétrage.
  *
  * <p>Le garde-fou est le second ensemble. Un seul ensemble souffrirait de l'oubli — un code absent de

@@ -10,6 +10,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.StatutMarche;
 
+import mr.gov.finances.sgci.domain.enums.TypeMarche;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
@@ -36,6 +38,10 @@ public class CreateMarcheRequest {
     @JsonProperty("montantContratHt")
     @JsonAlias("montantContratTtc")
     private BigDecimal montantContratHt;
+
+    /** Fourniture, prestation ou travaux. Optionnel : rien ne permet de le déduire. */
+    private TypeMarche typeMarche;
+
 
     @NotNull(message = "Le statut est obligatoire")
     private StatutMarche statut;

@@ -14,7 +14,6 @@ import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationDouaniere;
 import mr.gov.finances.sgci.domain.entity.UtilisationTVAInterieure;
-import mr.gov.finances.sgci.domain.document.DocumentVisibilitePolicy;
 import mr.gov.finances.sgci.domain.enums.AffectationTaxe;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.NotificationType;
@@ -39,6 +38,7 @@ import mr.gov.finances.sgci.repository.TvaDeductibleStockRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.service.document.VisibiliteDocumentService;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.AdminCorrectionUtilisationRequest;
 import mr.gov.finances.sgci.web.dto.ApurerTVAInterieureRequest;
@@ -80,6 +80,7 @@ import java.util.stream.Stream;
 public class UtilisationCreditService {
 
     private final UtilisationCreditRepository repository;
+    private final VisibiliteDocumentService visibiliteDocumentService;
     private final CertificatCreditRepository certificatRepository;
     private final EntrepriseRepository entrepriseRepository;
     private final UtilisateurRepository utilisateurRepository;
@@ -1874,8 +1875,9 @@ public class UtilisationCreditService {
         UtilisationCreditDto dossier = findById(utilisationId, user);
         // Les montants et références restent lisibles : c'est le justificatif scanné qui est
         // réservé, pas le fait qu'une quittance existe.
-        boolean justificatifsVisibles = DocumentVisibilitePolicy.visiblePour(
-                "QUITTANCE_TRESOR", dossier.getStatut(), user != null ? user.getRole() : null);
+        boolean justificatifsVisibles = visibiliteDocumentService.visiblePour(
+                ProcessusDocument.UTILISATION_CI_DOUANE, "QUITTANCE_TRESOR",
+                dossier.getStatut(), user != null ? user.getRole() : null);
         return quittanceTresorRepository.findByUtilisationDouaniere_IdOrderByDateQuittanceAscIdAsc(utilisationId)
                 .stream()
                 .map(q -> QuittanceTresorDto.builder()
@@ -1905,17 +1907,19 @@ public class UtilisationCreditService {
             return null;
         }
         Role role = user != null ? user.getRole() : null;
-        if (DocumentVisibilitePolicy.acteurVoitTout(role)) {
+        if (VisibiliteDocumentService.acteurVoitTout(role)) {
             return dto;
         }
-        if (!DocumentVisibilitePolicy.visiblePour("QUITTANCE_TRESOR", statut, role)
+        if (!visibiliteDocumentService.visiblePour(
+                ProcessusDocument.UTILISATION_CI_DOUANE, "QUITTANCE_TRESOR", statut, role)
                 && dto.getQuittances() != null) {
             dto.getQuittances().forEach(q -> {
                 q.setDocumentChemin(null);
                 q.setDocumentNomFichier(null);
             });
         }
-        if (!DocumentVisibilitePolicy.visiblePour("QUITTANCE_DGI", statut, role)
+        if (!visibiliteDocumentService.visiblePour(
+                ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE, "QUITTANCE_DGI", statut, role)
                 && dto.getQuittanceDgi() != null) {
             dto.getQuittanceDgi().setDocumentChemin(null);
             dto.getQuittanceDgi().setDocumentNomFichier(null);
@@ -1924,17 +1928,9 @@ public class UtilisationCreditService {
         return dto;
     }
 
+    /** Délègue à la résolution partagée : trois copies de cette règle finiraient par diverger. */
     private ProcessusDocument resolveProcessus(UtilisationCredit utilisation) {
-        if (utilisation == null || utilisation.getType() == null) {
-            return ProcessusDocument.UTILISATION_CI;
-        }
-        if (utilisation.getType() == TypeUtilisation.DOUANIER) {
-            return ProcessusDocument.UTILISATION_CI_DOUANE;
-        }
-        if (utilisation.getType() == TypeUtilisation.TVA_INTERIEURE) {
-            return ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE;
-        }
-        return ProcessusDocument.UTILISATION_CI;
+        return VisibiliteDocumentService.processusDe(utilisation);
     }
 
     private void assertActorCanTransition(UtilisationCredit utilisation, StatutUtilisation to, AuthenticatedUser user) {

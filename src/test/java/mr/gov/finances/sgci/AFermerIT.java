@@ -166,18 +166,39 @@ class AFermerIT {
 
     @Test
     @Transactional
-    void lesEquipementsNonRenseignesSontComptesAPart() {
-        // « Trois dossiers avec équipements » se lit comme un inventaire complet si l'on ne dit pas
-        // combien de dossiers n'ont jamais reçu la question.
+    void leRegimeNonRenseigneEstCompteAPart() {
+        // « Trois dossiers sous admission temporaire » se lit comme un inventaire complet si l'on ne
+        // dit pas combien de dossiers n'ont jamais reçu la question. Le dénominateur sera élevé au
+        // début, et c'est l'information juste : le champ est neuf.
         DemandeCorrection sansReponse = demandeRepository.findAll().stream()
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Aucune demande amorcée"));
-        sansReponse.setEquipementsPresents(null);
+        sansReponse.setAdmissionTemporaire(null);
         demandeRepository.saveAndFlush(sansReponse);
 
         AFermerDto dto = service.aFermer(president, DEBUT, FIN, null, null, null, null);
 
         assertThat(dto.getEquipementsNonRenseignes()).isPositive();
+    }
+
+    @Test
+    @Transactional
+    void laListeSuitLeRegimeEtNonLaSimplePresenceDEquipements() {
+        // Le critère a été déplacé : c'est l'admission temporaire qui crée une obligation de
+        // réexportation, donc un risque à la clôture. Du matériel importé définitivement n'a rien à
+        // ressortir, et encombrait la liste de dossiers sans enjeu.
+        DemandeCorrection dossier = demandeRepository.findAll().stream()
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Aucune demande amorcée"));
+        dossier.setEquipementsPresents(Boolean.TRUE);
+        dossier.setAdmissionTemporaire(Boolean.FALSE);
+        demandeRepository.saveAndFlush(dossier);
+
+        AFermerDto dto = service.aFermer(president, DEBUT, FIN, null, null, null, null);
+
+        assertThat(dto.getEquipementsSurCreditOuvert())
+                .as("du matériel importé définitivement ne doit pas remonter")
+                .noneSatisfy(l -> assertThat(l.getReference()).isEqualTo(dossier.getReference()));
     }
 
     // ── la définition voyage avec le chiffre ───────────────────────────────────────────────────

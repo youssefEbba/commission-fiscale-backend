@@ -22,6 +22,7 @@ import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.web.dto.CreateDemandeRattachementRequest;
 import mr.gov.finances.sgci.web.dto.DemandeRattachementDto;
+import mr.gov.finances.sgci.web.dto.SuiviRattachementDto;
 import mr.gov.finances.sgci.web.dto.DocumentDemandeRattachementDto;
 import mr.gov.finances.sgci.web.dto.DocumentRequirementDto;
 import mr.gov.finances.sgci.web.dto.EntitePubliqueDto;
@@ -143,6 +144,7 @@ public class DemandeRattachementService {
             throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
                     "Choisissez une entité existante, ou indiquez le nom de celle à créer");
         }
+        assertDescriptifCoherentAvecLeType(request);
         demande.setEntiteNom(request.getEntiteNom().trim());
         demande.setEntiteSigle(request.getEntiteSigle());
         demande.setEntiteNif(request.getEntiteNif());
@@ -321,6 +323,82 @@ public class DemandeRattachementService {
         emailService.sendRattachementDecision(demande.getEmail(), demande.getUsername(), false,
                 demande.getMotifRefus());
         return toDto(demande);
+    }
+
+    /**
+     * Le descriptif fourni doit correspondre au type d'entité déclaré.
+     *
+     * <p>Les deux inscriptions ne demandent pas les mêmes informations : une entreprise a un NIF et
+     * une activité, une autorité contractante a un sigle et un ministère de tutelle. L'écran
+     * présente donc deux formulaires distincts — mais sans cette garde, la distinction ne vivrait
+     * que dans le navigateur, et un appel direct pourrait déposer une autorité contractante munie
+     * d'un NIF. {@code creerEntite} ignorerait alors silencieusement ce NIF à l'approbation : le
+     * demandeur aurait saisi une donnée qui disparaît, sans que personne ne lui dise.
+     *
+     * <p>Ne contrôle que le cas d'une entité à créer : quand une entité existante est choisie, le
+     * descriptif n'est pas lu.
+     */
+    private void assertDescriptifCoherentAvecLeType(CreateDemandeRattachementRequest request) {
+        boolean entreprise = request.getTypeEntite() == TypeEntiteRattachement.ENTREPRISE;
+        if (entreprise && renseigne(request.getEntiteMinistereTutelle())) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Le ministère de tutelle ne concerne pas une entreprise : "
+                            + "il n'appartient qu'au formulaire d'une autorité contractante.");
+        }
+        if (!entreprise && (renseigne(request.getEntiteNif()) || renseigne(request.getEntiteActivite()))) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Le NIF et l'activité ne concernent pas une autorité contractante : "
+                            + "ils n'appartiennent qu'au formulaire d'une entreprise.");
+        }
+    }
+
+    private static boolean renseigne(String valeur) {
+        return valeur != null && !valeur.isBlank();
+    }
+
+    /**
+     * Le suivi public d'une demande, par sa référence et le courriel du demandeur.
+     *
+     * <p><b>Le courriel n'est pas une formalité.</b> La référence est séquentielle, donc devinable :
+     * sans second élément, n'importe qui pourrait compter de RT-001 à RT-050 et reconstituer la
+     * liste des personnes ayant demandé un compte, avec l'entité qu'elles visent. Le demandeur, lui,
+     * connaît les deux.
+     *
+     * <p>Une référence inconnue et un courriel qui ne correspond pas rendent <b>la même erreur</b>.
+     * Les distinguer confirmerait l'existence d'une référence à qui la cherche, ce qui rendrait le
+     * courriel inutile.
+     */
+    @Transactional(readOnly = true)
+    public SuiviRattachementDto suivre(String reference, String email) {
+        if (reference == null || reference.isBlank() || email == null || email.isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "La référence et l'adresse e-mail utilisée lors du dépôt sont requises");
+        }
+        DemandeRattachement demande = repository.findByReference(reference.trim())
+                .filter(d -> d.getEmail() != null && d.getEmail().equalsIgnoreCase(email.trim()))
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
+                        "Aucune demande ne correspond à cette référence et à cette adresse e-mail"));
+
+        return SuiviRattachementDto.builder()
+                .reference(demande.getReference())
+                .statut(demande.getStatut())
+                .roleDemande(demande.getRoleDemande())
+                .entiteNom(nomDeLEntiteVisee(demande))
+                .dateDepot(demande.getDateCreation())
+                .dateTraitement(demande.getDateTraitement())
+                .motifRefus(demande.getMotifRefus())
+                .build();
+    }
+
+    /** L'entité choisie dans le référentiel, ou à défaut le nom de celle que la demande crée. */
+    private String nomDeLEntiteVisee(DemandeRattachement demande) {
+        if (demande.getEntreprise() != null) {
+            return demande.getEntreprise().getRaisonSociale();
+        }
+        if (demande.getAutoriteContractante() != null) {
+            return demande.getAutoriteContractante().getNom();
+        }
+        return demande.getEntiteNom();
     }
 
     private void creerEntite(DemandeRattachement demande) {

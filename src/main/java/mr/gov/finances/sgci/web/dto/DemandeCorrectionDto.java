@@ -31,6 +31,9 @@ public class DemandeCorrectionDto {
 
     /** Vrai si des équipements sous régime sont déclarés : les écrans du circuit l'annoncent. */
     private Boolean equipementsPresents;
+
+    /** Régime déclaré : les équipements entrent sous admission temporaire. */
+    private Boolean admissionTemporaire;
     private StatutDemande statut;
     private boolean validationDgd;
     private boolean validationDgtcp;

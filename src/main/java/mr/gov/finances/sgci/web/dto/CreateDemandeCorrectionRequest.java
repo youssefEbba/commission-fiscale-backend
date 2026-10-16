@@ -47,6 +47,9 @@ public class CreateDemandeCorrectionRequest {
     /** Équipements ou véhicules sous régime déclarés sur le marché : impose la liste en pièce jointe. */
     private Boolean equipementsPresents;
 
+    /** Régime déclaré : les équipements entrent sous admission temporaire. */
+    private Boolean admissionTemporaire;
+
     /**
      * Si {@code true}, statut {@code BROUILLON} : pas de notification, champs fiscaux optionnels jusqu'à soumission.
      */

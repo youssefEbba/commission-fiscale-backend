@@ -206,13 +206,19 @@ public class AFermerService {
 
     // ── les équipements sous régime ────────────────────────────────────────────────────────────
 
-    /** Des équipements déclarés, et un crédit encore ouvert : ce que la Commission veut voir. */
+    /**
+     * Du matériel sous admission temporaire, et un crédit encore ouvert.
+     *
+     * <p>Le critère a été déplacé de la simple présence d'équipements vers le <b>régime</b> : c'est
+     * l'admission temporaire qui crée une obligation de réexportation, donc un risque à la
+     * clôture. Du matériel importé définitivement n'a rien à ressortir et encombrait la liste.
+     */
     private List<LigneAFermerDto> equipementsSurCreditOuvert(ReportingScope scope) {
         String hql = "select c.id, coalesce(c.reference, c.numero), c.statut, ent.raisonSociale, "
                 + "c.dateValidite "
                 + "from CertificatCredit c left join c.entreprise ent join c.demandeCorrection d "
                 + "where " + predicates.certificat("c", scope, false)
-                + "   and c.statut in (:vivants) and d.equipementsPresents = true";
+                + "   and c.statut in (:vivants) and d.admissionTemporaire = true";
 
         List<LigneAFermerDto> out = new ArrayList<>();
         for (Object[] row : runner.lignesPaginees(hql, scope, Map.of("vivants", VIVANTS),
@@ -229,12 +235,17 @@ public class AFermerService {
         return out;
     }
 
-    /** Le dénominateur, sans lequel le chiffre ci-dessus se lit comme un inventaire complet. */
+    /**
+     * Le dénominateur, sans lequel le chiffre ci-dessus se lit comme un inventaire complet.
+     *
+     * <p>Compte les dossiers où le régime n'a jamais été renseigné. Il sera élevé au début, et
+     * c'est l'information juste : la question est neuve, la plupart des dossiers ne l'ont pas reçue.
+     */
     private long equipementsNonRenseignes(ReportingScope scope) {
         return runner.countSingle(
                 "select count(d) from DemandeCorrection d where "
                         + predicates.demande("d", scope, true)
-                        + " and d.equipementsPresents is null",
+                        + " and d.admissionTemporaire is null",
                 scope, Map.of());
     }
 

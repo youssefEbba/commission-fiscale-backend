@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
+import mr.gov.finances.sgci.domain.enums.SensDocument;
 import mr.gov.finances.sgci.domain.enums.TypeFichierAutorise;
 
 import java.util.Set;
@@ -23,6 +24,13 @@ public class DocumentRequirementDto {
     private Set<TypeFichierAutorise> typesAutorises;
     private String description;
     private Integer ordreAffichage;
+
+    /**
+     * {@code ENTREE} : pièce fournie par le déposant, visible de lui à tout moment.
+     * {@code SORTIE} : pièce produite par la Commission, remise seulement en fin de processus.
+     * Absent, il vaut {@code ENTREE} — une pièce non classée reste visible.
+     */
+    private SensDocument sens;
 
     /**
      * Faux pour les pièces que la Commission produit elle-même pendant l'instruction.

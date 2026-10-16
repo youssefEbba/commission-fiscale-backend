@@ -21,6 +21,7 @@ import mr.gov.finances.sgci.repository.ConventionRepository;
 import mr.gov.finances.sgci.repository.DocumentConventionRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.ConventionDto;
 import mr.gov.finances.sgci.web.dto.CreateConventionRequest;
 import mr.gov.finances.sgci.web.dto.DocumentConventionDto;
@@ -49,6 +50,15 @@ public class ConventionService {
     private final MinioService minioService;
     private final AuditService auditService;
     private final NotificationService notificationService;
+    /**
+     * Le rôle et le rattachement <em>effectifs</em>, impersonation comprise.
+     *
+     * <p>Lire {@code Utilisateur.getRole()} en base revenait à ignorer l'impersonation : un agent
+     * de la Commission agissant pour une autorité contractante garde le rôle COMMISSION_RELAIS en
+     * base, ne tombait donc pas dans la branche des autorités, et ressortait avec la totalité des
+     * conventions — liste et accès direct par identifiant.
+     */
+    private final EffectiveIdentityService effectiveIdentityService;
 
     @Transactional(readOnly = true)
     public List<ConventionDto> findAll(AuthenticatedUser user, String q) {
@@ -89,17 +99,19 @@ public class ConventionService {
 
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        Role role = u.getRole();
+        // Le rôle porté par le jeton, et non celui de la ligne en base : c'est le seul qui reflète
+        // l'impersonation d'un agent de la Commission agissant pour une autorité contractante.
+        Role role = effectiveIdentityService.effectiveRole(user);
 
         // Chaque autorité ne voit que son périmètre : ce qu'elle a créé ou ce dont elle est titulaire.
         // Les conventions étaient jusqu'ici un référentiel partagé — décision revue en recette.
         if (role == Role.AUTORITE_CONTRACTANTE
                 || role == Role.AUTORITE_UPM
                 || role == Role.AUTORITE_UEP) {
-            if (u.getAutoriteContractante() == null) {
+            Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, u);
+            if (acId == null) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
             }
-            Long acId = u.getAutoriteContractante().getId();
             List<Convention> perimetre = statut == null
                     ? conventionRepository.findAllPourAutorite(acId)
                     : conventionRepository.findAllPourAutoriteAndStatut(acId, statut);
@@ -142,13 +154,14 @@ public class ConventionService {
         }
         // Sans ce contrôle, restreindre la liste n'aurait aucune valeur : l'accès direct par
         // identifiant rouvrirait tout ce que la liste vient de masquer.
-        if (u.getRole() == Role.AUTORITE_CONTRACTANTE
-                || u.getRole() == Role.AUTORITE_UPM
-                || u.getRole() == Role.AUTORITE_UEP) {
-            if (u.getAutoriteContractante() == null) {
+        Role roleEffectif = effectiveIdentityService.effectiveRole(user);
+        if (roleEffectif == Role.AUTORITE_CONTRACTANTE
+                || roleEffectif == Role.AUTORITE_UPM
+                || roleEffectif == Role.AUTORITE_UEP) {
+            Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, u);
+            if (acId == null) {
                 return false;
             }
-            Long acId = u.getAutoriteContractante().getId();
             boolean dansLePerimetre =
                     (convention.getAutoriteContractante() != null
                             && acId.equals(convention.getAutoriteContractante().getId()))

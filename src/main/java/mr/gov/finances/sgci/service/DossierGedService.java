@@ -8,8 +8,8 @@ import mr.gov.finances.sgci.domain.entity.*;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.*;
-import mr.gov.finances.sgci.domain.document.DocumentVisibilitePolicy;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.service.document.VisibiliteDocumentService;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.DocumentDto;
 import mr.gov.finances.sgci.web.dto.DossierEtapeGed;
@@ -34,6 +34,7 @@ public class DossierGedService {
     private static final Set<String> CORRECTION_CODES_RETOUR = Set.of("LETTRE_ADOPTION");
 
     private final DossierGedRepository dossierRepository;
+    private final VisibiliteDocumentService visibiliteDocumentService;
     private final DemandeCorrectionRepository demandeCorrectionRepository;
     private final CertificatCreditRepository certificatCreditRepository;
 
@@ -311,7 +312,8 @@ public class DossierGedService {
             }
             documentUtilisationCreditRepository.findByUtilisationCreditId(u.getId())
                     .stream()
-                    .filter(d -> DocumentVisibilitePolicy.visiblePour(d.getCodeDocument(), u.getStatut(), role))
+                    .filter(d -> visibiliteDocumentService.visiblePour(
+                            VisibiliteDocumentService.processusDe(u), d.getCodeDocument(), u.getStatut(), role))
                     .map(this::toDocumentDto)
                     .forEach(docs::add);
         }
