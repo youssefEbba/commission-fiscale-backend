@@ -206,8 +206,9 @@ public class CertificatCreditController {
 
     @GetMapping("/{id}/documents")
     @PreAuthorize("hasAnyAuthority('mise_en_place.dgi.queue.view', 'mise_en_place.dgtcp.queue.view', 'mise_en_place.dgb.queue.view', 'mise_en_place.dgd.queue.view', 'mise_en_place.president.queue.view', 'mise_en_place.view', 'mise_en_place.entreprise.queue.view', 'archivage.view')")
-    public List<DocumentCertificatCreditDto> getDocuments(@PathVariable Long id) {
-        return documentService.findByCertificatCreditId(id);
+    public List<DocumentCertificatCreditDto> getDocuments(@PathVariable Long id,
+                                                          @AuthenticationPrincipal AuthenticatedUser user) {
+        return documentService.findByCertificatCreditId(id, user);
     }
 
     @GetMapping("/{id}/tva-stock")

@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.DecisionCorrection;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.Document;
+import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
@@ -17,7 +18,11 @@ import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.repository.DecisionCorrectionRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.DocumentRepository;
+import mr.gov.finances.sgci.repository.UtilisateurRepository;
+import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
+import mr.gov.finances.sgci.service.document.VisibiliteDocumentService;
 import mr.gov.finances.sgci.web.dto.DocumentDto;
 
 import org.springframework.stereotype.Service;
@@ -40,6 +45,9 @@ public class DocumentService {
     private final AuditService auditService;
     private final DocumentRequirementValidator requirementValidator;
     private final RejetTempResponseService rejetTempResponseService;
+    private final VisibiliteDocumentService visibiliteDocumentService;
+    private final UtilisateurRepository utilisateurRepository;
+    private final EffectiveIdentityService effectiveIdentityService;
 
     @Transactional
     public DocumentDto upload(Long demandeCorrectionId, String codeDocument, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
@@ -202,10 +210,57 @@ public class DocumentService {
         }
     }
 
+    /**
+     * Les pièces d'une demande de correction, pour cet utilisateur.
+     *
+     * <p>Cette méthode ne recevait pas l'utilisateur : ni périmètre, ni filtre de visibilité. Les
+     * trois rôles d'autorité contractante détiennent {@code correction.offer.view} et lisaient donc
+     * les pièces de n'importe quelle demande, y compris celles d'un autre titulaire — et les pièces
+     * produites par la Commission dès leur dépôt, avant toute adoption.
+     */
     @Transactional(readOnly = true)
-    public List<DocumentDto> findByDemandeCorrectionId(Long demandeCorrectionId) {
-        return documentRepository.findByDemandeCorrectionId(demandeCorrectionId).stream()
+    public List<DocumentDto> findByDemandeCorrectionId(Long demandeCorrectionId, AuthenticatedUser user) {
+        DemandeCorrection demande = demandeRepository.findById(demandeCorrectionId).orElse(null);
+        if (demande == null) {
+            return List.of();
+        }
+        assertDossierDansLePerimetre(demande, user);
+        return visibiliteDocumentService.filtrer(
+                        ProcessusDocument.CORRECTION_OFFRE_FISCALE, demande.getStatut(),
+                        user != null ? user.getRole() : null,
+                        documentRepository.findByDemandeCorrectionId(demandeCorrectionId),
+                        Document::getCodeDocument)
+                .stream()
                 .map(this::toDto).collect(Collectors.toList());
+    }
+
+    /**
+     * Le dossier appartient-il au périmètre de cet utilisateur ?
+     *
+     * <p>Les directions instruisent tous les dossiers. Le déposant — entreprise, sous-traitant,
+     * autorité contractante — ne voit que les siens. Sans ce contrôle, restreindre la visibilité
+     * des pièces n'aurait servi à rien : il aurait suffi d'ouvrir le dossier d'un autre.
+     */
+    private void assertDossierDansLePerimetre(DemandeCorrection demande, AuthenticatedUser user) {
+        if (user == null || user.getRole() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        if (VisibiliteDocumentService.acteurVoitTout(user.getRole())) {
+            return;
+        }
+        Utilisateur enBase = user.getUserId() != null
+                ? utilisateurRepository.findById(user.getUserId()).orElse(null) : null;
+        Long entrepriseId = effectiveIdentityService.resolveEntrepriseId(user, enBase);
+        Long autoriteId = effectiveIdentityService.resolveAutoriteContractanteId(user, enBase);
+
+        boolean monEntreprise = entrepriseId != null && demande.getEntreprise() != null
+                && entrepriseId.equals(demande.getEntreprise().getId());
+        boolean monAutorite = autoriteId != null && demande.getAutoriteContractante() != null
+                && autoriteId.equals(demande.getAutoriteContractante().getId());
+        if (!monEntreprise && !monAutorite) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED,
+                    "Accès refusé : dossier hors périmètre");
+        }
     }
 
     @Transactional(readOnly = true)

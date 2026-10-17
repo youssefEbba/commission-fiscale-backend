@@ -17,7 +17,10 @@ import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.DecisionCertificatCreditRepository;
 import mr.gov.finances.sgci.repository.DocumentCertificatCreditRepository;
+import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
+import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.service.document.VisibiliteDocumentService;
 import mr.gov.finances.sgci.web.dto.DocumentCertificatCreditDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +42,7 @@ public class DocumentCertificatCreditService {
     private final AuditService auditService;
     private final DocumentRequirementValidator requirementValidator;
     private final RejetTempResponseService rejetTempResponseService;
+    private final VisibiliteDocumentService visibiliteDocumentService;
 
     @Transactional
     public DocumentCertificatCreditDto upload(Long certificatCreditId, String codeDocument, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
@@ -183,8 +187,24 @@ public class DocumentCertificatCreditService {
     }
 
     @Transactional(readOnly = true)
-    public List<DocumentCertificatCreditDto> findByCertificatCreditId(Long certificatCreditId) {
-        return repository.findByCertificatCreditId(certificatCreditId).stream()
+    /**
+     * Les pièces d'un certificat, pour cet utilisateur.
+     *
+     * <p>{@code ENTREPRISE} détient {@code mise_en_place.entreprise.queue.view}, qui ouvre cette
+     * liste : sans filtre, le certificat signé par le Président était lisible dès son dépôt, donc
+     * avant sa validation et avant l'ouverture du crédit.
+     */
+    public List<DocumentCertificatCreditDto> findByCertificatCreditId(Long certificatCreditId,
+                                                                      AuthenticatedUser user) {
+        StatutCertificat statut = certificatRepository.findById(certificatCreditId)
+                .map(CertificatCredit::getStatut)
+                .orElse(null);
+        return visibiliteDocumentService.filtrer(
+                        ProcessusDocument.MISE_EN_PLACE_CI, statut,
+                        user != null ? user.getRole() : null,
+                        repository.findByCertificatCreditId(certificatCreditId),
+                        DocumentCertificatCredit::getCodeDocument)
+                .stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }

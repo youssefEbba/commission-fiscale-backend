@@ -18,6 +18,9 @@ import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
+import mr.gov.finances.sgci.domain.modification.ChampDossier;
+import mr.gov.finances.sgci.domain.modification.ModificationDossierPolicy;
+import mr.gov.finances.sgci.domain.modification.Verdict;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
@@ -235,7 +238,7 @@ public class CertificatCreditService {
                 .marche(toMarcheFicheDto(marche))
                 .autoriteContractante(toAutoriteFicheDto(autorite))
                 .intituleMarche(demande != null ? demande.getIntituleMarche() : null)
-                .documents(documentService.findByCertificatCreditId(c.getId()))
+                .documents(documentService.findByCertificatCreditId(c.getId(), user))
                 .utilisations(utilisationCreditService.findByCertificatCreditId(c.getId(), user))
                 .tvaStock(utilisationCreditService.findTvaStockByCertificat(c.getId()))
                 .build();
@@ -612,6 +615,11 @@ public class CertificatCreditService {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé");
         }
         assertDeposantPeutModifierDemandeMiseEnPlace(user);
+        // Volontairement non délégué à ModificationDossierPolicy, qui serait plus permissive : elle
+        // autorise les montants pendant l'instruction, parce que c'est le stade où la DGTCP
+        // renseigne le récapitulatif. Ici l'écrivain est le déposant, et pour lui le dossier se
+        // ferme à la prise en charge. Même objet, même stade, deux acteurs, deux régimes — la
+        // politique arbitre le stade, pas l'acteur.
         if (entity.getStatut() != StatutCertificat.BROUILLON && entity.getStatut() != StatutCertificat.ENVOYEE) {
             throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE,
                     "Modification réservée aux statuts BROUILLON et ENVOYEE (avant prise en charge par les services)");
@@ -674,10 +682,25 @@ public class CertificatCreditService {
         CertificatCredit entity = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + id));
 
+        // L'override applique volontairement un régime différent de ModificationDossierPolicy : son
+        // critère n'est pas le stade mais l'engagement. Corriger une erreur de saisie sur un crédit
+        // ouvert mais non encore consommé est précisément ce à quoi il sert ; le lui interdire au
+        // motif du statut le rendrait inutile. En revanche un solde déjà entamé reste intouchable.
+        boolean utilisationsExistent = !utilisationCreditRepository.findByCertificatCreditId(id).isEmpty();
+
         boolean touchesMontants = request.getMontantCordon() != null || request.getMontantTVAInterieure() != null;
-        if (touchesMontants && !utilisationCreditRepository.findByCertificatCreditId(id).isEmpty()) {
+        if (touchesMontants && utilisationsExistent) {
             throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Correction du montant cordon / TVA intérieure impossible : des demandes d'utilisation existent déjà sur ce certificat (risque de désynchronisation des soldes)");
+        }
+
+        // tvaImportationDouane échappait à cette garde parce que le javadoc le rangeait dans « le
+        // récapitulatif ». C'est pourtant le quota TVA restant, décrémenté par chaque liquidation :
+        // le réécrire sur un crédit consommé rend du quota qui a déjà été dépensé.
+        if (request.getTvaImportationDouane() != null && utilisationsExistent) {
+            throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Correction du quota de TVA à l'importation impossible : des demandes "
+                            + "d'utilisation l'ont déjà entamé sur ce certificat");
         }
 
         if (request.getDateValidite() != null) {
@@ -708,10 +731,38 @@ public class CertificatCreditService {
             entity.setTvaCollecteeTravaux(request.getTvaCollecteeTravaux());
         }
 
+        // Ce chemin était le seul à écrire le récapitulatif sans vérifier sa cohérence : create,
+        // updateBrouillon et applyMontants l'exigent tous. Un certificat pouvait donc en sortir
+        // dans un état que sa propre création aurait refusé.
+        //
+        // La vérification ne porte que sur les corrections qui touchent le récapitulatif. Un
+        // override sert aussi à réparer un dossier déjà incohérent — typiquement repris d'archive —
+        // et rendre le contrôle inconditionnel empêcherait de corriger son intitulé ou sa date de
+        // validité tant que ses montants n'auraient pas été redressés.
+        if (toucheLeRecapitulatif(request)) {
+            assertRecapitulatifCoherence(entity);
+        }
+
         entity = repository.save(entity);
         CertificatCreditDto result = toDto(entity);
         auditService.log(AuditAction.ADMIN_CORRECTION, "CertificatCredit", String.valueOf(id), result, motif);
         return result;
+    }
+
+    /** La correction touche-t-elle l'une des lignes liées par les deux égalités du récapitulatif ? */
+    private static boolean toucheLeRecapitulatif(AdminCorrectionCertificatRequest request) {
+        return request.getMontantCordon() != null
+                || request.getMontantTVAInterieure() != null
+                || request.getValeurDouaneFournitures() != null
+                || request.getDroitsEtTaxesDouaneHorsTva() != null
+                || request.getTaxesConsommation() != null
+                || request.getTvaImportationDouane() != null;
+    }
+
+    /** Au moins une utilisation s'adosse-t-elle à ce certificat ? */
+    private boolean aDesUtilisations(CertificatCredit entity) {
+        return entity != null && entity.getId() != null
+                && !utilisationCreditRepository.findByCertificatCreditId(entity.getId()).isEmpty();
     }
 
     /**
@@ -1008,12 +1059,28 @@ public class CertificatCreditService {
      */
     private void applyMontants(CertificatCredit entity, UpdateCertificatCreditMontantsRequest request) {
 
+        boolean utilisationsExistent = aDesUtilisations(entity);
+
+        // Le stade commande : les montants de référence se figent dès l'ouverture du crédit, et dès
+        // qu'une utilisation s'y adosse. Cette méthode n'avait aucun contrôle de statut, alors que
+        // son pendant administrateur en avait un : l'omission était un oubli, pas une intention.
+        Verdict montants = ModificationDossierPolicy.certificat(
+                entity.getStatut(), utilisationsExistent, ChampDossier.MONTANT_DE_REFERENCE);
+        if (montants.refuse()) {
+            throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE, montants.raison());
+        }
+
+        // Les soldes suivent leur propre régime, plus strict que celui des montants.
+        boolean soldesModifiables = ModificationDossierPolicy.certificat(
+                entity.getStatut(), utilisationsExistent, ChampDossier.SOLDE_ENGAGE).autorise();
+
         entity.setMontantCordon(request.getMontantCordon());
         entity.setMontantTVAInterieure(request.getMontantTVAInterieure());
-        applyRecapFromMontantsRequest(entity, request);
+        applyRecapFromMontantsRequest(entity, request, soldesModifiables);
 
-        // Synchroniser les soldes tant que le crédit n'est pas ouvert (sinon incohérence avec les utilisations)
-        if (entity.getStatut() != StatutCertificat.OUVERT) {
+        // La garde historique testait « != OUVERT », ce qui laissait MODIFIE et CLOTURE réécrire
+        // des soldes déjà consommés.
+        if (soldesModifiables) {
             // soldeCordon = b (droits hors TVA), pas b+d
             // Hors TVA : les taxes de consommation rejoignent les droits dans le solde cordon.
             BigDecimal droitsUpd = request.getDroitsEtTaxesDouaneHorsTva() != null
@@ -1063,7 +1130,20 @@ public class CertificatCreditService {
         }
     }
 
-    private void applyRecapFromMontantsRequest(CertificatCredit entity, UpdateCertificatCreditMontantsRequest request) {
+    /**
+     * Écrit les lignes du récapitulatif.
+     *
+     * @param soldesModifiables commande la seule ligne qui soit à la fois un montant de référence
+     *                          et un solde. {@code tvaImportationDouane} est le quota TVA
+     *                          <em>restant</em>, que {@code liquiderDouane} décrémente à chaque
+     *                          utilisation, tandis que {@code tvaImportationDouaneAccordee} est le
+     *                          plafond figé. Les écrire tous deux à la même valeur sans condition
+     *                          remettait le compteur au plafond sur un crédit déjà consommé — une
+     *                          saisie de montants effaçait une dépense réelle.
+     */
+    private void applyRecapFromMontantsRequest(CertificatCredit entity,
+                                               UpdateCertificatCreditMontantsRequest request,
+                                               boolean soldesModifiables) {
         if (entity == null || request == null) {
             return;
         }
@@ -1078,7 +1158,9 @@ public class CertificatCreditService {
         }
         if (request.getTvaImportationDouane() != null) {
             entity.setTvaImportationDouaneAccordee(request.getTvaImportationDouane());
-            entity.setTvaImportationDouane(request.getTvaImportationDouane());
+            if (soldesModifiables) {
+                entity.setTvaImportationDouane(request.getTvaImportationDouane());
+            }
         }
         if (request.getMontantMarcheHt() != null) {
             entity.setMontantMarcheHt(request.getMontantMarcheHt());
@@ -1181,6 +1263,26 @@ public class CertificatCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Transition manuelle vers EN_VALIDATION_PRESIDENT interdite : "
                             + "ce statut est attribué automatiquement lorsque les visas requis " + visasRequis + " sont validés.");
+        }
+
+        // MODIFIE relève du circuit d'avenant, qui n'est pas implémenté : l'entité Avenant, dix
+        // permissions « modification.* » et huit types de pièces existent, mais aucun service ni
+        // route ne les met en œuvre, et rien n'écrit ce statut. Le graphe autorisait pourtant
+        // OUVERT → MODIFIE, et cette route est ouverte à « mise_en_place.submit », que détiennent
+        // les trois rôles d'autorité contractante : une AC pouvait déclarer un crédit « modifié »
+        // sans qu'aucun avenant existe.
+        if (to == StatutCertificat.MODIFIE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Transition manuelle vers MODIFIE interdite : ce statut relève du circuit "
+                            + "d'avenant, qui n'est pas encore ouvert.");
+        }
+
+        // La clôture a son circuit propre — proposition puis approbation — qui vérifie
+        // l'éligibilité du crédit. Cette route le contournait entièrement.
+        if (to == StatutCertificat.CLOTURE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Transition manuelle vers CLOTURE interdite : la clôture passe par son circuit "
+                            + "dédié (proposition puis approbation), qui vérifie l'éligibilité du crédit.");
         }
 
         if (to == StatutCertificat.EN_CONTROLE) {

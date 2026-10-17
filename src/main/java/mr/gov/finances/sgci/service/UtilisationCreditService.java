@@ -27,6 +27,9 @@ import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.domain.enums.TypeAchat;
 import mr.gov.finances.sgci.domain.enums.TvaDeductibleStockSource;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
+import mr.gov.finances.sgci.domain.modification.ChampDossier;
+import mr.gov.finances.sgci.domain.modification.ModificationDossierPolicy;
+import mr.gov.finances.sgci.domain.modification.Verdict;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.LigneBulletinLiquidationRepository;
 import mr.gov.finances.sgci.repository.QuittanceDgiRepository;
@@ -417,24 +420,29 @@ public class UtilisationCreditService {
         repository.delete(entity);
     }
 
-    private static final Set<StatutUtilisation> STATUTS_UTILISATION_EDITABLE = EnumSet.of(
-            StatutUtilisation.BROUILLON, StatutUtilisation.DEMANDEE, StatutUtilisation.INCOMPLETE);
-
     /**
      * Le contenu d'une demande n'est modifiable qu'avant instruction, ou pendant un rejet temporaire.
      *
      * <p>{@code INCOMPLETE} n'est posé que par un rejet temporaire, et la résolution le quitte vers
      * {@code A_RECONTROLER} : le cas « incomplète sans rejet ouvert » ne devrait pas exister. On le
      * vérifie quand même, pour que le refus nomme sa cause au lieu d'un message générique.
+     *
+     * <p>La table des statuts ouverts vit dans {@link ModificationDossierPolicy}, avec celles de la
+     * demande de correction et du certificat. Les deux messages sont repris à l'identique.
      */
     private void assertUtilisationContentEditable(UtilisationCredit entity) {
-        if (entity == null || !STATUTS_UTILISATION_EDITABLE.contains(entity.getStatut())) {
+        if (entity == null) {
             throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE,
                     "Modification impossible : statut incompatible ou traitement déjà engagé");
         }
-        if (entity.getStatut() == StatutUtilisation.INCOMPLETE && !aUnRejetTemporaireOuvert(entity.getId())) {
-            throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE,
-                    "Modification impossible : aucun rejet temporaire n'est ouvert sur cette demande");
+        // Le court-circuit garde le comportement d'origine : la requête de rejet temporaire ne part
+        // que pour le seul statut où elle compte.
+        boolean rejetOuvert = entity.getStatut() == StatutUtilisation.INCOMPLETE
+                && aUnRejetTemporaireOuvert(entity.getId());
+        Verdict verdict = ModificationDossierPolicy.utilisation(
+                entity.getStatut(), rejetOuvert, ChampDossier.CONTENU_DECLARATIF);
+        if (verdict.refuse()) {
+            throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE, verdict.raison());
         }
     }
 

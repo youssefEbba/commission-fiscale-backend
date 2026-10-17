@@ -187,6 +187,15 @@ public class ConventionService {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED,
                     "Accès refusé : convention hors périmètre");
         }
+        // Une convention annulée ne se rouvre pas aux rattachements. Sans ce contrôle, la
+        // réactiver rendait à nouveau vraie ConventionDisponibilitePolicy.estActive, donc rouvrait
+        // le dépôt de demandes de correction sur une convention qu'on avait annulée. La cohérence
+        // était à sens unique : l'annulation est refusée sur une convention VALIDE, mais rien
+        // n'empêchait de défaire une annulation.
+        if (actif && convention.getStatut() == StatutConvention.ANNULEE) {
+            throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Réactivation impossible : la convention est annulée");
+        }
         convention.setActif(actif);
         convention = conventionRepository.save(convention);
         ConventionDto result = toDto(convention);
