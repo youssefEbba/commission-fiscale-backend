@@ -262,12 +262,14 @@ public class MarcheService {
     }
 
     @Transactional
-    public DocumentMarcheDto uploadDocument(Long marcheId, TypeDocumentMarche type, MultipartFile file) throws java.io.IOException {
+    public DocumentMarcheDto uploadDocument(Long marcheId, TypeDocumentMarche type, MultipartFile file,
+                                            AuthenticatedUser user) throws java.io.IOException {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         Marche marche = marcheRepository.findById(marcheId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
+        assertAccesMarche(marche, user);
         assertMarcheEditableForDocuments(marche);
 
         String originalFilename = file.getOriginalFilename();
@@ -286,12 +288,14 @@ public class MarcheService {
     }
 
     @Transactional
-    public DocumentMarcheDto replaceDocument(Long marcheId, Long documentId, MultipartFile file) throws java.io.IOException {
+    public DocumentMarcheDto replaceDocument(Long marcheId, Long documentId, MultipartFile file,
+                                             AuthenticatedUser user) throws java.io.IOException {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         Marche marche = marcheRepository.findById(marcheId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
+        assertAccesMarche(marche, user);
         assertMarcheEditableForDocuments(marche);
         DocumentMarche doc = documentMarcheRepository.findByIdAndMarcheId(documentId, marcheId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Document marché non trouvé: " + documentId));
@@ -307,9 +311,10 @@ public class MarcheService {
     }
 
     @Transactional
-    public void deleteDocument(Long marcheId, Long documentId) {
+    public void deleteDocument(Long marcheId, Long documentId, AuthenticatedUser user) {
         Marche marche = marcheRepository.findById(marcheId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
+        assertAccesMarche(marche, user);
         assertMarcheEditableForDocuments(marche);
         DocumentMarche doc = documentMarcheRepository.findByIdAndMarcheId(documentId, marcheId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Document marché non trouvé: " + documentId));
@@ -317,7 +322,10 @@ public class MarcheService {
     }
 
     @Transactional(readOnly = true)
-    public List<DocumentMarcheDto> findDocuments(Long marcheId) {
+    public List<DocumentMarcheDto> findDocuments(Long marcheId, AuthenticatedUser user) {
+        assertAccesMarche(marcheRepository.findById(marcheId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
+                        "Marché non trouvé: " + marcheId)), user);
         return documentMarcheRepository.findByMarcheId(marcheId).stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -487,15 +495,23 @@ public class MarcheService {
     }
 
     @Transactional
-    public MarcheDto update(Long id, UpdateMarcheRequest request) {
+    public MarcheDto update(Long id, UpdateMarcheRequest request, AuthenticatedUser user) {
         Marche marche = marcheRepository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + id));
+        assertAccesMarche(marche, user);
         if (marche.getStatut() == StatutMarche.CLOTURE && request.getStatut() != StatutMarche.CLOTURE) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Marché clôturé: changement de statut interdit");
         }
         if (marche.getStatut() == StatutMarche.ANNULE && request.getStatut() != StatutMarche.ANNULE) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Marché annulé: changement de statut interdit");
         }
+        // Les deux contrôles ci-dessus ne gardaient que le *changement de statut* : sur un marché
+        // clôturé, le numéro, la date de signature et le montant du contrat se réécrivaient encore.
+        // Or la date de signature conditionne le déclenchement de la mise en place du certificat
+        // (assertMiseEnPlaceTrigger), et les documents du même marché étaient, eux, déjà verrouillés
+        // par assertMarcheEditableForDocuments. Le verrou existait pour les pièces et manquait pour
+        // les données qu'elles justifient.
+        assertMarcheEditableForDonnees(marche);
         // L'intitulé est obligatoire à la création. En modification il ne l'est pas, pour que les
         // marchés antérieurs à cette règle restent éditables — mais on n'en efface pas un existant.
         if (marche.getIntitule() != null && !marche.getIntitule().isBlank()
@@ -539,6 +555,26 @@ public class MarcheService {
                 .build();
     }
 
+    /**
+     * Le marché est-il dans le périmètre de cet utilisateur ? Sinon, 403.
+     *
+     * <p>Le pendant écrivain de {@link #canAccessMarche}, qui ne servait qu'aux lectures. L'écriture
+     * n'appliquait aucun périmètre : {@code update} et les quatre méthodes de pièces ne recevaient
+     * pas d'utilisateur, et {@code marche.manage} est détenu par les trois rôles d'autorité
+     * contractante. Chacune pouvait donc réécrire par identifiant le marché de n'importe quelle
+     * autre. Le même prédicat sert ici, délibérément : deux périmètres écrits séparément finissent
+     * toujours par diverger, et c'est alors la version écrivain que personne ne relit.
+     */
+    private void assertAccesMarche(Marche marche, AuthenticatedUser user) {
+        if (user == null || user.getRole() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        if (!canAccessMarche(marche, user)) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED,
+                    "Accès refusé : marché hors périmètre");
+        }
+    }
+
     private boolean canAccessMarche(Marche marche, AuthenticatedUser user) {
         if (user == null) {
             return false;
@@ -576,6 +612,18 @@ public class MarcheService {
                 .dateUpload(d.getDateUpload())
                 .taille(d.getTaille())
                 .build();
+    }
+
+    /** Le pendant données de {@link #assertMarcheEditableForDocuments}, avec les mêmes stades. */
+    private void assertMarcheEditableForDonnees(Marche marche) {
+        if (marche.getStatut() == StatutMarche.CLOTURE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Modification interdite: marché clôturé");
+        }
+        if (marche.getStatut() == StatutMarche.ANNULE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Modification interdite: marché annulé");
+        }
     }
 
     private void assertMarcheEditableForDocuments(Marche marche) {

@@ -8,6 +8,9 @@ import mr.gov.finances.sgci.domain.entity.*;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.repository.*;
+import mr.gov.finances.sgci.domain.entity.Document;
+import mr.gov.finances.sgci.domain.entity.DocumentCertificatCredit;
+import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.document.VisibiliteDocumentService;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
@@ -212,7 +215,7 @@ public class DossierGedService {
     private List<DossierEtapeGed> buildEtapes(DossierGed dossier, Role role) {
         List<DossierEtapeGed> etapes = new ArrayList<>();
 
-        List<DocumentDto> correctionDocs = documentsCorrection(dossier);
+        List<DocumentDto> correctionDocs = documentsCorrection(dossier, role);
         List<DocumentDto> demandeCorrection = correctionDocs.stream()
                 .filter(d -> !isCorrectionTraitement(d) && !isCorrectionRetour(d))
                 .collect(Collectors.toList());
@@ -230,7 +233,7 @@ public class DossierGedService {
 
         etapes.add(step("DEMANDE_CREDIT_IMPOT", "Demande de crédit d'impôt",
                 mergeByDateDesc(documentsConvention(dossier), documentsReferentielProjets(dossier))));
-        etapes.add(step("EMISSION_CERTIFICAT", "Émission du certificat de crédit", documentsCertificat(dossier)));
+        etapes.add(step("EMISSION_CERTIFICAT", "Émission du certificat de crédit", documentsCertificat(dossier, role)));
 
         etapes.add(step("UTILISATION_DOUANE", "Utilisation du crédit – Douane", documentsUtilisation(dossier, TypeUtilisation.DOUANIER, role)));
         etapes.add(step("UTILISATION_TVA", "Utilisation du crédit – TVA", documentsUtilisation(dossier, TypeUtilisation.TVA_INTERIEURE, role)));
@@ -274,22 +277,41 @@ public class DossierGedService {
                 .build();
     }
 
-    private List<DocumentDto> documentsCorrection(DossierGed dossier) {
+    /**
+     * Les pièces de la demande de correction, filtrées pour ce rôle.
+     *
+     * <p>Le rôle ne parvenait jusqu'ici qu'aux étapes d'utilisation. Conséquence : sur son propre
+     * dossier, l'entreprise recevait l'offre corrigée et la lettre d'adoption dès leur dépôt,
+     * chemin de téléchargement compris — donc avant toute adoption. C'est cette porte-là que le
+     * paramétrage entrée/sortie n'aurait pas suffi à fermer.
+     */
+    private List<DocumentDto> documentsCorrection(DossierGed dossier, Role role) {
         if (dossier == null || dossier.getDemandeCorrection() == null || dossier.getDemandeCorrection().getId() == null) {
             return List.of();
         }
-        return documentRepository.findByDemandeCorrectionId(dossier.getDemandeCorrection().getId()).stream()
+        return visibiliteDocumentService.filtrer(
+                        ProcessusDocument.CORRECTION_OFFRE_FISCALE,
+                        dossier.getDemandeCorrection().getStatut(), role,
+                        documentRepository.findByDemandeCorrectionId(dossier.getDemandeCorrection().getId()),
+                        Document::getCodeDocument)
+                .stream()
                 .map(this::toDocumentDto)
                 .sorted(Comparator.comparing(DocumentDto::getDateUpload, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
                 .collect(Collectors.toList());
     }
 
-    private List<DocumentDto> documentsCertificat(DossierGed dossier) {
+    /** Les pièces du certificat, filtrées pour ce rôle : le certificat signé est une sortie. */
+    private List<DocumentDto> documentsCertificat(DossierGed dossier, Role role) {
         if (dossier == null || dossier.getCertificatCredit() == null || dossier.getCertificatCredit().getId() == null) {
             return List.of();
         }
         Long id = dossier.getCertificatCredit().getId();
-        return documentCertificatCreditRepository.findByCertificatCreditId(id).stream()
+        return visibiliteDocumentService.filtrer(
+                        ProcessusDocument.MISE_EN_PLACE_CI,
+                        dossier.getCertificatCredit().getStatut(), role,
+                        documentCertificatCreditRepository.findByCertificatCreditId(id),
+                        DocumentCertificatCredit::getCodeDocument)
+                .stream()
                 .map(this::toDocumentDto)
                 .sorted(Comparator.comparing(DocumentDto::getDateUpload, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
                 .collect(Collectors.toList());

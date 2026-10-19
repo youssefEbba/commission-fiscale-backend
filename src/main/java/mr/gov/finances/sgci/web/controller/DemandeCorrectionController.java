@@ -133,8 +133,9 @@ public class DemandeCorrectionController {
     /** Liste des documents attachés à une demande de correction (7 pièces P1, etc.) */
     @GetMapping("/{id}/documents")
     @PreAuthorize("hasAnyAuthority('correction.dgd.queue.view', 'correction.offer.view', 'correction.visa.history.view', 'correction.view.audit', 'correction.president.queue.view', 'correction.president.signature.upload')")
-    public List<DocumentDto> getDocuments(@PathVariable Long id) {
-        return documentService.findByDemandeCorrectionId(id);
+    public List<DocumentDto> getDocuments(@PathVariable Long id,
+                                          @AuthenticationPrincipal AuthenticatedUser user) {
+        return documentService.findByDemandeCorrectionId(id, user);
     }
 
     /** Upload d'un document pour une demande (codeDocument = LETTRE_SAISINE, OFFRE_FISCALE_CORRIGEE, CREDIT_INTERIEUR, etc.) */

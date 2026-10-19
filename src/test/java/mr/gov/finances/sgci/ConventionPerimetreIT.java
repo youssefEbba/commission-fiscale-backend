@@ -202,6 +202,41 @@ class ConventionPerimetreIT {
                         .isEqualTo(ApiErrorCode.ACCESS_DENIED));
     }
 
+    @Test
+    @Transactional
+    void uneConventionAnnuleeNeSeReactivePas() {
+        // changerActivation contrôlait le périmètre mais pas le statut : rouvrir une convention
+        // annulée rendait à nouveau vraie ConventionDisponibilitePolicy.estActive, donc rouvrait le
+        // dépôt de demandes sur une convention qu'on avait annulée. La cohérence était à sens
+        // unique — l'annulation est refusée sur une convention VALIDE, mais rien n'empêchait de
+        // défaire une annulation.
+        //
+        // Son pendant est déjà couvert par lautoriteContractantePeutReactiverLaSienne() : une
+        // convention simplement désactivée se rouvre toujours.
+        Convention c = convention(mienne, mienne, false);
+        c.setStatut(StatutConvention.ANNULEE);
+        conventionRepository.save(c);
+
+        assertThatThrownBy(() -> service.changerActivation(c.getId(), true, ac))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getMessage())
+                        .contains("annulée"));
+    }
+
+    @Test
+    @Transactional
+    void uneConventionAnnuleePeutEncoreEtreFermee() {
+        // Le verrou ne porte que sur la réactivation : fermer reste toujours possible, sinon on
+        // interdirait un geste qui ne fait que renforcer l'état courant.
+        Convention c = convention(mienne, mienne, true);
+        c.setStatut(StatutConvention.ANNULEE);
+        conventionRepository.save(c);
+
+        service.changerActivation(c.getId(), false, ac);
+
+        assertThat(conventionRepository.findById(c.getId()).orElseThrow().getActif()).isFalse();
+    }
+
     // ── fixtures ───────────────────────────────────────────────────────────────────────────────
 
     private List<String> references(List<ConventionDto> conventions) {

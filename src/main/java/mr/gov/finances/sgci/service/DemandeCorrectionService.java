@@ -27,6 +27,9 @@ import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
+import mr.gov.finances.sgci.domain.modification.ChampDossier;
+import mr.gov.finances.sgci.domain.modification.ModificationDossierPolicy;
+import mr.gov.finances.sgci.domain.modification.Verdict;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.repository.AutoriteContractanteRepository;
@@ -298,20 +301,23 @@ public class DemandeCorrectionService {
         return d != null && !d.isValidationDgd() && !d.isValidationDgtcp() && !d.isValidationDgi() && !d.isValidationDgb();
     }
 
-    private static final Set<StatutDemande> STATUTS_EDITABLE_CONTENT = EnumSet.of(
-            StatutDemande.BROUILLON, StatutDemande.RECUE, StatutDemande.INCOMPLETE);
-
+    /**
+     * Le contenu de cette demande est-il encore modifiable ?
+     *
+     * <p>La règle — les trois statuts ouverts, et le gel dès le premier visa — vit désormais dans
+     * {@link ModificationDossierPolicy}, avec celles du certificat et de l'utilisation. Elle était
+     * ici l'une de six tables écrites séparément, chacune avec son vocabulaire : personne ne
+     * pouvait répondre à « qui modifie quoi, à quel stade » sans relire six fichiers. Les messages
+     * sont repris mot pour mot, car ils sont lus par l'utilisateur.
+     */
     private void assertDemandeCorrectionContentEditable(DemandeCorrection d) {
         if (d == null) {
             throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Demande introuvable");
         }
-        if (!isEvaluationNotStarted(d)) {
-            throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE,
-                    "Modification impossible : le traitement par les services a déjà commencé");
-        }
-        if (!STATUTS_EDITABLE_CONTENT.contains(d.getStatut())) {
-            throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE,
-                    "Modification impossible dans le statut: " + d.getStatut());
+        Verdict verdict = ModificationDossierPolicy.demandeCorrection(
+                d.getStatut(), !isEvaluationNotStarted(d), ChampDossier.CONTENU_DECLARATIF);
+        if (verdict.refuse()) {
+            throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE, verdict.raison());
         }
     }
 

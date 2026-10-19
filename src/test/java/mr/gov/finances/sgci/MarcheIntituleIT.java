@@ -3,13 +3,18 @@ package mr.gov.finances.sgci;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import mr.gov.finances.sgci.domain.entity.Marche;
+import mr.gov.finances.sgci.domain.entity.Utilisateur;
+import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.repository.MarcheRepository;
+import mr.gov.finances.sgci.repository.UtilisateurRepository;
+import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.MarcheService;
 import mr.gov.finances.sgci.web.dto.CreateMarcheRequest;
 import mr.gov.finances.sgci.web.dto.MarcheDto;
 import mr.gov.finances.sgci.web.dto.UpdateMarcheRequest;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -44,6 +49,24 @@ class MarcheIntituleIT {
 
     @Autowired
     private MarcheRepository marcheRepository;
+
+    @Autowired
+    private UtilisateurRepository utilisateurRepository;
+
+    /**
+     * Une direction, parce que le périmètre des marchés ne restreint que les autorités
+     * contractantes et leurs délégués : ce test porte sur l'intitulé, pas sur le périmètre.
+     */
+    private AuthenticatedUser acteur;
+
+    @BeforeEach
+    void setUp() {
+        Utilisateur u = utilisateurRepository.findAll().stream()
+                .filter(x -> x.getRole() == Role.DGTCP || x.getRole() == Role.ADMIN_SI)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Aucun compte de direction amorcé"));
+        acteur = new AuthenticatedUser(u.getId(), u.getUsername(), u.getRole());
+    }
 
     // ── création : obligatoire ─────────────────────────────────────────────────────────────────
 
@@ -81,7 +104,7 @@ class MarcheIntituleIT {
         marche.setIntitule("Intitulé à conserver");
         marcheRepository.save(marche);
 
-        assertThatThrownBy(() -> service.update(marche.getId(), modification(marche, "")))
+        assertThatThrownBy(() -> service.update(marche.getId(), modification(marche, ""), acteur))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     ApiException api = (ApiException) e;
@@ -99,7 +122,7 @@ class MarcheIntituleIT {
         marche.setIntitule(null);
         marcheRepository.save(marche);
 
-        assertThatCode(() -> service.update(marche.getId(), modification(marche, null)))
+        assertThatCode(() -> service.update(marche.getId(), modification(marche, null), acteur))
                 .doesNotThrowAnyException();
     }
 
@@ -110,7 +133,7 @@ class MarcheIntituleIT {
         marche.setIntitule(null);
         marcheRepository.save(marche);
 
-        MarcheDto dto = service.update(marche.getId(), modification(marche, "Intitulé rattrapé"));
+        MarcheDto dto = service.update(marche.getId(), modification(marche, "Intitulé rattrapé"), acteur);
 
         assertThat(dto.getIntitule()).isEqualTo("Intitulé rattrapé");
     }

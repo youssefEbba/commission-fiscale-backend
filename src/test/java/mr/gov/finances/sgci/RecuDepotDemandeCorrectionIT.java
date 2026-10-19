@@ -92,7 +92,7 @@ class RecuDepotDemandeCorrectionIT {
         documentService.upload(demande.getId(), RECU, null, pdf("recu-1.pdf"), ac);
         documentService.upload(demande.getId(), RECU, null, pdf("recu-2.pdf"), ac);
 
-        List<DocumentDto> recus = documentService.findByDemandeCorrectionId(demande.getId()).stream()
+        List<DocumentDto> recus = documentService.findByDemandeCorrectionId(demande.getId(), ac).stream()
                 .filter(d -> RECU.equals(d.getCodeDocument()))
                 .toList();
 

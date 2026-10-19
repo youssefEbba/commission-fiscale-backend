@@ -113,14 +113,16 @@ public class MarcheController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('marche.manage')")
-    public MarcheDto update(@PathVariable Long id, @Valid @RequestBody UpdateMarcheRequest request) {
-        return service.update(id, request);
+    public MarcheDto update(@PathVariable Long id, @Valid @RequestBody UpdateMarcheRequest request,
+                            @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.update(id, request, user);
     }
 
     @GetMapping("/{id}/documents")
     @PreAuthorize("hasAnyAuthority('marche.manage', 'marche.view')")
-    public List<DocumentMarcheDto> getDocuments(@PathVariable Long id) {
-        return service.findDocuments(id);
+    public List<DocumentMarcheDto> getDocuments(@PathVariable Long id,
+                                                @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.findDocuments(id, user);
     }
 
     @PostMapping(value = "/{id}/documents", consumes = "multipart/form-data")
@@ -129,9 +131,10 @@ public class MarcheController {
     public DocumentMarcheDto uploadDocument(
             @PathVariable Long id,
             @RequestParam TypeDocumentMarche type,
-            @RequestParam("file") MultipartFile file
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return service.uploadDocument(id, type, file);
+        return service.uploadDocument(id, type, file, user);
     }
 
     @PutMapping(value = "/{id}/documents/{documentId}", consumes = "multipart/form-data")
@@ -139,15 +142,17 @@ public class MarcheController {
     public DocumentMarcheDto replaceDocument(
             @PathVariable Long id,
             @PathVariable Long documentId,
-            @RequestParam("file") MultipartFile file
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return service.replaceDocument(id, documentId, file);
+        return service.replaceDocument(id, documentId, file, user);
     }
 
     @DeleteMapping("/{id}/documents/{documentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('marche.manage')")
-    public void deleteDocument(@PathVariable Long id, @PathVariable Long documentId) {
-        service.deleteDocument(id, documentId);
+    public void deleteDocument(@PathVariable Long id, @PathVariable Long documentId,
+                               @AuthenticationPrincipal AuthenticatedUser user) {
+        service.deleteDocument(id, documentId, user);
     }
 }
