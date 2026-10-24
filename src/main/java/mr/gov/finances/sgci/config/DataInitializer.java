@@ -1324,6 +1324,8 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("projet.view.all", "Consulter tous les référentiels");
 
         createPermission("convention.create", "Créer une convention");
+        createPermission("convention.update", "Modifier une convention avant sa validation par la DGB");
+        createPermission("convention.annuler", "Annuler sa convention avant sa validation par la DGB");
         createPermission("convention.view", "Consulter ses conventions");
         createPermission("convention.view.all", "Consulter toutes les conventions");
         createPermission("convention.validate", "Valider une convention");
@@ -1576,6 +1578,14 @@ public class DataInitializer implements CommandLineRunner {
         assign(Role.AUTORITE_CONTRACTANTE, "convention.activate");
         assign(Role.AUTORITE_UPM, "convention.activate");
         assign(Role.AUTORITE_UEP, "convention.activate");
+        // Les mêmes rôles que la création. Le service restreint ensuite à l'autorité titulaire ou
+        // créatrice, et aux conventions en attente de validation.
+        assign(Role.AUTORITE_CONTRACTANTE, "convention.update");
+        assign(Role.AUTORITE_UPM, "convention.update");
+        assign(Role.AUTORITE_UEP, "convention.update");
+        assign(Role.AUTORITE_CONTRACTANTE, "convention.annuler");
+        assign(Role.AUTORITE_UPM, "convention.annuler");
+        assign(Role.AUTORITE_UEP, "convention.annuler");
 
         assign(Role.AUTORITE_CONTRACTANTE,
                 "projet.create",

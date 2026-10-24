@@ -29,6 +29,14 @@ public class DemandeCorrectionDto {
     /** Crédit extérieur / douanier demandé (0 → DGD hors workflow). */
     private BigDecimal creditExterieur;
 
+    /**
+     * Crédits déclarés par l'autorité contractante avant la correction ; {@code null} tant
+     * qu'aucune correction n'a été saisie. {@code creditInterieur} et {@code creditExterieur}
+     * portent alors les montants retenus.
+     */
+    private BigDecimal creditInterieurDeclare;
+    private BigDecimal creditExterieurDeclare;
+
     /** Vrai si des équipements sous régime sont déclarés : les écrans du circuit l'annoncent. */
     private Boolean equipementsPresents;
 

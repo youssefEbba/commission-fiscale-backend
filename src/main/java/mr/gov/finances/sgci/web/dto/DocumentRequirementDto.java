@@ -39,4 +39,16 @@ public class DocumentRequirementDto {
      * de dépôt demande directement la liste filtrée.
      */
     private Boolean deposableParLeDemandeur;
+
+    /**
+     * Faux si la pièce a été désactivée dans ce processus : elle n'est plus demandée, mais reste
+     * listée à l'écran de paramétrage pour pouvoir être réactivée.
+     */
+    private Boolean actif;
+
+    /**
+     * Vrai pour les pièces que le circuit exige nommément : elles ne se désactivent ni ne se
+     * suppriment. L'écran de paramétrage doit griser ces deux actions.
+     */
+    private Boolean pieceDuCircuit;
 }

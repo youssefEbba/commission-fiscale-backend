@@ -27,6 +27,8 @@ import mr.gov.finances.sgci.repository.ConventionRepository;
 import mr.gov.finances.sgci.repository.DocumentProjetRepository;
 import mr.gov.finances.sgci.repository.ReferentielProjetRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
+import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.CreateReferentielProjetRequest;
 import mr.gov.finances.sgci.web.dto.DocumentProjetDto;
 import mr.gov.finances.sgci.web.dto.ReferentielProjetDto;
@@ -47,6 +49,7 @@ public class ReferentielProjetService {
     private final MinioService minioService;
     private final AuditService auditService;
     private final NotificationService notificationService;
+    private final EffectiveIdentityService effectiveIdentityService;
 
     @Transactional(readOnly = true)
     public List<ReferentielProjetDto> findAll() {
@@ -74,8 +77,8 @@ public class ReferentielProjetService {
     }
 
     @Transactional
-    public ReferentielProjetDto create(CreateReferentielProjetRequest request, Long userId) {
-        AutoriteContractante autorite = resolveAutorite(request.getAutoriteContractanteId(), userId);
+    public ReferentielProjetDto create(CreateReferentielProjetRequest request, AuthenticatedUser user) {
+        AutoriteContractante autorite = resolveAutorite(request.getAutoriteContractanteId(), user);
         Convention convention = resolveConvention(request.getConventionId());
         ReferentielProjet entity = ReferentielProjet.builder()
                 .numero(generateNumero())
@@ -92,20 +95,27 @@ public class ReferentielProjetService {
         return result;
     }
 
-    private AutoriteContractante resolveAutorite(Long autoriteContractanteId, Long userId) {
+    /**
+     * L'autorité du référentiel : celle de la requête, sinon celle pour laquelle on agit.
+     *
+     * <p>Lue dans l'identité effective : en relais, le compte « commission_relais » n'a aucune
+     * autorité en base, et la création échouait alors que la prise de relais avait réussi.
+     */
+    private AutoriteContractante resolveAutorite(Long autoriteContractanteId, AuthenticatedUser user) {
         if (autoriteContractanteId != null) {
             return autoriteRepository.findById(autoriteContractanteId)
                     .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée"));
         }
-        if (userId == null) {
+        if (user == null || user.getUserId() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
-        Utilisateur user = utilisateurRepository.findById(userId)
+        Utilisateur enBase = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        if (user.getAutoriteContractante() == null) {
+        AutoriteContractante autorite = effectiveIdentityService.requireEffectiveAutorite(user, enBase);
+        if (autorite == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
         }
-        return user.getAutoriteContractante();
+        return autorite;
     }
 
     private Convention resolveConvention(Long conventionId) {

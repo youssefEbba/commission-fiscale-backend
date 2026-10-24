@@ -57,8 +57,7 @@ public class ReferentielProjetController {
             @Valid @RequestBody CreateReferentielProjetRequest request,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
-        Long userId = user != null ? user.getUserId() : null;
-        return service.create(request, userId);
+        return service.create(request, user);
     }
 
     @PatchMapping("/{id}/statut")

@@ -55,6 +55,23 @@ public class DemandeCorrection {
     private BigDecimal creditExterieur = BigDecimal.ZERO;
 
     /**
+     * Crédits tels que l'autorité contractante les a déclarés, avant la correction.
+     *
+     * <p>La direction qui dépose l'offre corrigée — la DGD s'il y a un crédit extérieur, sinon la
+     * DGI — saisit les montants corrigés avec son visa, et ceux-ci remplacent {@link #creditInterieur}
+     * et {@link #creditExterieur}, qui restent les montants de référence pour la suite du circuit.
+     * Ces deux champs conservent la déclaration d'origine, pour qu'on puisse toujours lire ce que
+     * l'autorité avait demandé à côté de ce que la Commission a retenu.
+     *
+     * <p>{@code null} tant qu'aucune correction n'a été saisie.
+     */
+    @Column(name = "credit_interieur_declare", precision = 19, scale = 4)
+    private BigDecimal creditInterieurDeclare;
+
+    @Column(name = "credit_exterieur_declare", precision = 19, scale = 4)
+    private BigDecimal creditExterieurDeclare;
+
+    /**
      * Équipements ou véhicules sous régime (plaques TT) acquis pendant le marché.
      *
      * <p>Nullable à dessein, là où les drapeaux de visa voisins sont des primitifs : une colonne

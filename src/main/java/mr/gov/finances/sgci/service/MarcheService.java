@@ -22,6 +22,7 @@ import mr.gov.finances.sgci.repository.MarcheDelegueRepository;
 import mr.gov.finances.sgci.repository.MarcheRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.CreateMarcheRequest;
 import mr.gov.finances.sgci.web.dto.DocumentMarcheDto;
 import mr.gov.finances.sgci.web.dto.MarcheDemandeCorrectionStatusDto;
@@ -52,6 +53,7 @@ public class MarcheService {
     private final DocumentMarcheRepository documentMarcheRepository;
     private final MinioService minioService;
     private final ReferenceSequenceGenerator referenceSequenceGenerator;
+    private final EffectiveIdentityService effectiveIdentityService;
 
     @Transactional(readOnly = true)
     public MarcheDto findById(Long id, AuthenticatedUser user) {
@@ -85,6 +87,18 @@ public class MarcheService {
                 .build();
     }
 
+    /**
+     * Le dernier marché ajouté en tête de liste.
+     *
+     * <p>L'identifiant, et non une date : il est attribué dans l'ordre d'insertion et ne manque
+     * jamais — et le marché n'a pas de date de création. Le tri se fait ici, au moment de rendre
+     * la liste, pour couvrir d'un seul coup tous les chemins de lecture — périmètre de chaque
+     * rôle, recherche, filtres.
+     */
+    private static final java.util.Comparator<Marche> PLUS_RECENT_D_ABORD =
+            java.util.Comparator.comparing(Marche::getId,
+                    java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()));
+
     @Transactional(readOnly = true)
     public List<MarcheDto> findAll(AuthenticatedUser user) {
         if (user == null) {
@@ -93,29 +107,29 @@ public class MarcheService {
 
         Utilisateur u = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        // Le rôle du jeton : en relais, il porte le rôle représenté. Celui du compte en base,
+        // « commission_relais », tombait dans la branche des directions et ouvrait tous les marchés.
+        Role role = user.getRole();
 
-        if (u.getRole() == Role.AUTORITE_CONTRACTANTE) {
-            if (u.getAutoriteContractante() == null) {
-                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
-            }
-            return marcheRepository.findAllByConventionAutoriteContractanteId(u.getAutoriteContractante().getId())
+        if (role == Role.AUTORITE_CONTRACTANTE) {
+            return marcheRepository.findAllByConventionAutoriteContractanteId(requireAutoriteEffective(user, u))
                     .stream()
+                    .sorted(PLUS_RECENT_D_ABORD)
                     .map(this::toDto)
                     .collect(Collectors.toList());
         }
 
-        if (u.getRole() == Role.AUTORITE_UPM || u.getRole() == Role.AUTORITE_UEP) {
-            if (u.getAutoriteContractante() == null) {
-                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
-            }
+        if (role == Role.AUTORITE_UPM || role == Role.AUTORITE_UEP) {
             return marcheRepository.findAllByConventionAutoriteContractanteIdAndDelegueId(
-                            u.getAutoriteContractante().getId(), u.getId())
+                            requireAutoriteEffective(user, u), u.getId())
                     .stream()
+                    .sorted(PLUS_RECENT_D_ABORD)
                     .map(this::toDto)
                     .collect(Collectors.toList());
         }
 
         return marcheRepository.findAll().stream()
+                .sorted(PLUS_RECENT_D_ABORD)
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
@@ -136,27 +150,29 @@ public class MarcheService {
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
 
         List<Marche> candidates;
-        if ((u.getRole() == Role.AUTORITE_CONTRACTANTE || u.getRole() == Role.AUTORITE_UPM || u.getRole() == Role.AUTORITE_UEP)
-                && u.getAutoriteContractante() != null) {
-            candidates = marcheRepository.searchByAcAndNumeroOrIntitule(u.getAutoriteContractante().getId(), trimmed);
+        Long acId = estAutorite(user.getRole())
+                ? effectiveIdentityService.resolveAutoriteContractanteId(user, u) : null;
+        if (acId != null) {
+            candidates = marcheRepository.searchByAcAndNumeroOrIntitule(acId, trimmed);
         } else {
             candidates = marcheRepository.searchByNumeroOrIntitule(trimmed);
         }
 
         return candidates.stream()
                 .filter(m -> canAccessMarche(m, user))
+                .sorted(PLUS_RECENT_D_ABORD)
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
     public List<MarcheDto> findMarchesForDelegue(Long delegueId, AuthenticatedUser user) {
-        Utilisateur acPrincipal = requireAutoriteContractantePrincipal(user);
+        Long acId = requireAutoritePrincipale(user);
         Utilisateur delegue = utilisateurRepository.findById(delegueId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Délégué non trouvé: " + delegueId));
-        assertDelegueForAutoriteContractante(delegue, acPrincipal);
-        Long acId = acPrincipal.getAutoriteContractante().getId();
+        assertDelegueForAutoriteContractante(delegue, acId);
         return marcheRepository.findAllByDelegueIdAndAutoriteContractanteId(delegueId, acId).stream()
+                .sorted(PLUS_RECENT_D_ABORD)
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
@@ -185,24 +201,42 @@ public class MarcheService {
         return findMarchesForDelegue(delegueId, user);
     }
 
-    private Utilisateur requireAutoriteContractantePrincipal(AuthenticatedUser user) {
+    /**
+     * L'appelant agit comme autorité contractante principale ; renvoie l'autorité pour laquelle il agit.
+     *
+     * <p>Ce contrôle était écrit cinq fois, et lisait chaque fois le rôle et l'autorité <em>du compte
+     * en base</em>. En relais, ce compte est « commission_relais », sans autorité : la gestion des
+     * délégués lui était refusée alors qu'il représentait bien une autorité. Le rôle se lit dans le
+     * jeton, qui porte le rôle représenté, et l'autorité dans l'identité effective.
+     */
+    private Long requireAutoritePrincipale(AuthenticatedUser user) {
         if (user == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
-        Utilisateur ac = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        if (ac.getRole() != Role.AUTORITE_CONTRACTANTE) {
+        if (user.getRole() != Role.AUTORITE_CONTRACTANTE) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Action réservée à l'autorité contractante");
         }
-        if (ac.getAutoriteContractante() == null) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
-        }
-        return ac;
+        Utilisateur enBase = utilisateurRepository.findById(user.getUserId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        return requireAutoriteEffective(user, enBase);
     }
 
-    private void assertDelegueForAutoriteContractante(Utilisateur delegue, Utilisateur acPrincipal) {
+    /** L'autorité pour laquelle agit cet utilisateur : la sienne, ou celle qu'il représente en relais. */
+    private Long requireAutoriteEffective(AuthenticatedUser user, Utilisateur enBase) {
+        Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, enBase);
+        if (acId == null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
+        }
+        return acId;
+    }
+
+    private static boolean estAutorite(Role role) {
+        return role == Role.AUTORITE_CONTRACTANTE || role == Role.AUTORITE_UPM || role == Role.AUTORITE_UEP;
+    }
+
+    private void assertDelegueForAutoriteContractante(Utilisateur delegue, Long acId) {
         if (delegue.getAutoriteContractante() == null
-                || !delegue.getAutoriteContractante().getId().equals(acPrincipal.getAutoriteContractante().getId())) {
+                || !delegue.getAutoriteContractante().getId().equals(acId)) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le délégué n'appartient pas à votre autorité contractante");
         }
         if (delegue.getRole() != Role.AUTORITE_UPM && delegue.getRole() != Role.AUTORITE_UEP) {
@@ -215,15 +249,7 @@ public class MarcheService {
         if (user == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
-        Utilisateur ac = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-
-        if (ac.getRole() != Role.AUTORITE_CONTRACTANTE) {
-            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Action réservée à l'autorité contractante");
-        }
-        if (ac.getAutoriteContractante() == null) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
-        }
+        Long acId = requireAutoritePrincipale(user);
 
         Marche marche = marcheRepository.findById(marcheId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
@@ -232,7 +258,7 @@ public class MarcheService {
                 ? marche.getConvention().getAutoriteContractante().getId()
                 : null;
 
-        if (marcheAcId == null || !marcheAcId.equals(ac.getAutoriteContractante().getId())) {
+        if (marcheAcId == null || !marcheAcId.equals(acId)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: marché hors périmètre de votre autorité contractante",
                     Map.of("marcheId", marcheId, "code", "MARCHE_HORS_PERIMETRE_AC"));
         }
@@ -242,7 +268,7 @@ public class MarcheService {
             delegue = utilisateurRepository.findById(delegueId)
                     .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Délégué non trouvé: " + delegueId));
             if (delegue.getAutoriteContractante() == null
-                    || !delegue.getAutoriteContractante().getId().equals(ac.getAutoriteContractante().getId())) {
+                    || !delegue.getAutoriteContractante().getId().equals(acId)) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le délégué n'appartient pas à votre autorité contractante");
             }
             if (delegue.getRole() != Role.AUTORITE_UPM && delegue.getRole() != Role.AUTORITE_UEP) {
@@ -336,15 +362,7 @@ public class MarcheService {
         if (user == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
-        Utilisateur ac = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-
-        if (ac.getRole() != Role.AUTORITE_CONTRACTANTE) {
-            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Action réservée à l'autorité contractante");
-        }
-        if (ac.getAutoriteContractante() == null) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
-        }
+        Long acId = requireAutoritePrincipale(user);
 
         Marche marche = marcheRepository.findById(marcheId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
@@ -353,14 +371,14 @@ public class MarcheService {
                 ? marche.getConvention().getAutoriteContractante().getId()
                 : null;
 
-        if (marcheAcId == null || !marcheAcId.equals(ac.getAutoriteContractante().getId())) {
+        if (marcheAcId == null || !marcheAcId.equals(acId)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: marché hors périmètre de votre autorité contractante");
         }
 
         Utilisateur delegue = utilisateurRepository.findById(delegueId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Délégué non trouvé: " + delegueId));
         if (delegue.getAutoriteContractante() == null
-                || !delegue.getAutoriteContractante().getId().equals(ac.getAutoriteContractante().getId())) {
+                || !delegue.getAutoriteContractante().getId().equals(acId)) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le délégué n'appartient pas à votre autorité contractante");
         }
         if (delegue.getRole() != Role.AUTORITE_UPM && delegue.getRole() != Role.AUTORITE_UEP) {
@@ -377,15 +395,7 @@ public class MarcheService {
         if (user == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
-        Utilisateur ac = utilisateurRepository.findById(user.getUserId())
-                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-
-        if (ac.getRole() != Role.AUTORITE_CONTRACTANTE) {
-            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Action réservée à l'autorité contractante");
-        }
-        if (ac.getAutoriteContractante() == null) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
-        }
+        Long acId = requireAutoritePrincipale(user);
 
         Marche marche = marcheRepository.findById(marcheId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
@@ -394,7 +404,7 @@ public class MarcheService {
                 ? marche.getConvention().getAutoriteContractante().getId()
                 : null;
 
-        if (marcheAcId == null || !marcheAcId.equals(ac.getAutoriteContractante().getId())) {
+        if (marcheAcId == null || !marcheAcId.equals(acId)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: marché hors périmètre de votre autorité contractante");
         }
 
@@ -461,12 +471,13 @@ public class MarcheService {
             }
         }
 
-        if (u.getRole() == Role.AUTORITE_CONTRACTANTE || u.getRole() == Role.AUTORITE_UPM || u.getRole() == Role.AUTORITE_UEP) {
-            if (u.getAutoriteContractante() == null) {
-                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
-            }
+        // Le rôle du jeton, pas celui du compte : en relais, le compte est « commission_relais » et
+        // échappait à ce contrôle, ce qui permettait de créer un marché sur la convention de
+        // n'importe quelle autorité.
+        if (estAutorite(user.getRole())) {
+            Long acId = requireAutoriteEffective(user, u);
             Long conventionAcId = convention.getAutoriteContractante() != null ? convention.getAutoriteContractante().getId() : null;
-            if (conventionAcId == null || !conventionAcId.equals(u.getAutoriteContractante().getId())) {
+            if (conventionAcId == null || !conventionAcId.equals(acId)) {
                 throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: convention hors périmètre de votre autorité contractante");
             }
         }
@@ -483,7 +494,7 @@ public class MarcheService {
                 .demandeCorrection(demande)
                 .build();
 
-        if (u.getRole() == Role.AUTORITE_UPM || u.getRole() == Role.AUTORITE_UEP) {
+        if (user.getRole() == Role.AUTORITE_UPM || user.getRole() == Role.AUTORITE_UEP) {
             MarcheDelegue link = MarcheDelegue.builder()
                     .marche(marche)
                     .delegue(u)
@@ -583,21 +594,26 @@ public class MarcheService {
         if (u == null) {
             return false;
         }
+        // Rôle du jeton et autorité effective. Lus sur le compte en base, ils donnaient au relais
+        // le rôle « commission_relais », qui tombait sur le « return true » final : en agissant
+        // pour une autorité, il lisait — et, depuis que ce prédicat garde aussi l'écriture,
+        // modifiait — les marchés de toutes les autres.
+        Role role = user.getRole();
 
-        if (u.getRole() == Role.AUTORITE_UPM || u.getRole() == Role.AUTORITE_UEP) {
+        if (role == Role.AUTORITE_UPM || role == Role.AUTORITE_UEP) {
             return marche.getDelegues() != null && marche.getDelegues().stream()
                     .anyMatch(md -> md.getDelegue() != null && Objects.equals(md.getDelegue().getId(), u.getId()));
         }
 
-        if (u.getRole() == Role.AUTORITE_CONTRACTANTE) {
-            if (u.getAutoriteContractante() == null) {
+        if (role == Role.AUTORITE_CONTRACTANTE) {
+            Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, u);
+            if (acId == null) {
                 return false;
             }
-
             if (marche.getConvention() == null || marche.getConvention().getAutoriteContractante() == null) {
                 return false;
             }
-            return marche.getConvention().getAutoriteContractante().getId().equals(u.getAutoriteContractante().getId());
+            return marche.getConvention().getAutoriteContractante().getId().equals(acId);
         }
 
         return true;

@@ -41,6 +41,17 @@ public class DocumentRequirementController {
         return service.update(id, request);
     }
 
+    /**
+     * Active ou désactive une pièce dans son processus. Réversible, à la différence de la
+     * suppression. Refusé pour les pièces que le circuit exige.
+     */
+    @PatchMapping("/{id}/activation")
+    @PreAuthorize("hasAuthority('document.types.manage') or hasAuthority('permissions.manage')")
+    public DocumentRequirementDto changerActivation(@PathVariable Long id, @RequestParam boolean actif) {
+        return service.changerActivation(id, actif);
+    }
+
+    /** Retire la pièce du processus. Refusé pour les pièces que le circuit exige. */
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('document.types.manage') or hasAuthority('permissions.manage')")

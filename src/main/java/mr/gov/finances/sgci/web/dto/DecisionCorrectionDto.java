@@ -31,5 +31,9 @@ public class DecisionCorrectionDto {
     /** Motif saisi par l'administrateur lorsqu'il a visé à la place du rôle titulaire. */
     private String motifAdmin;
 
+    /** Crédits retenus par ce visa ; {@code null} sauf pour la direction qui a déposé l'offre corrigée. */
+    private java.math.BigDecimal creditExterieurRetenu;
+    private java.math.BigDecimal creditInterieurRetenu;
+
     private List<RejetTempResponseDto> rejetTempResponses;
 }
