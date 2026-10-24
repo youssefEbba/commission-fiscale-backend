@@ -25,6 +25,7 @@ import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.ConventionDto;
 import mr.gov.finances.sgci.web.dto.CreateConventionRequest;
 import mr.gov.finances.sgci.web.dto.DocumentConventionDto;
+import mr.gov.finances.sgci.web.dto.UpdateConventionRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -60,15 +61,27 @@ public class ConventionService {
      */
     private final EffectiveIdentityService effectiveIdentityService;
 
+    /**
+     * La dernière convention ajoutée en tête de liste.
+     *
+     * <p>L'identifiant, et non une date : il est attribué dans l'ordre d'insertion et ne manque
+     * jamais. Le tri se fait ici, au moment de rendre la liste, pour couvrir d'un seul coup tous
+     * les chemins de lecture — périmètre de chaque rôle, recherche, filtres.
+     */
+    private static final java.util.Comparator<Convention> PLUS_RECENT_D_ABORD =
+            java.util.Comparator.comparing(Convention::getId,
+                    java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()));
+
     @Transactional(readOnly = true)
     public List<ConventionDto> findAll(AuthenticatedUser user, String q) {
         if (q == null || q.isBlank()) {
             List<Convention> list = resolveConventionList(user, null);
-            return list.stream().map(this::toDto).collect(Collectors.toList());
+            return list.stream().sorted(PLUS_RECENT_D_ABORD).map(this::toDto).collect(Collectors.toList());
         }
         String trimmed = q.trim();
         return conventionRepository.searchByReferenceIntituleOrProject(trimmed).stream()
                 .filter(c -> canAccessConvention(c.getId(), user))
+                .sorted(PLUS_RECENT_D_ABORD)
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
@@ -86,7 +99,7 @@ public class ConventionService {
     @Transactional(readOnly = true)
     public List<ConventionDto> findByStatut(StatutConvention statut, AuthenticatedUser user) {
         List<Convention> list = resolveConventionList(user, statut);
-        return list.stream().map(this::toDto).collect(Collectors.toList());
+        return list.stream().sorted(PLUS_RECENT_D_ABORD).map(this::toDto).collect(Collectors.toList());
     }
 
     private List<Convention> resolveConventionList(AuthenticatedUser user, StatutConvention statut) {
@@ -133,6 +146,7 @@ public class ConventionService {
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Bailleur non trouvé: " + bailleurId));
         return conventionRepository.findByBailleurId(bailleurId).stream()
                 .filter(c -> canAccessConvention(c.getId(), user))
+                .sorted(PLUS_RECENT_D_ABORD)
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
@@ -204,15 +218,17 @@ public class ConventionService {
     }
 
     @Transactional
-    public ConventionDto create(CreateConventionRequest request, Long userId) {
+    public ConventionDto create(CreateConventionRequest request, AuthenticatedUser user) {
+        Long userId = user != null ? user.getUserId() : null;
         if (conventionRepository.findByReference(request.getReference()).isPresent()) {
             throw ApiException.conflict(ApiErrorCode.CONFLICT, "Référence de convention déjà utilisée");
         }
-        AutoriteContractante autorite = resolveAutorite(request.getAutoriteContractanteId(), userId);
         Utilisateur creator = userId != null ? utilisateurRepository.findById(userId).orElse(null) : null;
-        AutoriteContractante creeParAc = creator != null && creator.getAutoriteContractante() != null
-                ? creator.getAutoriteContractante()
-                : autorite;
+        AutoriteContractante autorite = resolveAutorite(request.getAutoriteContractanteId(), user, creator);
+        // L'autorité créatrice est celle pour laquelle on agit : la sienne, ou celle que la
+        // commission relais représente. Le compte relais n'en a aucune en base.
+        AutoriteContractante maStructure = effectiveIdentityService.requireEffectiveAutorite(user, creator);
+        AutoriteContractante creeParAc = maStructure != null ? maStructure : autorite;
         Bailleur bailleur = resolveBailleur(request.getBailleurId());
         Convention convention = Convention.builder()
                 .reference(request.getReference())
@@ -234,6 +250,123 @@ public class ConventionService {
         auditService.log(AuditAction.CREATE, "Convention", String.valueOf(convention.getId()), result);
         notifyConventionCreated(convention, userId);
         return result;
+    }
+
+    /**
+     * Modifie une convention : par son autorité, et tant que la DGB ne l'a pas validée.
+     *
+     * <p>Aucune modification n'était possible jusqu'ici, pour personne : une erreur de saisie dans la
+     * référence, l'intitulé, les dates ou les montants restait définitive. Trois règles, décidées
+     * avec la Commission :
+     *
+     * <ul>
+     *   <li><b>Jusqu'à quand</b> — seulement en attente de validation. Une fois validée, les marchés
+     *       et les demandes s'y adossent : la modifier en place changerait ce sur quoi ils ont été
+     *       instruits. Rejetée ou annulée, elle est close.</li>
+     *   <li><b>Par qui</b> — l'autorité titulaire <em>et</em> l'autorité qui l'a créée pour elle : ce
+     *       sont les deux qui la voient. En relais, l'autorité représentée.</li>
+     *   <li><b>Quoi</b> — tout ce qui se saisit à la création, sauf l'autorité titulaire, qui
+     *       déplacerait la convention dans le périmètre d'une autre. La référence peut changer si elle
+     *       reste unique.</li>
+     * </ul>
+     */
+    @Transactional
+    public ConventionDto update(Long id, UpdateConventionRequest request, AuthenticatedUser user) {
+        Convention convention = conventionRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + id));
+        assertAutoriteSurConventionEnAttente(convention, user, Geste.MODIFIER);
+
+        String reference = request.getReference().trim();
+        conventionRepository.findByReference(reference)
+                .filter(autre -> !autre.getId().equals(convention.getId()))
+                .ifPresent(autre -> {
+                    throw ApiException.conflict(ApiErrorCode.CONFLICT, "Référence de convention déjà utilisée");
+                });
+
+        convention.setReference(reference);
+        convention.setIntitule(request.getIntitule().trim());
+        convention.setProjectReference(request.getProjectReference());
+        convention.setBailleur(resolveBailleur(request.getBailleurId()));
+        convention.setDateSignature(request.getDateSignature());
+        convention.setDateFin(request.getDateFin());
+        convention.setMontantDevise(request.getMontantDevise());
+        convention.setMontantMru(request.getMontantMru());
+        convention.setDeviseOrigine(request.getDeviseOrigine());
+        convention.setTauxChange(request.getTauxChange());
+
+        Convention enregistree = conventionRepository.save(convention);
+        ConventionDto result = toDto(enregistree);
+        auditService.log(AuditAction.UPDATE, "Convention", String.valueOf(id), result);
+        return result;
+    }
+
+    /**
+     * Annule une convention : par son autorité, et tant que la DGB ne l'a pas validée.
+     *
+     * <p>Même règle que la modification, décidée avec la Commission : l'autorité titulaire ou
+     * créatrice, sur une convention en attente. C'est le pendant de l'annulation d'une demande de
+     * correction, que l'autorité peut déjà faire.
+     *
+     * <p><b>Pourquoi une route à part.</b> Les directions annulent par {@code PATCH .../statut}, qui
+     * accepte n'importe quel statut cible et ne vérifie pas le rôle selon la cible. Ouvrir cette
+     * route à l'autorité lui aurait permis de <em>valider</em> sa propre convention. Celle-ci ne
+     * sait faire qu'une chose : annuler.
+     */
+    @Transactional
+    public ConventionDto annulerParAutorite(Long id, String motif, AuthenticatedUser user) {
+        Convention convention = conventionRepository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + id));
+        assertAutoriteSurConventionEnAttente(convention, user, Geste.ANNULER);
+        String motifNettoye = motif != null && !motif.isBlank() ? motif.trim() : null;
+        // L'écriture, la trace d'audit et la notification restent celles de l'annulation par une
+        // direction : une seule façon d'annuler, deux portes d'entrée.
+        return updateStatut(id, StatutConvention.ANNULEE, user.getUserId(), motifNettoye);
+    }
+
+    /** Ce que l'autorité fait sur sa convention en attente. Les messages en dépendent. */
+    private enum Geste {
+        MODIFIER("modifier", "Modification"),
+        ANNULER("annuler", "Annulation");
+
+        final String verbe;
+        final String nom;
+
+        Geste(String verbe, String nom) {
+            this.verbe = verbe;
+            this.nom = nom;
+        }
+    }
+
+    /** L'appelant est l'autorité titulaire ou créatrice, et la convention attend sa validation. */
+    private void assertAutoriteSurConventionEnAttente(Convention convention, AuthenticatedUser user, Geste geste) {
+        if (user == null || user.getUserId() == null) {
+            throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
+        }
+        Role role = effectiveIdentityService.effectiveRole(user);
+        if (role != Role.AUTORITE_CONTRACTANTE && role != Role.AUTORITE_UPM && role != Role.AUTORITE_UEP) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Seule l'autorité contractante titulaire ou créatrice peut " + geste.verbe + " une convention");
+        }
+        Utilisateur enBase = utilisateurRepository.findById(user.getUserId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, enBase);
+        boolean titulaire = acId != null && convention.getAutoriteContractante() != null
+                && acId.equals(convention.getAutoriteContractante().getId());
+        boolean creatrice = acId != null && convention.getCreeParAutoriteContractante() != null
+                && acId.equals(convention.getCreeParAutoriteContractante().getId());
+        if (!titulaire && !creatrice) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé : convention hors périmètre");
+        }
+        StatutConvention statut = convention.getStatut();
+        if (statut != StatutConvention.EN_ATTENTE) {
+            String raison = switch (statut) {
+                case VALIDE -> " impossible : la convention a déjà été validée par la DGB";
+                case REJETE -> " impossible : la convention a été rejetée";
+                case ANNULEE -> " impossible : la convention est annulée";
+                default -> " impossible dans le statut : " + statut;
+            };
+            throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE, geste.nom + raison);
+        }
     }
 
     @Transactional
@@ -331,20 +464,30 @@ public class ConventionService {
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Bailleur non trouvé: " + bailleurId));
     }
 
-    private AutoriteContractante resolveAutorite(Long autoriteContractanteId, Long userId) {
+    /**
+     * L'autorité titulaire de la convention : celle de la requête, sinon celle pour laquelle on agit.
+     *
+     * <p>« Celle pour laquelle on agit » se lit dans l'identité effective, pas sur le compte en base :
+     * en relais, le compte « commission_relais » n'a aucune autorité, et la création échouait sur
+     * « Aucune autorité contractante liée à l'utilisateur » alors que la prise de relais avait réussi.
+     */
+    private AutoriteContractante resolveAutorite(Long autoriteContractanteId, AuthenticatedUser user,
+                                                 Utilisateur enBase) {
         if (autoriteContractanteId != null) {
             return autoriteRepository.findById(autoriteContractanteId)
                     .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée"));
         }
-        if (userId == null) {
+        if (user == null || user.getUserId() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
-        Utilisateur user = utilisateurRepository.findById(userId)
-                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        if (user.getAutoriteContractante() == null) {
+        if (enBase == null) {
+            throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé");
+        }
+        AutoriteContractante autorite = effectiveIdentityService.requireEffectiveAutorite(user, enBase);
+        if (autorite == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
         }
-        return user.getAutoriteContractante();
+        return autorite;
     }
 
     private ConventionDto toDto(Convention convention) {

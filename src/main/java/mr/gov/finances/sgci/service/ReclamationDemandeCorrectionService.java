@@ -13,6 +13,7 @@ import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.ReclamationDemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.ReclamationDemandeCorrectionDto;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
@@ -44,6 +45,7 @@ public class ReclamationDemandeCorrectionService {
     private final MinioService minioService;
     private final AuditService auditService;
     private final WorkflowNotificationHelper workflowNotificationHelper;
+    private final EffectiveIdentityService effectiveIdentityService;
 
     @Transactional(readOnly = true)
     public List<ReclamationDemandeCorrectionDto> listByDemande(Long demandeId, AuthenticatedUser user) {
@@ -251,10 +253,12 @@ public class ReclamationDemandeCorrectionService {
             return false;
         }
         Utilisateur u = utilisateurRepository.findById(user.getUserId()).orElse(null);
-        if (u == null || u.getAutoriteContractante() == null || demande.getAutoriteContractante() == null) {
+        // L'autorité pour laquelle on agit, pas celle du compte : en relais, le compte n'en a aucune.
+        Long acId = u != null ? effectiveIdentityService.resolveAutoriteContractanteId(user, u) : null;
+        if (acId == null || demande.getAutoriteContractante() == null) {
             return false;
         }
-        return u.getAutoriteContractante().getId().equals(demande.getAutoriteContractante().getId());
+        return acId.equals(demande.getAutoriteContractante().getId());
     }
 
     private void notifyTreasuryReclamationAnnulee(DemandeCorrection demande, Long reclamationId) {
@@ -276,10 +280,19 @@ public class ReclamationDemandeCorrectionService {
         }
     }
 
+    /**
+     * Le rôle pour lequel on agit.
+     *
+     * <p>Il était relu sur le compte en base. En relais, ce compte a le rôle « commission_relais » :
+     * le dépôt et l'annulation d'une réclamation étaient refusés à une commission qui représentait
+     * pourtant l'autorité du dossier. Le jeton porte le rôle représenté ; c'est lui que lisent déjà
+     * tous les contrôles d'accès des routes. L'existence du compte reste vérifiée.
+     */
     private Role loadRole(AuthenticatedUser user) {
-        return utilisateurRepository.findById(user.getUserId())
-                .map(Utilisateur::getRole)
-                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
+        if (!utilisateurRepository.existsById(user.getUserId())) {
+            throw ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé");
+        }
+        return effectiveIdentityService.effectiveRole(user);
     }
 
     private void resetParallelValidations(DemandeCorrection d) {

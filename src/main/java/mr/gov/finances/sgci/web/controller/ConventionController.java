@@ -9,6 +9,7 @@ import mr.gov.finances.sgci.service.ConventionService;
 import mr.gov.finances.sgci.web.dto.ConventionDto;
 import mr.gov.finances.sgci.web.dto.CreateConventionRequest;
 import mr.gov.finances.sgci.web.dto.DocumentConventionDto;
+import mr.gov.finances.sgci.web.dto.UpdateConventionRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -54,8 +55,35 @@ public class ConventionController {
             @Valid @RequestBody CreateConventionRequest request,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
-        Long userId = user != null ? user.getUserId() : null;
-        return service.create(request, userId);
+        return service.create(request, user);
+    }
+
+    /**
+     * Modification par l'autorité titulaire ou créatrice, tant que la DGB n'a pas validé.
+     * Le service vérifie l'autorité et le statut : la permission seule ne suffit pas.
+     */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('convention.update')")
+    public ConventionDto update(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateConventionRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.update(id, request, user);
+    }
+
+    /**
+     * Annulation par l'autorité titulaire ou créatrice, tant que la DGB n'a pas validé.
+     * Les directions continuent d'annuler par {@code PATCH /{id}/statut}.
+     */
+    @PostMapping("/{id}/annuler")
+    @PreAuthorize("hasAuthority('convention.annuler')")
+    public ConventionDto annuler(
+            @PathVariable Long id,
+            @RequestParam(required = false) String motif,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.annulerParAutorite(id, motif, user);
     }
 
     @PatchMapping("/{id}/statut")

@@ -38,9 +38,14 @@ public class DocumentRequirementValidator {
                 .filter(r -> code.equals(r.getCodeDocument()))
                 .findFirst()
                 .orElse(null);
-        if (req == null) {
+        if (req == null || req.estSupprime()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Type de document non paramétré pour ce processus: " + code + " (" + processus + ")");
+        }
+        if (!req.estActif()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Ce document n'est plus demandé pour ce processus : il a été désactivé ("
+                            + code + ")");
         }
         if (req.getTypesAutorises() == null || req.getTypesAutorises().isEmpty()) {
             return;
@@ -59,6 +64,7 @@ public class DocumentRequirementValidator {
         }
         List<DocumentRequirement> reqs = requirementRepository.findByProcessusOrderByOrdreAffichageAsc(processus);
         Set<String> allowed = reqs.stream()
+                .filter(DocumentRequirement::estUtilisable)
                 .map(DocumentRequirement::getCodeDocument)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
@@ -98,6 +104,7 @@ public class DocumentRequirementValidator {
                 : Collections.emptySet();
 
         List<String> missing = reqs.stream()
+                .filter(DocumentRequirement::estUtilisable)
                 .filter(r -> Boolean.TRUE.equals(r.getObligatoire()))
                 .map(DocumentRequirement::getCodeDocument)
                 .filter(c -> !present.contains(c))

@@ -70,4 +70,42 @@ public class DocumentRequirement {
     public SensDocument sensEffectif() {
         return sens != null ? sens : SensDocument.ENTREE;
     }
+
+    /**
+     * Désactivée : la pièce n'est plus demandée dans ce processus — ni proposée au dépôt, ni exigée,
+     * ni réclamable par une demande de pièce. Les exemplaires déjà déposés restent consultables.
+     * Réversible depuis l'écran de paramétrage.
+     *
+     * <p>Nullable comme {@code sens}, et pour la même raison : les lignes antérieures à la colonne la
+     * portent à {@code null}, qui se lit « active ». La lire « désactivée » aurait fermé d'un coup
+     * toutes les pièces existantes.
+     */
+    @Column(name = "actif")
+    private Boolean actif;
+
+    /**
+     * Supprimée du paramétrage, sans que la ligne disparaisse.
+     *
+     * <p>Une suppression physique ne tenait pas, et faisait courir un risque. Elle ne tenait pas :
+     * le seed rejoue à chaque démarrage et recrée toute pièce connue qui manque. Elle faisait courir
+     * un risque : le sens d'une pièce vit sur cette ligne, et une pièce de sortie effacée serait
+     * devenue un « code inconnu », lu comme une entrée — donc visible du déposant avant la fin du
+     * processus. Marquée supprimée, la ligne est trouvée par le seed, qui ne la recrée pas, et son
+     * sens continue de protéger les pièces déjà déposées.
+     */
+    @Column(name = "date_suppression")
+    private java.time.Instant dateSuppression;
+
+    public boolean estActif() {
+        return !Boolean.FALSE.equals(actif);
+    }
+
+    public boolean estSupprime() {
+        return dateSuppression != null;
+    }
+
+    /** Demandée dans ce processus : ni désactivée, ni supprimée. */
+    public boolean estUtilisable() {
+        return estActif() && !estSupprime();
+    }
 }

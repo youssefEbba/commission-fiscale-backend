@@ -10,6 +10,7 @@ import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
+import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.CreateDelegueRequest;
 import mr.gov.finances.sgci.web.dto.UpdateDelegueRequest;
 import mr.gov.finances.sgci.web.dto.UtilisateurDto;
@@ -24,6 +25,7 @@ import java.util.List;
 public class DelegueService {
 
     private final UtilisateurRepository utilisateurRepository;
+    private final EffectiveIdentityService effectiveIdentityService;
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
 
@@ -149,19 +151,20 @@ public class DelegueService {
         if (user == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
-        if (user.isImpersonating()) {
-            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED,
-                    "Gestion des délégués interdite pendant une session d’impersonation");
-        }
+        // La commission relais qui agit pour une autorité en a tous les accès, délégués compris :
+        // la règle « interdit pendant une session d'impersonation » a été levée à la demande de la
+        // Commission. La création reste exclue pour tous, relais compris, car « delegue.create »
+        // n'est plus détenue par l'autorité contractante elle-même.
         if (user.getRole() != Role.AUTORITE_CONTRACTANTE) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Action réservée à l'autorité contractante");
         }
         Utilisateur entity = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
-        if (entity.getAutoriteContractante() == null) {
+        AutoriteContractante autorite = effectiveIdentityService.requireEffectiveAutorite(user, entity);
+        if (autorite == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Aucune autorité contractante liée à l'utilisateur");
         }
-        return entity.getAutoriteContractante();
+        return autorite;
     }
 
     private UtilisateurDto toDto(Utilisateur u) {

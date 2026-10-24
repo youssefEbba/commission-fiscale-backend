@@ -476,8 +476,17 @@ public class DemandeCorrectionService {
         entity.setGroupement(titulaire.groupement());
         entity.setConvention(convention);
         entity.setIntituleMarche(request.getIntituleMarche());
-        entity.setCreditInterieur(normalizeCredit(request.getCreditInterieur()));
-        entity.setCreditExterieur(normalizeCredit(request.getCreditExterieur()));
+        BigDecimal interieurDemande = normalizeCredit(request.getCreditInterieur());
+        BigDecimal exterieurDemande = normalizeCredit(request.getCreditExterieur());
+        // Une nouvelle déclaration de l'autorité — possible après la réouverture d'une demande sur
+        // réclamation — remplace l'ancienne : la prochaine correction la relira comme « déclarée ».
+        if (interieurDemande.compareTo(normalizeCredit(entity.getCreditInterieur())) != 0
+                || exterieurDemande.compareTo(normalizeCredit(entity.getCreditExterieur())) != 0) {
+            entity.setCreditInterieurDeclare(null);
+            entity.setCreditExterieurDeclare(null);
+        }
+        entity.setCreditInterieur(interieurDemande);
+        entity.setCreditExterieur(exterieurDemande);
         entity.setEquipementsPresents(request.getEquipementsPresents());
         entity.setAdmissionTemporaire(request.getAdmissionTemporaire());
 
@@ -906,6 +915,8 @@ public class DemandeCorrectionService {
                 .intituleMarche(d.getIntituleMarche())
                 .creditInterieur(d.getCreditInterieur())
                 .creditExterieur(d.getCreditExterieur())
+                .creditInterieurDeclare(d.getCreditInterieurDeclare())
+                .creditExterieurDeclare(d.getCreditExterieurDeclare())
                 .equipementsPresents(d.getEquipementsPresents())
                 .admissionTemporaire(d.getAdmissionTemporaire())
                 .statut(d.getStatut())

@@ -50,6 +50,8 @@ public class DecisionCorrectionController {
                 request.getDecision(),
                 request.getMotifRejet(),
                 request.getDocumentsDemandes() != null ? new java.util.HashSet<>(request.getDocumentsDemandes()) : null,
+                request.getCreditExterieur(),
+                request.getCreditInterieur(),
                 user);
     }
 
@@ -80,9 +82,11 @@ public class DecisionCorrectionController {
             @RequestParam("role") Role role,
             @RequestParam("motif") String motif,
             @RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestParam(value = "creditExterieur", required = false) java.math.BigDecimal creditExterieur,
+            @RequestParam(value = "creditInterieur", required = false) java.math.BigDecimal creditInterieur,
             @AuthenticationPrincipal AuthenticatedUser user
     ) throws IOException {
-        return decisionService.adminVisaPourRole(id, role, motif, file, user);
+        return decisionService.adminVisaPourRole(id, role, motif, file, creditExterieur, creditInterieur, user);
     }
 
     @PostMapping("/decisions/{decisionId}/rejet-temp/reponses")

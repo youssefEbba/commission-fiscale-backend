@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -108,7 +109,21 @@ public class DecisionCorrectionService {
     }
 
     @Transactional
-    public DecisionCorrectionDto saveDecision(Long demandeId, DecisionCorrectionType decision, String motifRejet, Set<String> documentsDemandes, AuthenticatedUser user) {
+    public DecisionCorrectionDto saveDecision(Long demandeId, DecisionCorrectionType decision, String motifRejet,
+                                              Set<String> documentsDemandes, AuthenticatedUser user) {
+        return saveDecision(demandeId, decision, motifRejet, documentsDemandes, null, null, user);
+    }
+
+    /**
+     * Pose une décision. Avec le visa de la direction qui dépose l'offre corrigée, les crédits
+     * corrigés sont obligatoires : ils remplacent ceux de la demande, et la déclaration d'origine
+     * de l'autorité est conservée à part.
+     */
+    @Transactional
+    public DecisionCorrectionDto saveDecision(Long demandeId, DecisionCorrectionType decision, String motifRejet,
+                                              Set<String> documentsDemandes,
+                                              BigDecimal creditExterieur, BigDecimal creditInterieur,
+                                              AuthenticatedUser user) {
         if (user == null || user.getRole() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
@@ -178,6 +193,10 @@ public class DecisionCorrectionService {
                 documentService.assertActiveDocumentPresent(demandeId, TypeDocument.OFFRE_FISCALE_CORRIGEE.name());
             }
         }
+        // Évalué avant que les montants ne changent : c'est la demande telle qu'elle a été déposée
+        // qui désigne la direction chargée de la correction.
+        boolean saisieExigee = decision == DecisionCorrectionType.VISA && saisieMontantsExigee(demande, role);
+        assertMontantsCorrection(saisieExigee, creditExterieur, creditInterieur, demande, role);
 
         DecisionCorrection entity = DecisionCorrection.builder()
                 .demandeCorrection(demande)
@@ -195,6 +214,9 @@ public class DecisionCorrectionService {
                 : RejetTempStatus.RESOLU);
         entity.setRejetTempResolvedAt(decision == DecisionCorrectionType.REJET_TEMP ? null : Instant.now());
         entity.setUtilisateur(utilisateur);
+        if (saisieExigee) {
+            appliquerMontantsCorrection(demande, entity, creditExterieur, creditInterieur);
+        }
 
         if (decision == DecisionCorrectionType.REJET_TEMP) {
             demande.setStatut(StatutDemande.INCOMPLETE);
@@ -283,6 +305,18 @@ public class DecisionCorrectionService {
                                                           String motif,
                                                           MultipartFile file,
                                                           AuthenticatedUser user) throws IOException {
+        return adminVisaPourRole(demandeId, roleCible, motif, file, null, null, user);
+    }
+
+    /** Variante avec les crédits corrigés, exigés quand l'administrateur vise pour la direction de la correction. */
+    @Transactional
+    public AdminVisaCorrectionResultDto adminVisaPourRole(Long demandeId,
+                                                          Role roleCible,
+                                                          String motif,
+                                                          MultipartFile file,
+                                                          BigDecimal creditExterieur,
+                                                          BigDecimal creditInterieur,
+                                                          AuthenticatedUser user) throws IOException {
         if (user == null || user.getRole() != Role.ADMIN_SI) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
                     "Visa administrateur réservé à l'administrateur système");
@@ -305,6 +339,9 @@ public class DecisionCorrectionService {
         } else {
             assertVisaMembrePossible(demande, roleCible);
         }
+        // Avant tout téléversement, comme les autres contrôles : un refus ne laisse pas de fichier.
+        boolean saisieExigee = roleCible != Role.PRESIDENT && saisieMontantsExigee(demande, roleCible);
+        assertMontantsCorrection(saisieExigee, creditExterieur, creditInterieur, demande, roleCible);
 
         String codeDocumentRequis = codeDocumentRequisPourVisa(demande, roleCible);
         boolean fichierFourni = file != null && !file.isEmpty();
@@ -328,7 +365,8 @@ public class DecisionCorrectionService {
         if (roleCible == Role.PRESIDENT) {
             demandeDto = demandeCorrectionService.adminAdopterPourPresident(demandeId, motif, user);
         } else {
-            decisionDto = enregistrerVisaAdminMembre(demande, roleCible, motif, user);
+            decisionDto = enregistrerVisaAdminMembre(demande, roleCible, motif,
+                    saisieExigee ? creditExterieur : null, saisieExigee ? creditInterieur : null, user);
             demandeDto = demandeCorrectionService.findById(demandeId, user);
         }
 
@@ -345,6 +383,8 @@ public class DecisionCorrectionService {
     private DecisionCorrectionDto enregistrerVisaAdminMembre(DemandeCorrection demande,
                                                              Role roleCible,
                                                              String motif,
+                                                             BigDecimal creditExterieur,
+                                                             BigDecimal creditInterieur,
                                                              AuthenticatedUser user) {
         Long demandeId = demande.getId();
         assertVisaMembrePossible(demande, roleCible);
@@ -367,6 +407,9 @@ public class DecisionCorrectionService {
         entity.setUtilisateur(administrateur);
         entity.setVisaParAdmin(Boolean.TRUE);
         entity.setMotifAdmin(motif);
+        if (creditExterieur != null && creditInterieur != null) {
+            appliquerMontantsCorrection(demande, entity, creditExterieur, creditInterieur);
+        }
 
         entity = decisionRepository.save(entity);
 
@@ -432,6 +475,68 @@ public class DecisionCorrectionService {
         }
     }
 
+    /**
+     * Ce visa doit-il porter les crédits corrigés ?
+     *
+     * <p>Oui pour la direction qui dépose l'offre corrigée : la DGD s'il y a un crédit extérieur,
+     * sinon la DGI. C'est exactement le visa qui exige un document de correction — d'où le même
+     * prédicat, plutôt qu'une seconde règle qui pourrait diverger.
+     */
+    private boolean saisieMontantsExigee(DemandeCorrection demande, Role role) {
+        return role != Role.PRESIDENT && codeDocumentRequisPourVisa(demande, role) != null;
+    }
+
+    /** Montants présents quand ils sont exigés, absents sinon, et cohérents. */
+    private static void assertMontantsCorrection(boolean exigee, BigDecimal creditExterieur,
+                                                 BigDecimal creditInterieur, DemandeCorrection demande, Role role) {
+        boolean fournis = creditExterieur != null || creditInterieur != null;
+        if (!exigee) {
+            if (fournis) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Les crédits corrigés se saisissent avec le visa de la direction qui dépose "
+                                + "l'offre corrigée, pas avec celui-ci (" + role + ")");
+            }
+            return;
+        }
+        if (creditExterieur == null || creditInterieur == null) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Saisissez le crédit extérieur et le crédit intérieur retenus par la correction. "
+                            + "Les montants déclarés par l'autorité contractante sont proposés par défaut.");
+        }
+        if (creditExterieur.signum() < 0 || creditInterieur.signum() < 0) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Les crédits corrigés ne peuvent pas être négatifs");
+        }
+        if (creditExterieur.signum() == 0 && creditInterieur.signum() == 0) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Au moins un des deux crédits doit être positif : une correction qui ne retient "
+                            + "aucun crédit se traite par un rejet de la demande");
+        }
+    }
+
+    /** Remplace les crédits de la demande, en gardant la déclaration d'origine de l'autorité. */
+    private void appliquerMontantsCorrection(DemandeCorrection demande, DecisionCorrection decision,
+                                             BigDecimal creditExterieur, BigDecimal creditInterieur) {
+        // La déclaration d'origine n'est saisie qu'une fois : une seconde correction, après
+        // réouverture, ne doit pas faire passer la première correction pour la déclaration.
+        if (demande.getCreditInterieurDeclare() == null && demande.getCreditExterieurDeclare() == null) {
+            demande.setCreditInterieurDeclare(demande.getCreditInterieur());
+            demande.setCreditExterieurDeclare(demande.getCreditExterieur());
+        }
+        Map<String, Object> trace = new HashMap<>();
+        trace.put("creditExterieurAvant", demande.getCreditExterieur());
+        trace.put("creditInterieurAvant", demande.getCreditInterieur());
+        trace.put("creditExterieurRetenu", creditExterieur);
+        trace.put("creditInterieurRetenu", creditInterieur);
+        trace.put("role", decision.getRole() != null ? decision.getRole().name() : null);
+
+        demande.setCreditExterieur(creditExterieur);
+        demande.setCreditInterieur(creditInterieur);
+        decision.setCreditExterieurRetenu(creditExterieur);
+        decision.setCreditInterieurRetenu(creditInterieur);
+        auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(demande.getId()), trace);
+    }
+
     /** Code du document exigé avant le visa de ce rôle, {@code null} si aucun. */
     private String codeDocumentRequisPourVisa(DemandeCorrection demande, Role role) {
         if (role == Role.PRESIDENT) {
@@ -463,7 +568,8 @@ public class DecisionCorrectionService {
             VisaCorrectionStatutDto.VisaCorrectionStatutDtoBuilder b = VisaCorrectionStatutDto.builder()
                     .role(role)
                     .codeDocumentRequis(codeDocumentRequis)
-                    .documentRequisPresent(documentPresent);
+                    .documentRequisPresent(documentPresent)
+                    .saisieMontantsExigee(role != Role.PRESIDENT && saisieMontantsExigee(demande, role));
 
             if (role == Role.PRESIDENT) {
                 boolean adoptee = demande.getStatut() == StatutDemande.ADOPTEE
@@ -554,6 +660,8 @@ public class DecisionCorrectionService {
                 .utilisateurNom(entity.getUtilisateur() != null ? entity.getUtilisateur().getNomComplet() : null)
                 .visaParAdmin(Boolean.TRUE.equals(entity.getVisaParAdmin()))
                 .motifAdmin(entity.getMotifAdmin())
+                .creditExterieurRetenu(entity.getCreditExterieurRetenu())
+                .creditInterieurRetenu(entity.getCreditInterieurRetenu())
                 .rejetTempResponses(entity.getRejetTempResponses() != null
                         ? entity.getRejetTempResponses().stream().map(this::toResponseDto).collect(Collectors.toList())
                         : java.util.List.of())

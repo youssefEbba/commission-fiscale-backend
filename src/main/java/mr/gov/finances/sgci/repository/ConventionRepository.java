@@ -48,9 +48,17 @@ public interface ConventionRepository extends JpaRepository<Convention, Long> {
     @Query("select count(m) > 0 from Marche m join m.delegues md where md.delegue.id = :delegueId and m.convention.id = :conventionId")
     boolean existsAccessByDelegue(@Param("delegueId") Long delegueId, @Param("conventionId") Long conventionId);
 
-    @Query("SELECT c FROM Convention c WHERE LOWER(c.reference) LIKE LOWER(CONCAT('%', :q, '%')) "
+    /**
+     * Recherche par référence, intitulé, référence projet ou nom du bailleur.
+     *
+     * <p>La jointure sur le bailleur est <b>externe et explicite</b>. Écrite {@code c.bailleur.nom}
+     * dans la clause where, elle était interne : toute convention sans bailleur disparaissait des
+     * résultats, même quand sa référence correspondait exactement.
+     */
+    @Query("SELECT c FROM Convention c LEFT JOIN c.bailleur b "
+            + "WHERE LOWER(c.reference) LIKE LOWER(CONCAT('%', :q, '%')) "
             + "OR LOWER(c.intitule) LIKE LOWER(CONCAT('%', :q, '%')) "
             + "OR (c.projectReference IS NOT NULL AND LOWER(c.projectReference) LIKE LOWER(CONCAT('%', :q, '%'))) "
-            + "OR (c.bailleur IS NOT NULL AND LOWER(c.bailleur.nom) LIKE LOWER(CONCAT('%', :q, '%')))")
+            + "OR (b IS NOT NULL AND LOWER(b.nom) LIKE LOWER(CONCAT('%', :q, '%')))")
     List<Convention> searchByReferenceIntituleOrProject(@Param("q") String q);
 }

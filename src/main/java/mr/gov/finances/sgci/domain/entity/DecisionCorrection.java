@@ -63,6 +63,16 @@ public class DecisionCorrection {
     @Column(name = "motif_admin", length = 1000)
     private String motifAdmin;
 
+    /**
+     * Crédits retenus par ce visa, quand il est celui de la direction qui dépose l'offre corrigée.
+     * {@code null} pour les autres visas. Gardés sur la décision pour savoir qui a retenu quoi.
+     */
+    @Column(name = "credit_interieur_retenu", precision = 19, scale = 4)
+    private java.math.BigDecimal creditInterieurRetenu;
+
+    @Column(name = "credit_exterieur_retenu", precision = 19, scale = 4)
+    private java.math.BigDecimal creditExterieurRetenu;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "utilisateur_id", nullable = false)
     private Utilisateur utilisateur;

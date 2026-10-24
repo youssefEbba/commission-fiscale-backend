@@ -19,4 +19,12 @@ public class DecisionCorrectionRequest {
     private String motifRejet;
 
     private List<String> documentsDemandes;
+
+    /**
+     * Crédits corrigés. Obligatoires avec le visa de la direction qui dépose l'offre corrigée — la
+     * DGD s'il y a un crédit extérieur, sinon la DGI — et refusés partout ailleurs. L'écran les
+     * préremplit avec les montants actuels de la demande ; la direction les garde ou les change.
+     */
+    private java.math.BigDecimal creditExterieur;
+    private java.math.BigDecimal creditInterieur;
 }

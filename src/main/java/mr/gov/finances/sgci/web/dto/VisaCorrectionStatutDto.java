@@ -45,6 +45,12 @@ public class VisaCorrectionStatutDto {
     /** {@code true} si le document exigé est déjà déposé (version active). */
     private boolean documentRequisPresent;
 
+    /**
+     * Vrai si ce visa doit être accompagné des crédits corrigés : c'est celui de la direction qui
+     * dépose l'offre corrigée. L'écran affiche alors les deux montants, préremplis.
+     */
+    private boolean saisieMontantsExigee;
+
     /** {@code true} si un rejet temporaire de ce rôle est encore ouvert (visa bloqué). */
     private boolean rejetTempOuvert;
 
