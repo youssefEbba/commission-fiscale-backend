@@ -49,7 +49,7 @@ public class DocumentDownloadController {
                         "Document non trouvé: " + documentId));
         assertPeutTelecharger(doc, user);
 
-        byte[] contenu = minioService.downloadFile(doc.getChemin());
+        byte[] contenu = minioService.downloadFile(minioService.cleDepuisChemin(doc.getChemin()));
         String nom = doc.getNomFichier() != null ? doc.getNomFichier() : "document";
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -90,7 +90,7 @@ public class DocumentDownloadController {
         if (!visibiliteDocumentService.visiblePour(VisibiliteDocumentService.processusDe(utilisation), doc.getCodeDocument(),
                 utilisation != null ? utilisation.getStatut() : null, role)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED,
-                    "Pièce produite par l'administration : elle sera communicable après la liquidation du dossier");
+                    "Pièce produite par l'administration : elle sera communicable à une étape ultérieure du dossier");
         }
     }
 

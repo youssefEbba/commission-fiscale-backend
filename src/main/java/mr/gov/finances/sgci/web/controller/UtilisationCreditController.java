@@ -302,16 +302,20 @@ public class UtilisationCreditController {
     }
 
     /**
-     * Étape Entreprise : accusé de réception du certificat d'utilisation.
-     * Statut résultant : CLOTUREE.
+     * Étape DGTCP : clôture de l'utilisation, une fois le crédit débité (LIQUIDEE en douane, APUREE
+     * en TVA intérieure). Statut résultant : CLOTUREE.
+     * <p>
+     * Remplace l'accusé de réception de l'entreprise ({@code POST /{id}/cloturer-reception}). L'ADMIN_SI
+     * peut se substituer à la DGTCP, avec un motif.
      */
-    @PostMapping("/{id}/cloturer-reception")
-    @PreAuthorize("hasAnyAuthority('utilisation.douane.entreprise.reception')")
-    public UtilisationCreditDto cloturerReception(
+    @PostMapping("/{id}/cloture")
+    @PreAuthorize("hasAnyAuthority('utilisation.dgtcp.cloturer', 'utilisation.admin_override')")
+    public UtilisationCreditDto cloturer(
             @PathVariable Long id,
+            @RequestParam(value = "motif", required = false) String motif,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
-        return service.cloturerReceptionEntreprise(id, user);
+        return service.cloturer(id, motif, user);
     }
 
     /**

@@ -93,9 +93,19 @@ public class UtilisationCreditDto {
     /** Quittance DGI déposée avant l'apurement. {@code null} tant qu'elle n'a pas été fournie. */
     private QuittanceDgiDto quittanceDgi;
 
-    /** Numéro du certificat d'utilisation, attribué à l'apurement ({@code CU-001/2026}). */
+    /** Numéro du certificat d'utilisation, attribué à son émission par le Président ({@code CU-001/2026}). */
     private String numeroCertificatUtilisation;
     private Instant dateCertificatUtilisation;
+
+    /**
+     * Vrai si l'appelant peut voir le certificat d'utilisation : toujours pour les directions ; pour
+     * le déposant, à partir de l'envoi au Trésor en douane, et de l'enregistrement de la quittance DGI
+     * en TVA intérieure.
+     *
+     * <p>Tant qu'il est faux, le numéro et la date ci-dessus sont retirés de la réponse. Le front s'y
+     * fie pour afficher la carte du certificat et son téléchargement, sans recalculer la règle.
+     */
+    private Boolean certificatUtilisationCommunicable;
 
     /** Raison sociale de l'entreprise demanderesse, pour l'édition du certificat d'utilisation. */
     private String entrepriseNom;

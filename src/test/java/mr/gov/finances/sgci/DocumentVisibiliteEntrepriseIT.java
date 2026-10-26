@@ -38,7 +38,9 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Les pièces produites par l'administration ne sont communiquées à l'entreprise qu'après liquidation.
+ * Les pièces produites par l'administration ne sont communiquées à l'entreprise qu'à partir d'une
+ * étape fixée par circuit : l'envoi au Trésor en douane, l'enregistrement de la quittance DGI en TVA
+ * intérieure.
  *
  * <p>Le test le plus important est {@link #toutCodeParametreEstClasse()} : une politique par liste
  * souffre de l'oubli, et c'est lui qui transforme « code oublié ⇒ pièce visible » en « code oublié ⇒
@@ -143,28 +145,44 @@ class DocumentVisibiliteEntrepriseIT {
     }
 
     @Test
-    void avantLiquidation_lentrepriseNeVoitPasLesPiecesDeLadministration() {
+    void avantLEnvoiAuTresor_lentrepriseNeVoitPasLesPiecesDeLadministration() {
         assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "BULLETIN_ANNOTE", StatutUtilisation.CHEQUE_SAISI, Role.ENTREPRISE)).isFalse();
         assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
-                "QUITTANCE_TRESOR", StatutUtilisation.ENVOYEE_AU_TRESOR, Role.ENTREPRISE)).isFalse();
+                "BULLETIN_ANNOTE", StatutUtilisation.TRANSMISE_AU_PRESIDENT, Role.ENTREPRISE)).isFalse();
         assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "CERTIFICAT_UTILISATION", StatutUtilisation.CERTIFICAT_EMIS, Role.ENTREPRISE)).isFalse();
     }
 
     @Test
-    void apresLiquidation_ellesDeviennentVisibles() {
+    void aLEnvoiAuTresor_ellesDeviennentVisiblesEnDouane() {
+        // La règle de l'équipe de test : l'entreprise voit le certificat d'utilisation dès que la
+        // DGTCP l'envoie au Trésor pour la quittance — et non plus seulement après la liquidation.
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
+                "CERTIFICAT_UTILISATION", StatutUtilisation.ENVOYEE_AU_TRESOR, Role.ENTREPRISE)).isTrue();
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
+                "QUITTANCE_TRESOR", StatutUtilisation.QUITTANCES_ENREGISTREES, Role.ENTREPRISE)).isTrue();
         assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
                 "BULLETIN_ANNOTE", StatutUtilisation.LIQUIDEE, Role.ENTREPRISE)).isTrue();
-        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
+    }
+
+    @Test
+    void aLaQuittanceDgi_ellesDeviennentVisiblesEnTva() {
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE,
+                "CERTIFICAT_UTILISATION", StatutUtilisation.CERTIFICAT_EMIS, Role.ENTREPRISE)).isFalse();
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE,
+                "CERTIFICAT_UTILISATION", StatutUtilisation.QUITTANCE_DGI_ENREGISTREE, Role.ENTREPRISE)).isTrue();
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE,
                 "QUITTANCE_DGI", StatutUtilisation.APUREE, Role.ENTREPRISE)).isTrue();
     }
 
     @Test
     void aLaCloture_ellesLeRestent() {
-        // Sans CLOTUREE dans la liste, les pièces se re-masqueraient à l'instant où l'entreprise
-        // accuse réception — exactement le contraire de ce qu'on veut.
+        // Sans CLOTUREE dans la liste, les pièces se re-masqueraient à l'instant où la DGTCP
+        // clôture l'utilisation — exactement le contraire de ce qu'on veut.
         assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_DOUANE,
+                "CERTIFICAT_UTILISATION", StatutUtilisation.CLOTUREE, Role.ENTREPRISE)).isTrue();
+        assertThat(visibilite.visiblePour(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE,
                 "CERTIFICAT_UTILISATION", StatutUtilisation.CLOTUREE, Role.ENTREPRISE)).isTrue();
     }
 
@@ -196,7 +214,7 @@ class DocumentVisibiliteEntrepriseIT {
 
     @Test
     @Transactional
-    void listeDesDocuments_masqueeAvantLiquidation() {
+    void listeDesDocuments_masqueeAvantLEnvoiAuTresor() {
         UtilisationDouaniere util = douaneAvecBulletin(StatutUtilisation.CHEQUE_SAISI);
 
         List<DocumentUtilisationCreditDto> vuEntreprise =
@@ -212,8 +230,8 @@ class DocumentVisibiliteEntrepriseIT {
 
     @Test
     @Transactional
-    void listeDesDocuments_ouverteApresLiquidation() {
-        UtilisationDouaniere util = douaneAvecBulletin(StatutUtilisation.LIQUIDEE);
+    void listeDesDocuments_ouverteALEnvoiAuTresor() {
+        UtilisationDouaniere util = douaneAvecBulletin(StatutUtilisation.ENVOYEE_AU_TRESOR);
 
         List<DocumentUtilisationCreditDto> vuEntreprise =
                 documentService.findByUtilisationCreditId(util.getId(), entreprise);
@@ -225,7 +243,7 @@ class DocumentVisibiliteEntrepriseIT {
     @Test
     @Transactional
     void leDossierLuiMeme_neLivrePasLesJustificatifsDeQuittance() {
-        UtilisationDouaniere util = douaneAvecBulletin(StatutUtilisation.ENVOYEE_AU_TRESOR);
+        UtilisationDouaniere util = douaneAvecBulletin(StatutUtilisation.CERTIFICAT_EMIS);
 
         UtilisationCreditDto dto = utilisationService.findById(util.getId(), entreprise);
 
