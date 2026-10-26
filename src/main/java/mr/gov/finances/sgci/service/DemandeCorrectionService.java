@@ -48,6 +48,7 @@ import mr.gov.finances.sgci.web.dto.DemandeCorrectionRejetDto;
 import mr.gov.finances.sgci.web.dto.DqeDto;
 import mr.gov.finances.sgci.web.dto.DqeLigneDto;
 import mr.gov.finances.sgci.web.dto.DocumentDto;
+import mr.gov.finances.sgci.service.document.VisibiliteDocumentService;
 import mr.gov.finances.sgci.web.dto.FiscaliteInterieureDto;
 import mr.gov.finances.sgci.web.dto.LigneImportationDto;
 import mr.gov.finances.sgci.web.dto.MarcheDto;
@@ -90,6 +91,7 @@ public class DemandeCorrectionService {
     private final DossierGedService dossierGedService;
     private final EffectiveIdentityService effectiveIdentityService;
     private final ReferenceSequenceGenerator referenceSequenceGenerator;
+    private final VisibiliteDocumentService visibiliteDocumentService;
 
     private static String generateNumero() {
         return "DC-" + Instant.now().getEpochSecond() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
@@ -98,7 +100,7 @@ public class DemandeCorrectionService {
     @Transactional(readOnly = true)
     public List<DemandeCorrectionDto> findAll(AuthenticatedUser user) {
         List<DemandeCorrection> list = resolveDemandeList(user);
-        return list.stream().map(this::toDto).collect(Collectors.toList());
+        return list.stream().map(d -> pourAppelant(d, user)).collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -108,7 +110,7 @@ public class DemandeCorrectionService {
         if (!canAccessDemandeCorrection(dc.getId(), user)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: demande hors périmètre");
         }
-        return toDto(dc);
+        return pourAppelant(dc, user);
     }
 
     private List<DemandeCorrection> resolveDemandeList(AuthenticatedUser user) {
@@ -423,7 +425,7 @@ public class DemandeCorrectionService {
         DemandeCorrectionDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), result);
         notifyDemandeCorrection(entity, StatutDemande.RECUE, null, user, false);
-        return result;
+        return masquerPiecesNonCommunicables(result, user);
     }
 
     /**
@@ -541,7 +543,7 @@ public class DemandeCorrectionService {
 
         DemandeCorrectionDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), result);
-        return result;
+        return masquerPiecesNonCommunicables(result, user);
     }
 
     /**
@@ -695,7 +697,7 @@ public class DemandeCorrectionService {
             DemandeCorrectionDto reactivated = toDto(entity);
             auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), reactivated);
             notifyDemandeCorrection(entity, StatutDemande.RECUE, null, user, false);
-            return reactivated;
+            return masquerPiecesNonCommunicables(reactivated, user);
         }
 
         if (statut == StatutDemande.EN_VALIDATION && entity.getStatut() == StatutDemande.REJETEE) {
@@ -743,6 +745,13 @@ public class DemandeCorrectionService {
 
         boolean finale = Boolean.TRUE.equals(decisionFinale);
         if (statut == StatutDemande.ADOPTEE) {
+            // L'adoption est l'acte du Président. La DGTCP pouvait la prononcer par cette route, et
+            // sans lettre d'adoption, puisque le contrôle de la lettre ne visait que le Président.
+            // L'ADMIN_SI garde sa substitution, adminAdopterPourPresident, qui exige la lettre.
+            if (finale && (user == null || user.getRole() != Role.PRESIDENT)) {
+                throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                        "L'adoption d'une demande de correction est prononcée par le Président");
+            }
             if (user != null && user.getRole() == Role.PRESIDENT) {
                 documentService.assertActiveDocumentPresent(
                         entity.getId(),
@@ -776,7 +785,7 @@ public class DemandeCorrectionService {
         DemandeCorrectionDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), result);
         notifyDemandeCorrection(entity, statut, motifRejet, user, finale);
-        return result;
+        return masquerPiecesNonCommunicables(result, user);
     }
 
     private void applyParallelValidation(DemandeCorrection entity, AuthenticatedUser user) {
@@ -837,7 +846,7 @@ public class DemandeCorrectionService {
     public List<DemandeCorrectionDto> findByAutoriteContractante(Long autoriteId, AuthenticatedUser user) {
         List<DemandeCorrection> raw = demandeRepository.findByAutoriteContractanteIdOrderByDateDepotDescIdDesc(autoriteId);
         raw = filterBrouillonPourConsultationAutorite(raw, autoriteId, user);
-        return raw.stream().map(this::toDto).collect(Collectors.toList());
+        return dansLePerimetre(raw, user).stream().map(d -> pourAppelant(d, user)).collect(Collectors.toList());
     }
 
     /**
@@ -863,10 +872,11 @@ public class DemandeCorrectionService {
     }
 
     @Transactional(readOnly = true)
-    public List<DemandeCorrectionDto> findByEntreprise(Long entrepriseId) {
-        return filterBrouillonHorsAc(demandeRepository.findByEntrepriseIdOrderByDateDepotDescIdDesc(entrepriseId))
+    public List<DemandeCorrectionDto> findByEntreprise(Long entrepriseId, AuthenticatedUser user) {
+        return dansLePerimetre(filterBrouillonHorsAc(
+                        demandeRepository.findByEntrepriseIdOrderByDateDepotDescIdDesc(entrepriseId)), user)
                 .stream()
-                .map(this::toDto)
+                .map(d -> pourAppelant(d, user))
                 .collect(Collectors.toList());
     }
 
@@ -879,9 +889,9 @@ public class DemandeCorrectionService {
                 && (delegueId == null || !delegueId.equals(user.getUserId()))) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Accès refusé: vous ne pouvez consulter que vos propres demandes");
         }
-        return filterBrouillonHorsAc(demandeRepository.findByDelegueId(delegueId))
+        return dansLePerimetre(filterBrouillonHorsAc(demandeRepository.findByDelegueId(delegueId)), user)
                 .stream()
-                .map(this::toDto)
+                .map(d -> pourAppelant(d, user))
                 .collect(Collectors.toList());
     }
 
@@ -900,10 +910,50 @@ public class DemandeCorrectionService {
                     .findByAutoriteContractanteIdAndStatutOrderByDateDepotDescIdDesc(
                             acId, StatutDemande.BROUILLON)
                     .stream()
-                    .map(this::toDto)
+                    .map(d -> pourAppelant(d, user))
                     .collect(Collectors.toList());
         }
-        return demandeRepository.findByStatutOrderByDateDepotDescIdDesc(statut).stream().map(this::toDto).collect(Collectors.toList());
+        return dansLePerimetre(demandeRepository.findByStatutOrderByDateDepotDescIdDesc(statut), user).stream()
+                .map(d -> pourAppelant(d, user)).collect(Collectors.toList());
+    }
+
+    /**
+     * Ne garde que les demandes que l'appelant peut ouvrir : le périmètre de {@link #findById}.
+     *
+     * <p>Les listes par statut, entreprise, autorité et délégué prennent leur critère dans la requête
+     * et n'en appliquaient pas d'autre. Une entreprise y lisait, par statut, les demandes de toutes
+     * les autorités, et par identifiant celles de n'importe quelle autre entreprise ; une autorité,
+     * celles d'une autre autorité, de ses délégués, ou déposées par elle pour l'entreprise choisie.
+     * Le critère reste celui de la route : il restreint le périmètre, il ne l'élargit jamais.
+     */
+    private List<DemandeCorrection> dansLePerimetre(List<DemandeCorrection> list, AuthenticatedUser user) {
+        return list.stream()
+                .filter(d -> canAccessDemandeCorrectionEntity(d, user))
+                .collect(Collectors.toList());
+    }
+
+    /** Le DTO tel que l'appelant a le droit de le lire. */
+    private DemandeCorrectionDto pourAppelant(DemandeCorrection d, AuthenticatedUser user) {
+        return masquerPiecesNonCommunicables(toDto(d), user);
+    }
+
+    /**
+     * Retire du DTO les pièces de sortie que le statut n'ouvre pas encore à l'appelant.
+     *
+     * <p>{@link #toDto} liste toutes les pièces du dossier. Le déposant lisait donc, dans la fiche de
+     * sa demande, les liens de la lettre d'adoption et de l'offre corrigée avant l'adoption — pièces
+     * que {@code DocumentService.findByDemandeCorrectionId} lui masque pourtant. Post-traitement, et
+     * non seconde construction : {@code toDto} alimente aussi le journal d'audit, qui garde la forme
+     * complète. On journalise d'abord, on masque ensuite pour la réponse.
+     */
+    private DemandeCorrectionDto masquerPiecesNonCommunicables(DemandeCorrectionDto dto, AuthenticatedUser user) {
+        if (dto == null) {
+            return null;
+        }
+        dto.setDocuments(visibiliteDocumentService.filtrer(ProcessusDocument.CORRECTION_OFFRE_FISCALE,
+                dto.getStatut(), user != null ? user.getRole() : null,
+                dto.getDocuments(), DocumentDto::getCodeDocument));
+        return dto;
     }
 
     private DemandeCorrectionDto toDto(DemandeCorrection d) {

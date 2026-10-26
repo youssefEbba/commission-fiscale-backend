@@ -4,6 +4,7 @@ import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.domain.document.DocumentDepotPolicy;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
@@ -68,6 +69,7 @@ public class DocumentUtilisationCreditService {
 
         ProcessusDocument processus = resolveProcessus(utilisation);
         requirementValidator.validateUpload(processus, codeDocument, file);
+        assertDeposableParLActeur(processus, codeDocument, user);
 
         int nextVersion = 1;
         DocumentUtilisationCredit previous = repository.findByUtilisationCreditIdAndCodeDocumentAndActifTrue(utilisationCreditId, codeDocument)
@@ -224,6 +226,31 @@ public class DocumentUtilisationCreditService {
         if (!rejetOuvert) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Remplacement interdit: aucun rejet temporaire n'est ouvert");
+        }
+    }
+
+    /**
+     * Les pièces des étapes du circuit ne passent pas par le dépôt du demandeur.
+     *
+     * <p>Le bulletin annoté, les quittances et le certificat d'utilisation sont produits par les
+     * directions. Les accepter ici laissait l'entreprise déposer elle-même un bulletin annoté, et
+     * franchir ainsi le contrôle « bulletin au dossier » du visa DGD et celui de la transmission au
+     * Président. Le chèque certifié, lui, a sa propre saisie, qui porte aussi la banque, le numéro et
+     * le montant : déposé ici, il serait une pièce sans chèque.
+     */
+    private static void assertDeposableParLActeur(ProcessusDocument processus, String codeDocument,
+                                                  AuthenticatedUser user) {
+        if (user == null || user.getRole() == null) {
+            return;
+        }
+        Role role = user.getRole();
+        boolean deposant = role == Role.ENTREPRISE || role == Role.SOUS_TRAITANT
+                || role == Role.COMMISSION_RELAIS;
+        if (deposant && !DocumentDepotPolicy.deposableParLeDemandeur(processus, codeDocument)) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    TypeDocument.CHEQUE_CERTIFIE.name().equals(codeDocument)
+                            ? "Le chèque certifié se dépose avec sa saisie (banque, numéro, montant)"
+                            : "Pièce produite par l'administration : elle ne se dépose pas depuis le dossier du demandeur");
         }
     }
 

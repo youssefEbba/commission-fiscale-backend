@@ -56,7 +56,7 @@ public class DocumentRequirementService {
         return direct.stream()
                 .filter(r -> !r.estSupprime())
                 .filter(r -> !depotSeulement || r.estActif())
-                .filter(r -> !depotSeulement || DocumentDepotPolicy.deposableParLeDemandeur(r.getCodeDocument()))
+                .filter(r -> !depotSeulement || DocumentDepotPolicy.deposableParLeDemandeur(r.getProcessus(), r.getCodeDocument()))
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
@@ -204,7 +204,7 @@ public class DocumentRequirementService {
                 .description(e.getDescription())
                 .ordreAffichage(e.getOrdreAffichage())
                 .sens(e.sensEffectif())
-                .deposableParLeDemandeur(DocumentDepotPolicy.deposableParLeDemandeur(e.getCodeDocument()))
+                .deposableParLeDemandeur(DocumentDepotPolicy.deposableParLeDemandeur(e.getProcessus(), e.getCodeDocument()))
                 .actif(e.estActif())
                 .pieceDuCircuit(PiecesDuCircuit.exigeeParLeCircuit(e.getCodeDocument()))
                 .build();

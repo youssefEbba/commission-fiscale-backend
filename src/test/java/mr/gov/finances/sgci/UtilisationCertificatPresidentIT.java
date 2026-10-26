@@ -244,7 +244,7 @@ class UtilisationCertificatPresidentIT {
     void clotureRefuseeTantQueLeCertificatNestPasEmis() {
         UtilisationDouaniere util = douaneAu(StatutUtilisation.LIQUIDEE);
 
-        assertThatThrownBy(() -> service.cloturerReceptionEntreprise(util.getId(), entreprise))
+        assertThatThrownBy(() -> service.cloturer(util.getId(), null, dgtcp))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     ApiException api = (ApiException) e;
@@ -260,7 +260,7 @@ class UtilisationCertificatPresidentIT {
         util.setNumeroCertificatUtilisation("CU-042/2026");
         utilisationRepository.save(util);
 
-        UtilisationCreditDto dto = service.cloturerReceptionEntreprise(util.getId(), entreprise);
+        UtilisationCreditDto dto = service.cloturer(util.getId(), null, dgtcp);
 
         assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CLOTUREE);
     }
@@ -272,7 +272,7 @@ class UtilisationCertificatPresidentIT {
         util.setOrigineArchiveLibelle("UT 1 | 1/01/2019");
         utilisationRepository.save(util);
 
-        UtilisationCreditDto dto = service.cloturerReceptionEntreprise(util.getId(), entreprise);
+        UtilisationCreditDto dto = service.cloturer(util.getId(), null, dgtcp);
 
         assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CLOTUREE);
     }
@@ -284,7 +284,7 @@ class UtilisationCertificatPresidentIT {
         util.setEmissionCertificatRequise(Boolean.FALSE);
         utilisationRepository.save(util);
 
-        UtilisationCreditDto dto = service.cloturerReceptionEntreprise(util.getId(), entreprise);
+        UtilisationCreditDto dto = service.cloturer(util.getId(), null, dgtcp);
 
         assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CLOTUREE);
     }

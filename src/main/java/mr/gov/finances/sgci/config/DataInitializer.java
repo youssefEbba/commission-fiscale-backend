@@ -1440,7 +1440,8 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("utilisation.douane.dgtcp.transmettre.president",
                 "Contrôler le dossier (bulletin visé, chèque certifié) et le transmettre au Président");
         createPermission("utilisation.douane.dgtcp.quittances", "Saisir les quittances Trésor");
-        createPermission("utilisation.douane.entreprise.reception", "Accuser réception du certificat d'utilisation");
+        createPermission("utilisation.dgtcp.cloturer",
+                "Clôturer une utilisation une fois le crédit débité (liquidation ou apurement)");
         createPermission("utilisation.douane.dgtcp.history.view", "Consulter l'historique des liquidations");
 
         createPermission("utilisation.interieur.submit", "Soumettre une demande d'utilisation Intérieur");
@@ -1728,7 +1729,6 @@ public class DataInitializer implements CommandLineRunner {
                 "utilisation.douane.solde.view",
                 "utilisation.douane.history.view",
                 "utilisation.douane.entreprise.cheque",
-                "utilisation.douane.entreprise.reception",
                 "utilisation.interieur.submit",
                 "utilisation.interieur.document.upload",
                 "utilisation.interieur.solde.view",
@@ -1757,7 +1757,6 @@ public class DataInitializer implements CommandLineRunner {
                 "utilisation.douane.solde.view",
                 "utilisation.douane.history.view",
                 "utilisation.douane.entreprise.cheque",
-                "utilisation.douane.entreprise.reception",
                 "utilisation.interieur.submit",
                 "utilisation.interieur.document.upload",
                 "utilisation.interieur.solde.view",
@@ -1905,6 +1904,7 @@ public class DataInitializer implements CommandLineRunner {
                 "utilisation.douane.dgtcp.envoyer.tresor",
                 "utilisation.douane.dgtcp.quittances",
                 "utilisation.douane.dgtcp.transmettre.president",
+                "utilisation.dgtcp.cloturer",
                 "utilisation.interieur.dgtcp.queue.view",
                 "utilisation.interieur.dgtcp.verify",
                 "utilisation.interieur.dgtcp.validate",
@@ -1940,7 +1940,6 @@ public class DataInitializer implements CommandLineRunner {
                 "commission.relais.release",
                 "document.requirements.view",
                 "utilisation.douane.entreprise.cheque",
-                "utilisation.douane.entreprise.reception",
                 "referentiel.taxe.manage"
         );
 
@@ -2003,6 +2002,25 @@ public class DataInitializer implements CommandLineRunner {
 
         seedReferentielReadPermissions();
         seedCertificatVerificationScanPermission();
+        retirerPermission("utilisation.douane.entreprise.reception");
+    }
+
+    /**
+     * Retire une permission devenue sans objet, et ses attributions.
+     *
+     * <p>{@link #assign} ne fait qu'ajouter : retirer un code d'une liste ne le retire pas des bases
+     * déjà initialisées, où il continuerait de figurer dans les jetons. Seul cas à ce jour :
+     * {@code utilisation.douane.entreprise.reception}, l'accusé de réception par lequel l'entreprise
+     * clôturait l'utilisation — la clôture revient désormais à la DGTCP.
+     */
+    private void retirerPermission(String code) {
+        permissionRepository.findByCode(code).ifPresent(permission -> {
+            for (Role role : Role.values()) {
+                rolePermissionRepository.findByRoleAndPermission(role, permission)
+                        .ifPresent(rolePermissionRepository::delete);
+            }
+            permissionRepository.delete(permission);
+        });
     }
 
     /**

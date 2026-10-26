@@ -365,9 +365,18 @@ public class CertificatCreditService {
                 .build();
     }
 
+    /**
+     * Les certificats de l'entreprise que l'appelant peut ouvrir : le périmètre de {@link #findById}.
+     *
+     * <p>Sans ce filtre, une entreprise lisait par identifiant les certificats d'une autre — montants
+     * et soldes compris — et une autorité ceux nés des demandes des autres autorités. L'entreprise de
+     * la route restreint le périmètre, elle ne l'élargit jamais.
+     */
     @Transactional(readOnly = true)
-    public List<CertificatCreditDto> findByEntreprise(Long entrepriseId) {
-        return repository.findByEntrepriseIdOrderByDateEmissionDescIdDesc(entrepriseId).stream().map(this::toDto).collect(Collectors.toList());
+    public List<CertificatCreditDto> findByEntreprise(Long entrepriseId, AuthenticatedUser user) {
+        return repository.findByEntrepriseIdOrderByDateEmissionDescIdDesc(entrepriseId).stream()
+                .filter(c -> canAccessCertificat(c.getId(), user))
+                .map(this::toDto).collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)

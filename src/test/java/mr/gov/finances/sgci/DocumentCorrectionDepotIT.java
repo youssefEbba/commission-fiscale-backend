@@ -72,14 +72,14 @@ class DocumentCorrectionDepotIT {
     void lesPiecesDeLaCommissionNeSontPasDeposables() {
         for (String code : List.of("OFFRE_CORRIGEE", "LETTRE_ADOPTION", "CREDIT_EXTERIEUR",
                 "CREDIT_INTERIEUR", "FEUILLE_EVALUATION_SIGNEE", "OFFRE_FISCALE_CORRIGEE", "RECU_DEPOT")) {
-            assertThat(DocumentDepotPolicy.deposableParLeDemandeur(code)).as(code).isFalse();
+            assertThat(DocumentDepotPolicy.deposableParLeDemandeur(CORRECTION, code)).as(code).isFalse();
         }
     }
 
     @Test
     void lesPiecesDuDemandeurLeRestent() {
         for (String code : List.of("LETTRE_SAISINE", "OFFRE_FISCALE", "DAO_DQE", "ATTESTATION_FISCALE")) {
-            assertThat(DocumentDepotPolicy.deposableParLeDemandeur(code)).as(code).isTrue();
+            assertThat(DocumentDepotPolicy.deposableParLeDemandeur(CORRECTION, code)).as(code).isTrue();
         }
     }
 
@@ -87,7 +87,7 @@ class DocumentCorrectionDepotIT {
     void unCodeInconnuResteDeposable() {
         // Le paramétrage reste ouvert à l'ADMIN_SI : un type ajouté en exploitation ne doit pas
         // disparaître du formulaire sans que personne ne l'ait décidé.
-        assertThat(DocumentDepotPolicy.deposableParLeDemandeur("TYPE_AJOUTE_EN_EXPLOITATION")).isTrue();
+        assertThat(DocumentDepotPolicy.deposableParLeDemandeur(CORRECTION, "TYPE_AJOUTE_EN_EXPLOITATION")).isTrue();
     }
 
     // ── les deux lectures ──────────────────────────────────────────────────────────────────────

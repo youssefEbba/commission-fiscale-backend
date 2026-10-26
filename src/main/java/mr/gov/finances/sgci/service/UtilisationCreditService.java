@@ -127,7 +127,7 @@ public class UtilisationCreditService {
     ) {
         List<UtilisationCredit> rows = resolveVisibleEntities(auth);
         List<UtilisationCreditDto> dtos = rows.stream()
-                .map(u -> appliquerVisibiliteDocuments(toDto(u), u.getStatut(), auth))
+                .map(u -> appliquerVisibiliteDocuments(toDto(u), u, auth))
                 .collect(Collectors.toList());
         if (auth != null && auth.getRole() == Role.ENTREPRISE && sousTraitantEntrepriseId != null) {
             dtos = dtos.stream()
@@ -183,7 +183,7 @@ public class UtilisationCreditService {
         if (user != null) {
             assertCanViewUtilisation(user, entity);
         }
-        return appliquerVisibiliteDocuments(toDto(entity), entity.getStatut(), user);
+        return appliquerVisibiliteDocuments(toDto(entity), entity, user);
     }
 
     @Transactional(readOnly = true)
@@ -194,7 +194,7 @@ public class UtilisationCreditService {
             assertCanAccessCertificatUtilisations(user, cert);
         }
         return repository.findByCertificatCreditId(certificatCreditId).stream()
-                .map(this::toDto)
+                .map(u -> appliquerVisibiliteDocuments(toDto(u), u, user))
                 .collect(Collectors.toList());
     }
 
@@ -1513,27 +1513,63 @@ public class UtilisationCreditService {
     }
 
     /**
-     * Étape Entreprise : accusé de réception du certificat d'utilisation.
-     * Statut résultant : {@link StatutUtilisation#CLOTUREE}.
+     * Étape DGTCP : clôture de l'utilisation, une fois le crédit débité.
+     *
+     * <p>Remplace l'accusé de réception de l'entreprise. L'équipe de test l'a relevé : c'est la
+     * DGTCP, et non l'entreprise, qui clôture, et le manuel ne prévoit aucun accusé de réception. Ce
+     * geste était de surcroît permis dès l'émission du certificat, avant la liquidation : clôturée à
+     * ce stade, l'utilisation ne débitait jamais le solde du crédit.
+     *
+     * <p>Le crédit doit donc être débité — {@code LIQUIDEE} en douane, {@code APUREE} en TVA
+     * intérieure — et le certificat émis. L'ADMIN_SI peut se substituer à la DGTCP, motif
+     * obligatoire. Les clôtures automatiques, par un transfert ou par la clôture du crédit, ne passent
+     * pas par ici.
+     *
+     * <p>Statut résultant : {@link StatutUtilisation#CLOTUREE}.
      */
     @Transactional
-    public UtilisationCreditDto cloturerReceptionEntreprise(Long id, AuthenticatedUser user) {
+    public UtilisationCreditDto cloturer(Long id, String motif, AuthenticatedUser user) {
         UtilisationCredit entity = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation non trouvée: " + id));
 
-        workflow.validateTransition(entity.getStatut(), StatutUtilisation.CLOTUREE);
         Role role = user != null ? user.getRole() : null;
-        if (role != Role.ENTREPRISE && role != Role.COMMISSION_RELAIS) {
-            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise peut accuser réception");
+        if (role != Role.DGTCP && role != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "La clôture d'une utilisation revient à la DGTCP");
         }
+        boolean substitution = role == Role.ADMIN_SI;
+        if (substitution && (motif == null || motif.isBlank())) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Le motif est obligatoire pour une clôture par substitution administrative");
+        }
+        StatutUtilisation debite = statutCreditDebite(entity);
+        if (entity.getStatut() != debite) {
+            throw ApiException.badRequest(ApiErrorCode.STATUT_INCOMPATIBLE,
+                    "La clôture suppose le crédit débité (statut " + debite + "). Statut actuel : "
+                            + entity.getStatut());
+        }
+        workflow.validateTransition(entity.getStatut(), StatutUtilisation.CLOTUREE);
         assertCertificatEmisAvantCloture(entity);
 
         entity.setStatut(StatutUtilisation.CLOTUREE);
         entity = repository.save(entity);
         UtilisationCreditDto result = toDto(entity);
-        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
+        if (substitution) {
+            Map<String, Object> trace = new HashMap<>();
+            trace.put("motif", motif);
+            trace.put("roleSubstitue", Role.DGTCP.name());
+            trace.put("statut", StatutUtilisation.CLOTUREE.name());
+            auditService.log(AuditAction.ADMIN_CORRECTION, "UtilisationCredit", String.valueOf(id), trace);
+        } else {
+            auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
+        }
         notifyUtilisationStatutChange(entity, StatutUtilisation.CLOTUREE, user);
         return result;
+    }
+
+    /** Le statut où le crédit est débité : la liquidation en douane, l'apurement en TVA intérieure. */
+    private static StatutUtilisation statutCreditDebite(UtilisationCredit u) {
+        return u.getType() == TypeUtilisation.DOUANIER ? StatutUtilisation.LIQUIDEE : StatutUtilisation.APUREE;
     }
 
     /**
@@ -1790,6 +1826,12 @@ public class UtilisationCreditService {
         UtilisationCredit u = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
                         "Utilisation de crédit non trouvée: " + id));
+        // La route est ouverte aux permissions de consultation du solde, que détient l'entreprise :
+        // sans ce contrôle, elle lisait l'état — et le numéro — de n'importe quelle utilisation.
+        if (user != null) {
+            assertCanViewUtilisation(user, u);
+        }
+        boolean communicable = certificatUtilisationCommunicable(u, user != null ? user.getRole() : null);
         boolean dejaEmis = u.getStatut() == StatutUtilisation.CERTIFICAT_EMIS;
         String code = dejaEmis ? null : codeBlocageEmissionCertificat(u, user, Role.PRESIDENT);
         return CertificatUtilisationEmissionDto.builder()
@@ -1799,8 +1841,8 @@ public class UtilisationCreditService {
                         : exceptionBlocageEmissionCertificat(code, u, user, Role.PRESIDENT).getMessage())
                 .statut(u.getStatut())
                 .statutPrealableAttendu(statutPrealableEmission(u))
-                .numeroCertificatUtilisation(u.getNumeroCertificatUtilisation())
-                .dateCertificatUtilisation(u.getDateCertificatUtilisation())
+                .numeroCertificatUtilisation(communicable ? u.getNumeroCertificatUtilisation() : null)
+                .dateCertificatUtilisation(communicable ? u.getDateCertificatUtilisation() : null)
                 .certificatSigneDepose(documentService.findActiveDocumentTypes(id)
                         .contains(TypeDocument.CERTIFICAT_UTILISATION.name()))
                 .build();
@@ -1840,6 +1882,11 @@ public class UtilisationCreditService {
         if (entity.getStatut() == StatutUtilisation.BROUILLON && statut == StatutUtilisation.DEMANDEE) {
             return soumettreBrouillon(id, user);
         }
+        // Une seule porte vers la clôture : sans ce renvoi, PATCH /statut offrait une seconde
+        // clôture, permise à l'entreprise et avant le débit du crédit.
+        if (statut == StatutUtilisation.CLOTUREE) {
+            return cloturer(id, null, user);
+        }
         workflow.validateTransition(entity.getStatut(), statut);
 
         assertActorCanTransition(entity, statut, user);
@@ -1862,10 +1909,6 @@ public class UtilisationCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Transmission au Président : veuillez utiliser POST /{id}/transmission-president");
         }
-        if (statut == StatutUtilisation.CLOTUREE) {
-            assertCertificatEmisAvantCloture(entity);
-        }
-
         if (statut == StatutUtilisation.EN_VERIFICATION) {
             assertRequiredDocumentsPresent(entity);
         }
@@ -1909,14 +1952,24 @@ public class UtilisationCreditService {
      * on journalise, puis on masque pour la réponse.
      */
     private UtilisationCreditDto appliquerVisibiliteDocuments(UtilisationCreditDto dto,
-                                                              StatutUtilisation statut,
+                                                              UtilisationCredit utilisation,
                                                               AuthenticatedUser user) {
         if (dto == null) {
             return null;
         }
         Role role = user != null ? user.getRole() : null;
         if (VisibiliteDocumentService.acteurVoitTout(role)) {
+            dto.setCertificatUtilisationCommunicable(true);
             return dto;
+        }
+        StatutUtilisation statut = utilisation.getStatut();
+        // Le numéro suit la pièce : le montrer avant elle, c'était annoncer un certificat que
+        // l'entreprise ne peut pas encore ouvrir.
+        boolean certificatCommunicable = certificatUtilisationCommunicable(utilisation, role);
+        dto.setCertificatUtilisationCommunicable(certificatCommunicable);
+        if (!certificatCommunicable) {
+            dto.setNumeroCertificatUtilisation(null);
+            dto.setDateCertificatUtilisation(null);
         }
         if (!visibiliteDocumentService.visiblePour(
                 ProcessusDocument.UTILISATION_CI_DOUANE, "QUITTANCE_TRESOR", statut, role)
@@ -1934,6 +1987,19 @@ public class UtilisationCreditService {
             dto.getQuittanceDgi().setDocumentId(null);
         }
         return dto;
+    }
+
+    /**
+     * Le certificat d'utilisation est-il communicable à ce rôle ?
+     *
+     * <p>Toujours aux directions. Au déposant, selon la règle d'ouverture du circuit : à partir de
+     * l'envoi au Trésor en douane, de l'enregistrement de la quittance DGI en TVA intérieure. Même
+     * décision que pour la pièce elle-même, de sorte que la carte du certificat, son numéro et son
+     * téléchargement apparaissent ensemble.
+     */
+    private boolean certificatUtilisationCommunicable(UtilisationCredit utilisation, Role role) {
+        return visibiliteDocumentService.visiblePour(resolveProcessus(utilisation),
+                TypeDocument.CERTIFICAT_UTILISATION.name(), utilisation.getStatut(), role);
     }
 
     /** Délègue à la résolution partagée : trois copies de cette règle finiraient par diverger. */
@@ -2009,10 +2075,18 @@ public class UtilisationCreditService {
                 assertPeutEmettreCertificat(role);
                 return;
             }
-            // Étape Entreprise / Commission Relais : chèque et clôture
-            if (to == StatutUtilisation.CHEQUE_SAISI || to == StatutUtilisation.CLOTUREE) {
+            // Étape Entreprise / Commission Relais : le chèque
+            if (to == StatutUtilisation.CHEQUE_SAISI) {
                 if (role != Role.ENTREPRISE && role != Role.COMMISSION_RELAIS) {
                     throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Seule l'entreprise peut effectuer cette action");
+                }
+                return;
+            }
+            // La clôture passe par cloturer(), qui porte ses propres contrôles ; ce rappel ne sert
+            // qu'à ce qu'aucun autre chemin ne la rouvre à l'entreprise.
+            if (to == StatutUtilisation.CLOTUREE) {
+                if (role != Role.DGTCP && role != Role.ADMIN_SI) {
+                    throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "La clôture d'une utilisation revient à la DGTCP");
                 }
                 return;
             }

@@ -59,8 +59,11 @@ public class DemandeCorrectionController {
 
     @GetMapping("/by-entreprise/{entrepriseId}")
     @PreAuthorize("hasAnyAuthority('demande_correction.list', 'correction.dgd.queue.view', 'correction.dgb.queue.view', 'correction.visa.history.view', 'correction.view.audit', 'correction.entreprise.queue.view')")
-    public List<DemandeCorrectionDto> getByEntreprise(@PathVariable Long entrepriseId) {
-        return service.findByEntreprise(entrepriseId);
+    public List<DemandeCorrectionDto> getByEntreprise(
+            @PathVariable Long entrepriseId,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.findByEntreprise(entrepriseId, user);
     }
 
     @GetMapping("/by-delegue/{userId}")

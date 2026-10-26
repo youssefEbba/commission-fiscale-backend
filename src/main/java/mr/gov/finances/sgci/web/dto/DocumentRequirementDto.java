@@ -33,7 +33,8 @@ public class DocumentRequirementDto {
     private SensDocument sens;
 
     /**
-     * Faux pour les pièces que la Commission produit elle-même pendant l'instruction.
+     * Faux pour les pièces que le formulaire de dépôt ne propose pas : celles que la Commission
+     * produit pendant l'instruction et, dans l'utilisation, celles des étapes du circuit.
      *
      * <p>Permet à l'écran de paramétrage d'afficher la famille de chaque code, là où le formulaire
      * de dépôt demande directement la liste filtrée.

@@ -4,6 +4,7 @@ import mr.gov.finances.sgci.domain.document.DocumentDepotPolicy;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
+import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
@@ -204,7 +205,7 @@ class EquipementsDeclaresIT {
         // Si elle basculait du côté des pièces de la Commission, le formulaire de dépôt cesserait
         // de la proposer — et la règle ci-dessus deviendrait impossible à satisfaire.
         assertThat(DocumentDepotPolicy.CODES_DEPOSES_PAR_LE_DEMANDEUR).contains(LISTE);
-        assertThat(DocumentDepotPolicy.deposableParLeDemandeur(LISTE)).isTrue();
+        assertThat(DocumentDepotPolicy.deposableParLeDemandeur(ProcessusDocument.CORRECTION_OFFRE_FISCALE, LISTE)).isTrue();
     }
 
     // ── fixtures ───────────────────────────────────────────────────────────────────────────────

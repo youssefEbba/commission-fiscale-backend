@@ -154,8 +154,32 @@ public class MinioService {
     }
 
     /**
+     * La clé d'objet d'un chemin tel que {@link #uploadFile} le renvoie, et que les entités stockent.
+     *
+     * <p>{@link #downloadFile} attend une clé, alors que le chemin stocké est une URL :
+     * {@value #LOCAL_FILES_URL_PREFIX}{@code {nom}} en stockage local, rangé sous
+     * {@code documents/}, et {@code {minio.url}/{bucket}/{nom}} avec MinIO. Lui passer le chemin tel
+     * quel faisait échouer la lecture dans les deux modes. Un chemin d'une autre forme est rendu
+     * inchangé : c'est déjà une clé, comme celles de {@link #uploadBytes}.
+     */
+    public String cleDepuisChemin(String chemin) {
+        if (chemin == null || chemin.isBlank()) {
+            return chemin;
+        }
+        if (chemin.startsWith(LOCAL_FILES_URL_PREFIX)) {
+            return "documents/" + chemin.substring(LOCAL_FILES_URL_PREFIX.length());
+        }
+        String prefixeMinio = minioUrl + "/" + bucket + "/";
+        if (!minioUrl.isEmpty() && chemin.startsWith(prefixeMinio)) {
+            return chemin.substring(prefixeMinio.length());
+        }
+        return chemin;
+    }
+
+    /**
      * Récupère le contenu binaire d'un objet stocké via {@link #uploadBytes}, quel que soit le
      * backend actif. Utilisé pour le flux authentifié des signatures (jamais d'URL publique exposée).
+     * Pour un document, la clé s'obtient par {@link #cleDepuisChemin}.
      */
     public byte[] downloadFile(String objectKey) {
         if (objectKey == null || objectKey.isBlank()) {

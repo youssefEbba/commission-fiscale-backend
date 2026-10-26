@@ -16,7 +16,8 @@ import java.util.Set;
  *       ({@code DemandeCorrectionService}, {@code DecisionCorrectionService}).</li>
  *   <li>{@code OFFRE_FISCALE_CORRIGEE}, {@code CREDIT_INTERIEUR} — exigées, selon le dossier, pour
  *       les visas de la DGD et de la DGI ({@code DecisionCorrectionService}).</li>
- *   <li>{@code RECU_DEPOT} — produit au dépôt de la demande de correction ({@code DocumentService}).</li>
+ *   <li>{@code RECU_DEPOT} — produit au dépôt de la demande de correction : le navigateur le
+ *       génère ({@code recuDepotPdf.ts}) et le dépose par la route ordinaire des pièces.</li>
  *   <li>{@code CERTIFICAT_CREDIT_IMPOTS} — exigé pour la validation du crédit par le Président
  *       ({@code CertificatCreditService}, {@code DecisionCertificatCreditService}).</li>
  *   <li>{@code CERTIFICAT_UTILISATION} — émis par le Président sur chaque utilisation

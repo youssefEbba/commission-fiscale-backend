@@ -127,8 +127,11 @@ public class CertificatCreditController {
 
     @GetMapping("/by-entreprise/{entrepriseId}")
     @PreAuthorize("hasAnyAuthority('mise_en_place.view', 'mise_en_place.entreprise.queue.view', 'mise_en_place.dgi.queue.view', 'mise_en_place.dgtcp.queue.view', 'mise_en_place.dgb.queue.view', 'mise_en_place.dgd.queue.view', 'mise_en_place.president.queue.view')")
-    public List<CertificatCreditDto> getByEntreprise(@PathVariable Long entrepriseId) {
-        return service.findByEntreprise(entrepriseId);
+    public List<CertificatCreditDto> getByEntreprise(
+            @PathVariable Long entrepriseId,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.findByEntreprise(entrepriseId, user);
     }
 
     @GetMapping("/by-statut")
