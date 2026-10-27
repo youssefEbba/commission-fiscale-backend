@@ -145,7 +145,11 @@ public class DataInitializer implements CommandLineRunner {
      * refuse de démarrer.
      */
     static void seedDemo(String nom, Runnable seed) {
-        seed.run();
+        try {
+            seed.run();
+        } catch (RuntimeException e) {
+            log.error("Données de démonstration « {} » non créées ; le démarrage continue sans elles.", nom, e);
+        }
     }
 
     /**
@@ -443,6 +447,9 @@ public class DataInitializer implements CommandLineRunner {
         // Le numéro est unique dans toute la base : c'est lui qu'il faut tester d'abord. Ne chercher la
         // démo que sous l'entreprise NIF_DEFAULT la recréait dès qu'elle n'y était plus rattachée — un
         // doublon que MySQL refuse, et qui a bloqué le démarrage en production le 2026-10-27.
+        if (demandeCorrectionRepository.existsByNumero(DEMO_CORRECTION_NUMERO)) {
+            return;
+        }
         AutoriteContractante autoriteContractante = autoriteContractanteRepository.findByCode("AC_DEFAULT")
                 .orElseThrow(() -> new IllegalStateException("Autorité Contractante par défaut manquante"));
         Entreprise entreprise = entrepriseRepository.findByNif("NIF_DEFAULT")
