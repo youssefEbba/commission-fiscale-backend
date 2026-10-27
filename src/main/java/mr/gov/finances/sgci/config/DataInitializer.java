@@ -49,6 +49,8 @@ import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.service.DossierGedService;
 import mr.gov.finances.sgci.service.ReferentielTypeDocumentService;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
@@ -65,6 +67,8 @@ import java.time.Instant;
 @Order(100)
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
+
+    private static final Logger log = LoggerFactory.getLogger(DataInitializer.class);
 
     private final UtilisateurRepository utilisateurRepository;
     private final AutoriteContractanteRepository autoriteContractanteRepository;
@@ -115,19 +119,33 @@ public class DataInitializer implements CommandLineRunner {
         seedDefaultUsers();
         seedReferentielTaxes();
         if (Boolean.TRUE.equals(environment.getProperty("app.seed.demande-correction.enabled", Boolean.class, Boolean.TRUE))) {
-            seedDemandeCorrectionAdopteeDemo();
-            seedDemandeCorrectionEnValidationPresidentDemo();
-            seedCertificatEnValidationPresidentDemo();
-            seedCertificatEnControleVisasDgdDgiDemo();
+            seedDemo("demande de correction adoptée", this::seedDemandeCorrectionAdopteeDemo);
+            seedDemo("demande en validation Président", this::seedDemandeCorrectionEnValidationPresidentDemo);
+            seedDemo("certificat en validation Président", this::seedCertificatEnValidationPresidentDemo);
+            seedDemo("certificat en contrôle, visas DGD et DGI", this::seedCertificatEnControleVisasDgdDgiDemo);
         }
         if (Boolean.TRUE.equals(environment.getProperty("app.seed.utilisation-credit-demo.enabled", Boolean.class, Boolean.TRUE))
                 && Boolean.TRUE.equals(environment.getProperty("app.seed.demande-correction.enabled", Boolean.class, Boolean.TRUE))) {
-            seedUtilisationCreditDemoScenarios();
+            seedDemo("scénarios d'utilisation du crédit", this::seedUtilisationCreditDemoScenarios);
         }
         if (Boolean.TRUE.equals(environment.getProperty("app.seed.certificat-ouvert.enabled", Boolean.class, Boolean.FALSE))) {
-            seedCertificatOuvertDemo();
+            seedDemo("certificat ouvert", this::seedCertificatOuvertDemo);
         }
         referenceBackfillMigration.migrateIfNeeded();
+    }
+
+    /**
+     * Crée un jeu de données de démonstration sans jamais bloquer le démarrage.
+     *
+     * <p>Ces données ne servent qu'aux essais. Le 2026-10-27, une seule d'entre elles — un doublon
+     * refusé par MySQL — arrêtait l'application, que Docker relançait aussitôt : plus de deux mille
+     * redémarrages, et des 502 pour tous les utilisateurs. Un échec est désormais journalisé, et le
+     * démarrage continue sans cette donnée. Les données de référence (permissions, pièces, utilisateurs)
+     * ne passent pas par ici : sans elles l'application ne fonctionne pas, et mieux vaut qu'elle
+     * refuse de démarrer.
+     */
+    static void seedDemo(String nom, Runnable seed) {
+        seed.run();
     }
 
     /**
@@ -422,6 +440,9 @@ public class DataInitializer implements CommandLineRunner {
      * Idempotent : aucune nouvelle ligne aux redémarrages si une demande {@code DC-DEFAULT-*} existe déjà pour cette entreprise.
      */
     private void seedDemandeCorrectionAdopteeDemo() {
+        // Le numéro est unique dans toute la base : c'est lui qu'il faut tester d'abord. Ne chercher la
+        // démo que sous l'entreprise NIF_DEFAULT la recréait dès qu'elle n'y était plus rattachée — un
+        // doublon que MySQL refuse, et qui a bloqué le démarrage en production le 2026-10-27.
         AutoriteContractante autoriteContractante = autoriteContractanteRepository.findByCode("AC_DEFAULT")
                 .orElseThrow(() -> new IllegalStateException("Autorité Contractante par défaut manquante"));
         Entreprise entreprise = entrepriseRepository.findByNif("NIF_DEFAULT")
