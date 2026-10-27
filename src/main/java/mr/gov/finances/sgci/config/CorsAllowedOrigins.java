@@ -15,19 +15,7 @@ public final class CorsAllowedOrigins {
     private CorsAllowedOrigins() {}
 
     public static final List<String> FRONTEND = List.of(
-            "https://e6e2ee9f-7068-4371-95aa-8f4613a60836.lovableproject.com",
-            "https://id-preview--e6e2ee9f-7068-4371-95aa-8f4613a60836.lovable.app",
-            "https://commission-fiscale.lovable.app",
-            "https://e6b3-197-231-5-85.ngrok-free.app",
-            "http://localhost:8081",
-            "http://127.0.0.1:8081",
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://178.128.171.174:8081",
-            "http://10.16.0.5:8081",
-            "http://10.106.0.2:8081",
-            "http://172.18.0.1:8081",
-            "http://10.1.230.60:8082"
+            "https://commission-fiscale.gov.mr"
     );
 
     public static boolean matchesFrontendOrigin(String originTrimmed) {
