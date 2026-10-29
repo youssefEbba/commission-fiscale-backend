@@ -15,6 +15,10 @@ public final class CorsAllowedOrigins {
     private CorsAllowedOrigins() {}
 
     public static final List<String> FRONTEND = List.of(
+            // Production. Le front et l'API partagent ce domaine, mais derrière nginx l'application voit
+            // une requête http : pour Spring, l'origine https est donc étrangère, et une origine absente
+            // de cette liste fait refuser la connexion (403 « Invalid CORS request », le 2026-10-27).
+            "https://commission-fiscale.gov.mr",
             "https://e6e2ee9f-7068-4371-95aa-8f4613a60836.lovableproject.com",
             "https://id-preview--e6e2ee9f-7068-4371-95aa-8f4613a60836.lovable.app",
             "https://commission-fiscale.lovable.app",
@@ -27,7 +31,8 @@ public final class CorsAllowedOrigins {
             "http://10.16.0.5:8081",
             "http://10.106.0.2:8081",
             "http://172.18.0.1:8081",
-            "http://10.1.230.60:8082"
+            "http://10.1.230.60:8082",
+            "http://46.202.171.85:8080"
     );
 
     public static boolean matchesFrontendOrigin(String originTrimmed) {
