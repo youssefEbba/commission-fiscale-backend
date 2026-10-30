@@ -9,6 +9,7 @@ import mr.gov.finances.sgci.domain.entity.ModeleFiscal;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.NotificationType;
+import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutAvenant;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
@@ -18,6 +19,7 @@ import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.repository.AvenantRepository;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
+import mr.gov.finances.sgci.repository.DocumentAvenantRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
@@ -84,6 +86,8 @@ public class AvenantService {
     private final DossierGedService dossierGedService;
     private final NotificationService notificationService;
     private final AuditService auditService;
+    private final DocumentAvenantRepository documentAvenantRepository;
+    private final DocumentRequirementValidator requirementValidator;
 
     // ── lectures ────────────────────────────────────────────────────────────────────────────
 
@@ -121,6 +125,9 @@ public class AvenantService {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé : avenant hors périmètre");
         }
         return a;
+    }
+
+    public void verifierDepotPiece(Long id, String codeDocument, AuthenticatedUser user) {
     }
 
     // ── dépôt ───────────────────────────────────────────────────────────────────────────────
@@ -175,6 +182,12 @@ public class AvenantService {
         exigerActeur(user, Role.DGTCP, motif, "La prise en charge d'un avenant revient à la DGTCP");
         Avenant a = charger(id, user);
         exigerStatut(a, StatutAvenant.DEPOSE, "prendre en charge");
+        // Les pièces se déposent tant que l'avenant est déposé : la prise en charge les clôt, c'est
+        // donc là que les pièces rendues obligatoires dans la GED (MODIFICATION_CI) sont exigées.
+        requirementValidator.assertRequiredDocumentsPresent(ProcessusDocument.MODIFICATION_CI,
+                documentAvenantRepository.findByAvenantIdAndActifTrue(a.getId()).stream()
+                        .map(d -> d.getCodeDocument())
+                        .toList());
         a.setStatut(StatutAvenant.EN_COURS_TRAITEMENT);
         a.setExamineParId(user.getUserId());
         a.setDateExamen(Instant.now());

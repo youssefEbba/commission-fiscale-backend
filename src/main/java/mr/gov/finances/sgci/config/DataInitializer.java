@@ -189,9 +189,8 @@ public class DataInitializer implements CommandLineRunner {
      *
      * <p><b>N'écrit que si le sens est nul</b>, c'est-à-dire si personne n'a tranché. Un
      * administrateur qui classe délibérément une pièce en entrée ne doit pas voir sa décision
-     * reprise au redémarrage suivant : c'est précisément ce que fait
-     * {@code upgradeTransfertCreditDocumentsToObligatoires}, seul endroit du seed à forcer une
-     * valeur, et ce n'est pas un modèle à suivre ici.
+     * reprise au redémarrage suivant. Le seed ne force aucune valeur déjà en base : les pièces du
+     * transfert, repassées en obligatoire à chaque démarrage, défaisaient le choix fait dans la GED.
      *
      * <p>{@code RECU_DEPOT} reste volontairement en entrée : c'est la preuve de dépôt du déposant,
      * elle lui est due immédiatement. La classer en sortie la lui masquerait jusqu'à l'adoption.
@@ -369,23 +368,6 @@ public class DataInitializer implements CommandLineRunner {
                 all, "Projet: document joint", 1);
         seedDocReq(ProcessusDocument.MARCHE, "AUTRE_DOCUMENT", false,
                 all, "Marché: document joint", 1);
-
-        upgradeTransfertCreditDocumentsToObligatoires();
-    }
-
-    /** Bases déjà seedées avec obligatoire=false : passage à obligatoire pour le P9. */
-    private void upgradeTransfertCreditDocumentsToObligatoires() {
-        for (String code : java.util.List.of(
-                "DEMANDE_MOTIVEE_TRANSFERT",
-                "DECLARATION_CLOTURE_DOUANE",
-                "JUSTIFICATIFS_CLOTURE_DOUANE")) {
-            documentRequirementRepository.findByProcessusAndCodeDocument(ProcessusDocument.TRANSFERT_CREDIT, code)
-                    .filter(req -> !Boolean.TRUE.equals(req.getObligatoire()))
-                    .ifPresent(req -> {
-                        req.setObligatoire(true);
-                        documentRequirementRepository.save(req);
-                    });
-        }
     }
 
     private void seedDocReq(ProcessusDocument processus, String codeDocument, boolean obligatoire,
