@@ -26,6 +26,9 @@ public class DemandeCorrectionDto {
     private String intituleMarche;
     /** Référence de l'appel d'offres dont le marché est issu. */
     private String referenceAppelOffre;
+    /** L'avenant dont cette demande est la correction ; nuls pour une demande ordinaire. */
+    private Long avenantId;
+    private String avenantNumero;
     /** Crédit intérieur demandé (0 → DGI hors workflow). */
     private BigDecimal creditInterieur;
     /** Crédit extérieur / douanier demandé (0 → DGD hors workflow). */

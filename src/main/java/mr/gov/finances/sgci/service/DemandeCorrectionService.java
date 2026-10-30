@@ -93,6 +93,7 @@ public class DemandeCorrectionService {
     private final ReferenceSequenceGenerator referenceSequenceGenerator;
     private final VisibiliteDocumentService visibiliteDocumentService;
     private final AvenantSuiviCorrection avenantSuiviCorrection;
+    private final mr.gov.finances.sgci.repository.AvenantRepository avenantRepository;
 
     private static String generateNumero() {
         return "DC-" + Instant.now().getEpochSecond() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
@@ -939,6 +940,12 @@ public class DemandeCorrectionService {
                 .collect(Collectors.toList());
     }
 
+    /** L'avenant dont la demande est la correction, s'il y en a un. */
+    private java.util.Optional<mr.gov.finances.sgci.domain.entity.Avenant> avenantDe(DemandeCorrection d) {
+        return d.getId() == null ? java.util.Optional.empty()
+                : avenantRepository.findByDemandeCorrectionId(d.getId()).stream().findFirst();
+    }
+
     /** Le DTO tel que l'appelant a le droit de le lire. */
     private DemandeCorrectionDto pourAppelant(DemandeCorrection d, AuthenticatedUser user) {
         return masquerPiecesNonCommunicables(toDto(d), user);
@@ -971,6 +978,8 @@ public class DemandeCorrectionService {
                 .dateDepot(d.getDateDepot())
                 .intituleMarche(d.getIntituleMarche())
                 .referenceAppelOffre(d.getReferenceAppelOffre())
+                .avenantId(avenantDe(d).map(mr.gov.finances.sgci.domain.entity.Avenant::getId).orElse(null))
+                .avenantNumero(avenantDe(d).map(mr.gov.finances.sgci.domain.entity.Avenant::getNumero).orElse(null))
                 .creditInterieur(d.getCreditInterieur())
                 .creditExterieur(d.getCreditExterieur())
                 .creditInterieurDeclare(d.getCreditInterieurDeclare())

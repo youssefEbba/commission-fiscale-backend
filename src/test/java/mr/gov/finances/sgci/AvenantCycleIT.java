@@ -177,6 +177,21 @@ class AvenantCycleIT {
 
     @Test
     @Transactional
+    void laFicheDeLaDemandeDeCorrectionNommeSonAvenant() {
+        // Sans ce lien, l'écran retrouvait l'avenant en parcourant toute la liste des avenants.
+        preparerCertificat();
+        AvenantDto a = avenantFinancierValide();
+
+        var fiche = demandeService.findById(a.getDemandeCorrectionId(), ac);
+
+        assertThat(fiche.getAvenantId()).isEqualTo(a.getId());
+        assertThat(fiche.getAvenantNumero()).isEqualTo(a.getNumero());
+        assertThat(demandeService.findById(certificat.getDemandeCorrection().getId(), dgtcp).getAvenantId())
+                .as("la demande d'origine n'est issue d'aucun avenant").isNull();
+    }
+
+    @Test
+    @Transactional
     void laValidationDUnAvenantFinancierCreeLaDemandeDeCorrection() {
         preparerCertificat();
         AvenantDto a = avenantFinancierValide();
