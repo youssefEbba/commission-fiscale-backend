@@ -65,7 +65,10 @@ public class ColonnesTexteSchemaMigration implements ApplicationRunner {
             // Sens entrée/sortie des pièces : même raison que les autres. Rendue en enum(…) MySQL
             // natif, la colonne refuserait toute troisième valeur ajoutée plus tard, et l'échec
             // serait invisible en test puisque H2 recrée son schéma.
-            new ColonneTexte("document_requirement", "sens", 16, false));
+            new ColonneTexte("document_requirement", "sens", 16, false),
+            // Statut de l'avenant (octobre 2026) : texte dès sa création, pour qu'un statut ajouté
+            // plus tard ne bute pas sur un ENUM MySQL natif.
+            new ColonneTexte("avenant", "statut", 32, false));
 
     public void migrateIfNeeded() {
         REGISTRE.forEach(this::widenStringColumnIfNeeded);

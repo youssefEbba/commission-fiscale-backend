@@ -147,8 +147,8 @@ public class ImportArchiveCreditService {
                     releve.setMarcheRapprocheId(m.getId());
                     releve.setMarcheRapprocheNumero(m.getNumeroMarche());
                     releve.setMarcheRapprocheIntitule(m.getIntitule());
-                    if (m.getConvention() != null && m.getConvention().getAutoriteContractante() != null) {
-                        AutoriteContractante ac = m.getConvention().getAutoriteContractante();
+                    if (m.autoriteEffective() != null) {
+                        AutoriteContractante ac = m.autoriteEffective();
                         releve.setAutoriteRapprocheeId(ac.getId());
                         releve.setAutoriteRapprocheeNom(ac.getNom());
                     }

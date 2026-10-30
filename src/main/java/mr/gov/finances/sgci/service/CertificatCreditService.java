@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.domain.reference.FormatReference;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 
@@ -91,6 +92,7 @@ public class CertificatCreditService {
     private final VisaRequirementResolver visaRequirementResolver;
     private final ReferenceSequenceGenerator referenceSequenceGenerator;
     private final GroupementService groupementService;
+    private final mr.gov.finances.sgci.repository.AvenantRepository avenantRepository;
 
     @Transactional(readOnly = true)
     public List<CertificatCreditDto> findAll(AuthenticatedUser user) {
@@ -207,10 +209,14 @@ public class CertificatCreditService {
                 .build();
     }
 
-    /** Fiche consolidée d'un crédit d'impôt par sa référence lisible (ex. CR-01/2025). */
+    /**
+     * Fiche consolidée d'un crédit d'impôt par sa référence lisible (ex. CR-0001-01-2025). Une
+     * référence saisie à l'ancien format (CR-001-01/2025) est encore reconnue.
+     */
     @Transactional(readOnly = true)
     public CertificatCreditFicheDto getFicheByReference(String reference, AuthenticatedUser user) {
         CertificatCredit c = repository.findByReference(reference)
+                .or(() -> repository.findByReference(FormatReference.convertirAncienFormat(reference)))
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
                         "Certificat de crédit non trouvé pour la référence: " + reference));
         if (user != null && !canAccessCertificat(c.getId(), user)) {
@@ -238,6 +244,7 @@ public class CertificatCreditService {
                 .marche(toMarcheFicheDto(marche))
                 .autoriteContractante(toAutoriteFicheDto(autorite))
                 .intituleMarche(demande != null ? demande.getIntituleMarche() : null)
+                .referenceAppelOffre(demande != null ? demande.getReferenceAppelOffre() : null)
                 .documents(documentService.findByCertificatCreditId(c.getId(), user))
                 .utilisations(utilisationCreditService.findByCertificatCreditId(c.getId(), user))
                 .tvaStock(utilisationCreditService.findTvaStockByCertificat(c.getId()))
@@ -1208,6 +1215,45 @@ public class CertificatCreditService {
      * <p>La tolérance de {@link #RECAP_TOLERANCE_MRU} absorbe les arrondis de saisie, pas un écart
      * de ventilation.
      */
+    /**
+     * Applique au crédit le nouveau récapitulatif d'un avenant financier, et recalcule ses soldes.
+     *
+     * <p>Chemin dédié, et non {@code applyMontants} : {@code ModificationDossierPolicy} verrouille, à
+     * raison, la saisie ordinaire des montants d'un crédit ouvert. Seule l'application d'un avenant
+     * adopté y touche, avec la règle de l'équipe : le consommé est conservé, le restant remplacé
+     * ({@link mr.gov.finances.sgci.domain.avenant.RecalculSoldesAvenant}). Le stock de TVA déductible
+     * et les instantanés des utilisations passées ne bougent pas.
+     */
+    public void appliquerRecapitulatifAvenant(CertificatCredit c, mr.gov.finances.sgci.web.dto.ApplicationAvenantRequest r) {
+        if (r == null) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Le nouveau récapitulatif du crédit est obligatoire pour appliquer un avenant financier");
+        }
+        var soldes = mr.gov.finances.sgci.domain.avenant.RecalculSoldesAvenant.recalculer(
+                new mr.gov.finances.sgci.domain.avenant.RecalculSoldesAvenant.EtatCredit(
+                        c.getMontantCordon(), c.getTvaImportationDouaneAccordee(), c.getSoldeCordon(),
+                        c.getTvaImportationDouane(), c.getMontantTVAInterieure(), c.getSoldeTVA()),
+                new mr.gov.finances.sgci.domain.avenant.RecalculSoldesAvenant.NouveauCredit(
+                        r.getDroitsEtTaxesDouaneHorsTva(), r.getTaxesConsommation(),
+                        r.getTvaImportationDouaneAccordee(), r.getMontantTVAInterieure()));
+        if (r.getValeurDouaneFournitures() != null) {
+            c.setValeurDouaneFournitures(r.getValeurDouaneFournitures());
+        }
+        if (r.getMontantMarcheHt() != null) {
+            c.setMontantMarcheHt(r.getMontantMarcheHt());
+        }
+        c.setDroitsEtTaxesDouaneHorsTva(r.getDroitsEtTaxesDouaneHorsTva());
+        c.setTaxesConsommation(r.getTaxesConsommation());
+        c.setTvaImportationDouaneAccordee(r.getTvaImportationDouaneAccordee());
+        c.setTvaCollecteeTravaux(r.getTvaCollecteeTravaux());
+        c.setMontantCordon(r.getMontantCordon());
+        c.setMontantTVAInterieure(r.getMontantTVAInterieure());
+        assertRecapitulatifCoherence(c);
+        c.setSoldeCordon(soldes.soldeCordon());
+        c.setTvaImportationDouane(soldes.tvaImportationRestante());
+        c.setSoldeTVA(soldes.soldeTVA());
+    }
+
     private void assertRecapitulatifCoherence(CertificatCredit c) {
         if (c == null) {
             return;
@@ -1349,6 +1395,12 @@ public class CertificatCreditService {
             if (!Boolean.TRUE.equals(lettreCorrection.getNotifiee())) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La lettre de correction doit être notifiée");
             }
+        }
+        // Une demande issue d'un avenant modifie le crédit existant : elle n'en ouvre pas un second.
+        if (demandeCorrection.getId() != null && avenantRepository.existsByDemandeCorrectionId(demandeCorrection.getId())) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Cette demande de correction est issue d'un avenant : elle s'applique au crédit existant, "
+                            + "par l'application de l'avenant, et ne met pas en place un nouveau crédit");
         }
         if (demandeCorrection.getMarche() == null) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat doit être rattaché à un marché (via la demande de correction)");

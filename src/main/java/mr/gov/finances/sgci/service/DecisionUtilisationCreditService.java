@@ -10,7 +10,9 @@ import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
+import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.service.document.VisibiliteDocumentService;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.repository.DecisionUtilisationCreditRepository;
@@ -44,6 +46,7 @@ public class DecisionUtilisationCreditService {
     private final RejetTempResponseRepository rejetTempResponseRepository;
 
     private final WorkflowNotificationHelper workflowNotificationHelper;
+    private final DocumentRequirementValidator documentRequirementValidator;
 
     @Transactional
     public DecisionCreditDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
@@ -106,9 +109,6 @@ public class DecisionUtilisationCreditService {
             if (motifRejet == null || motifRejet.isBlank()) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de rejet est obligatoire");
             }
-            if (documentsDemandes == null || documentsDemandes.isEmpty()) {
-                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La liste des documents demandés est obligatoire");
-            }
         }
 
         UtilisationCredit utilisation = utilisationRepository.findById(utilisationCreditId)
@@ -122,6 +122,10 @@ public class DecisionUtilisationCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Décision interdite: l'utilisation est en statut "
                             + utilisation.getStatut() + " (liquidée, apurée ou rejetée définitivement)");
+        }
+        if (decision == DecisionCorrectionType.REJET_TEMP) {
+            documentsDemandes = documentRequirementValidator.piecesDemandeesParRejet(
+                    VisibiliteDocumentService.processusDe(utilisation), documentsDemandes);
         }
 
         Utilisateur utilisateur = utilisateurRepository.findById(user.getUserId())

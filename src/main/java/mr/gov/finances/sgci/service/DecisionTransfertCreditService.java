@@ -10,6 +10,7 @@ import mr.gov.finances.sgci.domain.entity.TransfertCredit;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
+import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
@@ -46,6 +47,7 @@ public class DecisionTransfertCreditService {
     private final RejetTempResponseService rejetTempResponseService;
     private final RejetTempResponseRepository rejetTempResponseRepository;
     private final WorkflowNotificationHelper workflowNotificationHelper;
+    private final DocumentRequirementValidator documentRequirementValidator;
 
     /**
      * Ordre imposé du circuit P7 : chaque direction atteste ce qui relève d'elle, et le Président
@@ -284,9 +286,8 @@ public class DecisionTransfertCreditService {
         if (motifRejet == null || motifRejet.isBlank()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de rejet est obligatoire");
         }
-        if (documentsDemandes == null || documentsDemandes.isEmpty()) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La liste des documents demandés est obligatoire");
-        }
+        documentsDemandes = documentRequirementValidator.piecesDemandeesParRejet(
+                ProcessusDocument.TRANSFERT_CREDIT, documentsDemandes);
 
         TransfertCredit transfert = transfertRepository.findById(transfertCreditId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Transfert de crédit non trouvé: " + transfertCreditId));

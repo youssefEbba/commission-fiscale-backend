@@ -17,6 +17,9 @@ public interface DemandeCorrectionRepository extends JpaRepository<DemandeCorrec
     Optional<DemandeCorrection> findByNumero(String numero);
     boolean existsByNumero(String numero);
 
+    /** L'autorité a-t-elle déjà une demande sous cette convention ? Empêche de l'en délier. */
+    boolean existsByConventionIdAndAutoriteContractanteId(Long conventionId, Long autoriteContractanteId);
+
     /** Vrai si l’entreprise a déjà une demande dont le numéro commence par {@code prefix} (seed démo idempotent). */
     boolean existsByEntreprise_IdAndNumeroStartingWith(Long entrepriseId, String prefix);
 

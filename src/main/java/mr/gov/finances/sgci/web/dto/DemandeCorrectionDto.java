@@ -24,6 +24,8 @@ public class DemandeCorrectionDto {
     private Instant dateDepot;
     /** Intitulé libre du marché / convention saisi à la demande. */
     private String intituleMarche;
+    /** Référence de l'appel d'offres dont le marché est issu. */
+    private String referenceAppelOffre;
     /** Crédit intérieur demandé (0 → DGI hors workflow). */
     private BigDecimal creditInterieur;
     /** Crédit extérieur / douanier demandé (0 → DGD hors workflow). */

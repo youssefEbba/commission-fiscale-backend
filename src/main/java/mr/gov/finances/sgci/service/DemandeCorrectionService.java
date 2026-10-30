@@ -92,6 +92,7 @@ public class DemandeCorrectionService {
     private final EffectiveIdentityService effectiveIdentityService;
     private final ReferenceSequenceGenerator referenceSequenceGenerator;
     private final VisibiliteDocumentService visibiliteDocumentService;
+    private final AvenantSuiviCorrection avenantSuiviCorrection;
 
     private static String generateNumero() {
         return "DC-" + Instant.now().getEpochSecond() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
@@ -252,13 +253,12 @@ public class DemandeCorrectionService {
             if (marche.getConvention() == null || marche.getConvention().getId() == null) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le marché n'est rattaché à aucune convention");
             }
-            if (!marche.getConvention().getId().equals(request.getConventionId())) {
+            // Un marché peut relier plusieurs conventions : la demande se dépose sous l'une d'elles.
+            if (!marche.relieA(request.getConventionId())) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le marché n'appartient pas à la convention sélectionnée");
             }
 
-            Long marcheAcId = marche.getConvention().getAutoriteContractante() != null
-                    ? marche.getConvention().getAutoriteContractante().getId()
-                    : null;
+            Long marcheAcId = marche.autoriteEffective() != null ? marche.autoriteEffective().getId() : null;
             if (marcheAcId == null || !marcheAcId.equals(request.getAutoriteContractanteId())) {
                 throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Le marché est hors périmètre de l'autorité contractante sélectionnée");
             }
@@ -270,6 +270,7 @@ public class DemandeCorrectionService {
                 .dateDepot(Instant.now())
                 .statut(initial)
                 .intituleMarche(request.getIntituleMarche())
+                .referenceAppelOffre(request.getReferenceAppelOffre())
                 .creditInterieur(normalizeCredit(request.getCreditInterieur()))
                 .creditExterieur(normalizeCredit(request.getCreditExterieur()))
                 .equipementsPresents(request.getEquipementsPresents())
@@ -478,6 +479,7 @@ public class DemandeCorrectionService {
         entity.setGroupement(titulaire.groupement());
         entity.setConvention(convention);
         entity.setIntituleMarche(request.getIntituleMarche());
+        entity.setReferenceAppelOffre(request.getReferenceAppelOffre());
         BigDecimal interieurDemande = normalizeCredit(request.getCreditInterieur());
         BigDecimal exterieurDemande = normalizeCredit(request.getCreditExterieur());
         // Une nouvelle déclaration de l'autorité — possible après la réouverture d'une demande sur
@@ -507,11 +509,10 @@ public class DemandeCorrectionService {
                 }
                 detachMarcheFromCancelledDemande(liee, marcheCible);
             }
-            if (marcheCible.getConvention() == null || !marcheCible.getConvention().getId().equals(request.getConventionId())) {
+            if (!marcheCible.relieA(request.getConventionId())) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le marché n'appartient pas à la convention sélectionnée");
             }
-            Long marcheAcId = marcheCible.getConvention().getAutoriteContractante() != null
-                    ? marcheCible.getConvention().getAutoriteContractante().getId() : null;
+            Long marcheAcId = marcheCible.autoriteEffective() != null ? marcheCible.autoriteEffective().getId() : null;
             if (marcheAcId == null || !marcheAcId.equals(request.getAutoriteContractanteId())) {
                 throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Le marché est hors périmètre de l'autorité contractante sélectionnée");
             }
@@ -567,6 +568,9 @@ public class DemandeCorrectionService {
         if (request.getIntituleMarche() != null) {
             entity.setIntituleMarche(request.getIntituleMarche());
         }
+        if (request.getReferenceAppelOffre() != null) {
+            entity.setReferenceAppelOffre(request.getReferenceAppelOffre());
+        }
         entity = demandeRepository.save(entity);
         DemandeCorrectionDto result = toDto(entity);
         auditService.log(AuditAction.ADMIN_CORRECTION, "DemandeCorrection", String.valueOf(id), result, motif);
@@ -607,6 +611,7 @@ public class DemandeCorrectionService {
         DemandeCorrectionDto result = toDto(entity);
         auditService.log(AuditAction.ADMIN_CORRECTION, "DemandeCorrection", String.valueOf(id), result, motif);
         notifyDemandeCorrection(entity, StatutDemande.ADOPTEE, null, user, true);
+        avenantSuiviCorrection.apresDecision(entity);
         return result;
     }
 
@@ -785,6 +790,8 @@ public class DemandeCorrectionService {
         DemandeCorrectionDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), result);
         notifyDemandeCorrection(entity, statut, motifRejet, user, finale);
+        // Un avenant financier suit le sort de sa demande de correction.
+        avenantSuiviCorrection.apresDecision(entity);
         return masquerPiecesNonCommunicables(result, user);
     }
 
@@ -963,6 +970,7 @@ public class DemandeCorrectionService {
                 .reference(d.getReference())
                 .dateDepot(d.getDateDepot())
                 .intituleMarche(d.getIntituleMarche())
+                .referenceAppelOffre(d.getReferenceAppelOffre())
                 .creditInterieur(d.getCreditInterieur())
                 .creditExterieur(d.getCreditExterieur())
                 .creditInterieurDeclare(d.getCreditInterieurDeclare())

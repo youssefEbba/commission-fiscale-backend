@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.domain.reference.FormatReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
@@ -197,6 +198,8 @@ public class DemandeRattachementService {
     private List<String> piecesObligatoires() {
         return requirementRepository
                 .findByProcessusOrderByOrdreAffichageAsc(ProcessusDocument.RATTACHEMENT_COMPTE).stream()
+                // Une pièce désactivée ou supprimée ne se dépose plus : l'exiger bloquerait toute inscription.
+                .filter(DocumentRequirement::estUtilisable)
                 .filter(r -> Boolean.TRUE.equals(r.getObligatoire()))
                 .map(DocumentRequirement::getCodeDocument)
                 .toList();
@@ -213,7 +216,8 @@ public class DemandeRattachementService {
      */
     @Transactional(readOnly = true)
     public List<DocumentRequirementDto> piecesAttendues() {
-        return documentRequirementService.findByProcessus(ProcessusDocument.RATTACHEMENT_COMPTE);
+        // La liste de dépôt, et non celle du paramétrage : une pièce désactivée n'y figure pas.
+        return documentRequirementService.findByProcessus(ProcessusDocument.RATTACHEMENT_COMPTE, true);
     }
 
     /**
@@ -374,7 +378,9 @@ public class DemandeRattachementService {
             throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
                     "La référence et l'adresse e-mail utilisée lors du dépôt sont requises");
         }
+        // Le numéro de suivi remis avant octobre 2026 est à l'ancien format (RT-001-10/2026).
         DemandeRattachement demande = repository.findByReference(reference.trim())
+                .or(() -> repository.findByReference(FormatReference.convertirAncienFormat(reference)))
                 .filter(d -> d.getEmail() != null && d.getEmail().equalsIgnoreCase(email.trim()))
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
                         "Aucune demande ne correspond à cette référence et à cette adresse e-mail"));

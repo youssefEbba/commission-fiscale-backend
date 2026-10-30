@@ -20,7 +20,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 
 /**
- * Backfill de la colonne {@code reference} (format {@code PREFIXE-NN/AAAA}) pour les lignes créées
+ * Backfill de la colonne {@code reference} (format {@code PREFIXE-NNNN-MM-AAAA}) pour les lignes créées
  * avant l'introduction des références lisibles. Les lignes déjà pourvues sont ignorées ; la numérotation
  * réutilise {@link ReferenceSequenceGenerator} afin de rester cohérente avec les créations futures.
  */

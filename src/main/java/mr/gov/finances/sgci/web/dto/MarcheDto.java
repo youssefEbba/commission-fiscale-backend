@@ -20,7 +20,12 @@ import java.util.List;
 public class MarcheDto {
 
     private Long id;
+    /** La convention principale ; {@link #conventionIds} les porte toutes, celle-ci en tête. */
     private Long conventionId;
+    private List<Long> conventionIds;
+    /** L'autorité contractante qui porte le marché. */
+    private Long autoriteContractanteId;
+    private String autoriteContractanteNom;
     private Long demandeCorrectionId;
     private String numeroMarche;
     /** Référence lisible standardisée (ex. DM-01/2025). */

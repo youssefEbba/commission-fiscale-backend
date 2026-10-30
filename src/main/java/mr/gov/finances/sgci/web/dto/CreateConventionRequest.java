@@ -24,6 +24,12 @@ public class CreateConventionRequest {
 
     /** Référence vers un bailleur enregistré ({@code GET /api/bailleurs}). Optionnel. */
     private Long bailleurId;
+
+    /**
+     * Tous les bailleurs, le principal en tête. Facultatif : absent, seul {@link #bailleurId} compte.
+     * Présent, il remplace la liste, et son premier élément devient le bailleur principal.
+     */
+    private java.util.List<Long> bailleurIds;
     private LocalDate dateSignature;
     private LocalDate dateFin;
     private BigDecimal montantDevise;

@@ -1,6 +1,7 @@
 package mr.gov.finances.sgci.service;
 
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.domain.reference.FormatReference;
 import mr.gov.finances.sgci.domain.entity.ReferenceSequence;
 import mr.gov.finances.sgci.repository.ReferenceSequenceRepository;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -16,7 +17,8 @@ import java.time.Year;
  * table de séquence dédiée verrouillée en écriture, ce qui évite les collisions en cas de créations
  * concurrentes.
  *
- * <p>Format unique pour tous les préfixes : {@code PREFIXE-NNN-MM/AAAA} (ex. {@code DC-001-01/2025}).
+ * <p>Format unique pour tous les préfixes : {@code PREFIXE-NNNN-MM-AAAA} (ex. {@code DC-0001-01-2025}),
+ * {@code PREFIXE-NNNN-AAAA} pour le certificat d'utilisation. Voir {@link FormatReference}.
  *
  * <p>Préfixes conventionnels :
  * <ul>
@@ -97,10 +99,10 @@ public class ReferenceSequenceGenerator {
         long value = sequence.getCurrentValue() + 1;
         sequence.setCurrentValue(value);
         repository.saveAndFlush(sequence);
-        return String.format("%s-%03d/%d", prefix, value, year);
+        return FormatReference.sansMois(prefix, value, year);
     }
 
     private String format(String prefix, long value, int month, int year) {
-        return String.format("%s-%03d-%02d/%d", prefix, value, month, year);
+        return FormatReference.avecMois(prefix, value, month, year);
     }
 }

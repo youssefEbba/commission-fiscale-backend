@@ -24,6 +24,12 @@ public class CreateMarcheRequest {
     @NotNull(message = "La convention est obligatoire")
     private Long conventionId;
 
+    /**
+     * Toutes les conventions du marché, la principale en tête. Facultatif : absent, le marché n'a que
+     * {@link #conventionId}. Présent, son premier élément devient la convention principale.
+     */
+    private java.util.List<Long> conventionIds;
+
     private Long demandeCorrectionId;
 
     @NotNull(message = "Le numéro de marché est obligatoire")

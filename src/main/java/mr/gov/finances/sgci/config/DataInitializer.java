@@ -1583,6 +1583,9 @@ public class DataInitializer implements CommandLineRunner {
 
         createPermission("bailleur.list", "Consulter la liste des bailleurs");
         createPermission("bailleur.create", "Créer un bailleur");
+        createPermission("bailleur.update", "Modifier un bailleur (Président et administrateur)");
+        createPermission("modification.admin_override",
+                "Se substituer à la DGTCP ou au Président sur un avenant (motif obligatoire)");
         createPermission("devise.list", "Consulter la liste des devises");
         createPermission("devise.create", "Créer une devise");
         createPermission("taux_change.view", "Consulter le taux de change");
@@ -1972,6 +1975,13 @@ public class DataInitializer implements CommandLineRunner {
         );
 
     assign(Role.ADMIN_SI,
+        // Gestion des conventions, de leurs autorités et bailleurs, et des marchés (équipe, octobre 2026).
+        "convention.update",
+        "bailleur.list",
+        "bailleur.update",
+        // Avenants : consultation et substitution à la DGTCP ou au Président, motif obligatoire.
+        "modification.view",
+        "modification.admin_override",
         "signature.manage",
         "parametre.manage",
         "document.requirements.view",

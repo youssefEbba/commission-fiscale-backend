@@ -140,7 +140,8 @@ public class TransfertCreditService {
 
         CertificatCredit source = certificatRepository.findById(request.getCertificatCreditId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat source non trouvé"));
-        if (source.getStatut() != StatutCertificat.OUVERT) {
+        // MODIFIE : un crédit dont un avenant a été appliqué reste un crédit ouvert.
+        if (source.getStatut() != StatutCertificat.OUVERT && source.getStatut() != StatutCertificat.MODIFIE) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat source doit être OUVERT");
         }
 
@@ -330,7 +331,8 @@ public class TransfertCreditService {
 
         CertificatCredit source = certificatRepository.findById(transfert.getCertificatCredit().getId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat source non trouvé"));
-        if (source.getStatut() != StatutCertificat.OUVERT) {
+        // MODIFIE : un crédit dont un avenant a été appliqué reste un crédit ouvert.
+        if (source.getStatut() != StatutCertificat.OUVERT && source.getStatut() != StatutCertificat.MODIFIE) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat source doit être OUVERT");
         }
 

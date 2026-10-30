@@ -40,7 +40,8 @@ class ColonnesTexteSchemaMigrationTest {
             "document_requirement.processus", new FieldRef(DocumentRequirement.class, "processus"),
             "demande_rattachement.statut", new FieldRef(DemandeRattachement.class, "statut"),
             "marche.type_marche", new FieldRef(Marche.class, "typeMarche"),
-            "document_requirement.sens", new FieldRef(DocumentRequirement.class, "sens"));
+            "document_requirement.sens", new FieldRef(DocumentRequirement.class, "sens"),
+            "avenant.statut", new FieldRef(mr.gov.finances.sgci.domain.entity.Avenant.class, "statut"));
 
     private record FieldRef(Class<?> entite, String champ) {
     }

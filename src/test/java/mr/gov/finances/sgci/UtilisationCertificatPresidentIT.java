@@ -81,7 +81,7 @@ class UtilisationCertificatPresidentIT {
         UtilisationCreditDto dto = service.emettreCertificatUtilisation(util.getId(), president);
 
         assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CERTIFICAT_EMIS);
-        assertThat(dto.getNumeroCertificatUtilisation()).matches("^CU-\\d{3}/\\d{4}$");
+        assertThat(dto.getNumeroCertificatUtilisation()).matches("^CU-\\d{4}-\\d{4}$");
         assertThat(dto.getDateCertificatUtilisation()).isNotNull();
     }
 
@@ -93,7 +93,7 @@ class UtilisationCertificatPresidentIT {
         UtilisationCreditDto dto = service.emettreCertificatUtilisation(util.getId(), president);
 
         assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CERTIFICAT_EMIS);
-        assertThat(dto.getNumeroCertificatUtilisation()).matches("^CU-\\d{3}/\\d{4}$");
+        assertThat(dto.getNumeroCertificatUtilisation()).matches("^CU-\\d{4}-\\d{4}$");
     }
 
     @Test
@@ -305,7 +305,7 @@ class UtilisationCertificatPresidentIT {
         UtilisationCreditDto dto = service.adminEmettreCertificatUtilisation(
                 util.getId(), "Président indisponible, session du 12/09", null, admin);
         assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CERTIFICAT_EMIS);
-        assertThat(dto.getNumeroCertificatUtilisation()).matches("^CU-\\d{3}/\\d{4}$");
+        assertThat(dto.getNumeroCertificatUtilisation()).matches("^CU-\\d{4}-\\d{4}$");
     }
 
     @Test

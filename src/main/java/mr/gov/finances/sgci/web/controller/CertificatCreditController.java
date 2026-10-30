@@ -116,8 +116,8 @@ public class CertificatCreditController {
     }
 
     /**
-     * Fiche consolidée d'un crédit d'impôt par référence lisible (ex. {@code CR-01/2025}).
-     * La référence contenant un « / », elle est passée en paramètre de requête plutôt qu'en segment d'URL.
+     * Fiche consolidée d'un crédit d'impôt par référence lisible (ex. {@code CR-0001-01-2025}).
+     * Passée en paramètre de requête : les références d'avant octobre 2026 contiennent un « / ».
      */
     @GetMapping("/fiche")
     @PreAuthorize("hasAnyAuthority('mise_en_place.dgi.queue.view', 'mise_en_place.dgtcp.queue.view', 'mise_en_place.dgb.queue.view', 'mise_en_place.dgd.queue.view', 'mise_en_place.president.queue.view', 'mise_en_place.view', 'mise_en_place.entreprise.queue.view', 'archivage.view')")

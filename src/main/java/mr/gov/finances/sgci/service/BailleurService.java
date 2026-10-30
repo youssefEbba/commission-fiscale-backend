@@ -45,6 +45,25 @@ public class BailleurService {
         return result;
     }
 
+    @Transactional
+    public BailleurDto update(Long id, BailleurDto dto) {
+        Bailleur entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Bailleur non trouvé: " + id));
+        if (dto.getNom() == null || dto.getNom().isBlank()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le nom du bailleur est obligatoire");
+        }
+        String nom = dto.getNom().trim();
+        if (!nom.equals(entity.getNom()) && repository.existsByNom(nom)) {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Un bailleur avec ce nom existe déjà");
+        }
+        entity.setNom(nom);
+        entity.setDetails(dto.getDetails());
+        entity = repository.save(entity);
+        BailleurDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "Bailleur", String.valueOf(id), result);
+        return result;
+    }
+
     private BailleurDto toDto(Bailleur b) {
         return BailleurDto.builder()
                 .id(b.getId())

@@ -73,6 +73,34 @@ public class ConventionController {
     }
 
     /**
+     * Relie une autorité contractante à la convention. Le service réserve ce geste au Président et à
+     * l'administrateur : la permission seule ne suffit pas.
+     */
+    @PostMapping("/{id}/autorites/{autoriteId}")
+    @PreAuthorize("hasAuthority('convention.update')")
+    public ConventionDto lierAutorite(
+            @PathVariable Long id,
+            @PathVariable Long autoriteId,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.lierAutorite(id, autoriteId, user);
+    }
+
+    /**
+     * Délie une autorité de la convention : Président et administrateur, si elle n'y a encore ni
+     * marché ni demande de correction et qu'il en reste une autre.
+     */
+    @DeleteMapping("/{id}/autorites/{autoriteId}")
+    @PreAuthorize("hasAuthority('convention.update')")
+    public ConventionDto delierAutorite(
+            @PathVariable Long id,
+            @PathVariable Long autoriteId,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.delierAutorite(id, autoriteId, user);
+    }
+
+    /**
      * Annulation par l'autorité titulaire ou créatrice, tant que la DGB n'a pas validé.
      * Les directions continuent d'annuler par {@code PATCH /{id}/statut}.
      */

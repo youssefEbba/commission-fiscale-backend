@@ -12,6 +12,7 @@ import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
+import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.domain.enums.TypeDocument;
@@ -65,6 +66,7 @@ public class DecisionCorrectionService {
     private final DocumentService documentService;
     private final VisaRequirementResolver visaRequirementResolver;
     private final AuditService auditService;
+    private final DocumentRequirementValidator documentRequirementValidator;
 
     @Transactional
     public DecisionCorrectionDto resolveRejetTemp(Long decisionId, AuthenticatedUser user) {
@@ -155,9 +157,8 @@ public class DecisionCorrectionService {
             if (motifRejet == null || motifRejet.isBlank()) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le motif de rejet est obligatoire");
             }
-            if (documentsDemandes == null || documentsDemandes.isEmpty()) {
-                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "La liste des documents demandés est obligatoire");
-            }
+            documentsDemandes = documentRequirementValidator.piecesDemandeesParRejet(
+                    ProcessusDocument.CORRECTION_OFFRE_FISCALE, documentsDemandes);
         }
 
         StatutDemande statutAvantDecision = demande.getStatut();
