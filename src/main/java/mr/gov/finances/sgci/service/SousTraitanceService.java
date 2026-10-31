@@ -177,7 +177,7 @@ public class SousTraitanceService {
 
         CertificatCredit c = certificatRepository.findById(request.getCertificatCreditId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat non trouvé"));
-        if (c.getStatut() != StatutCertificat.OUVERT) {
+        if (c.getStatut() != StatutCertificat.OUVERT && c.getStatut() != StatutCertificat.MODIFIE) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat doit être OUVERT");
         }
 
@@ -235,7 +235,7 @@ public class SousTraitanceService {
 
         CertificatCredit c = certificatRepository.findById(request.getCertificatCreditId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat non trouvé"));
-        if (c.getStatut() != StatutCertificat.OUVERT) {
+        if (c.getStatut() != StatutCertificat.OUVERT && c.getStatut() != StatutCertificat.MODIFIE) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le certificat doit être OUVERT");
         }
 

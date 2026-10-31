@@ -38,6 +38,10 @@ public class CreateDemandeCorrectionRequest {
     /** Intitulé libre du marché / convention (remplace la création de marché dans le wizard de correction). */
     private String intituleMarche;
 
+    /** Référence de l'appel d'offres dont le marché est issu. Facultative. */
+    @jakarta.validation.constraints.Size(max = 100, message = "La référence de l'appel d'offres ne dépasse pas 100 caractères")
+    private String referenceAppelOffre;
+
     /** Crédit intérieur demandé (défaut 0). Si 0, la DGI est exclue du workflow. */
     private BigDecimal creditInterieur;
 

@@ -39,6 +39,14 @@ public class DemandeCorrection {
     private String intituleMarche;
 
     /**
+     * Référence de l'appel d'offres dont le marché est issu, demandée par l'équipe en octobre 2026.
+     * Facultative et nullable : les demandes antérieures n'en ont pas, et {@code ddl-auto} ajoute la
+     * colonne sans valeur par défaut.
+     */
+    @Column(name = "reference_appel_offre", length = 100)
+    private String referenceAppelOffre;
+
+    /**
      * Montant du crédit intérieur (TVA intérieure) demandé. Défaut 0.
      * Si 0 → la DGI est exclue du workflow de visa (voir VisaRequirementResolver).
      */

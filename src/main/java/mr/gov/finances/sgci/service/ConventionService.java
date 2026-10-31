@@ -25,6 +25,7 @@ import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.dto.ConventionDto;
 import mr.gov.finances.sgci.web.dto.CreateConventionRequest;
 import mr.gov.finances.sgci.web.dto.DocumentConventionDto;
+import mr.gov.finances.sgci.web.dto.EntiteLieeDto;
 import mr.gov.finances.sgci.web.dto.UpdateConventionRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +47,8 @@ public class ConventionService {
     private final ConventionRepository conventionRepository;
     private final BailleurRepository bailleurRepository;
     private final AutoriteContractanteRepository autoriteRepository;
+    private final mr.gov.finances.sgci.repository.MarcheRepository marcheRepository;
+    private final mr.gov.finances.sgci.repository.DemandeCorrectionRepository demandeCorrectionRepository;
     private final UtilisateurRepository utilisateurRepository;
     private final DocumentConventionRepository documentConventionRepository;
     private final MinioService minioService;
@@ -151,7 +154,7 @@ public class ConventionService {
                 .collect(Collectors.toList());
     }
 
-    private boolean canAccessConvention(Long conventionId, AuthenticatedUser user) {
+    public boolean canAccessConvention(Long conventionId, AuthenticatedUser user) {
         if (conventionId == null) {
             return false;
         }
@@ -176,12 +179,8 @@ public class ConventionService {
             if (acId == null) {
                 return false;
             }
-            boolean dansLePerimetre =
-                    (convention.getAutoriteContractante() != null
-                            && acId.equals(convention.getAutoriteContractante().getId()))
-                    || (convention.getCreeParAutoriteContractante() != null
-                            && acId.equals(convention.getCreeParAutoriteContractante().getId()));
-            return dansLePerimetre;
+            // Toute autorité reliée à la convention, et celle qui l'a créée.
+            return convention.concerne(acId);
         }
         return true;
     }
@@ -229,7 +228,8 @@ public class ConventionService {
         // commission relais représente. Le compte relais n'en a aucune en base.
         AutoriteContractante maStructure = effectiveIdentityService.requireEffectiveAutorite(user, creator);
         AutoriteContractante creeParAc = maStructure != null ? maStructure : autorite;
-        Bailleur bailleur = resolveBailleur(request.getBailleurId());
+        List<Bailleur> bailleurs = resolveBailleurs(request.getBailleurIds(), request.getBailleurId());
+        Bailleur bailleur = bailleurs.isEmpty() ? null : bailleurs.get(0);
         Convention convention = Convention.builder()
                 .reference(request.getReference())
                 .intitule(request.getIntitule())
@@ -245,6 +245,7 @@ public class ConventionService {
                 .autoriteContractante(autorite)
                 .creeParAutoriteContractante(creeParAc)
                 .build();
+        convention.getBailleurs().addAll(bailleurs);
         convention = conventionRepository.save(convention);
         ConventionDto result = toDto(convention);
         auditService.log(AuditAction.CREATE, "Convention", String.valueOf(convention.getId()), result);
@@ -286,7 +287,10 @@ public class ConventionService {
         convention.setReference(reference);
         convention.setIntitule(request.getIntitule().trim());
         convention.setProjectReference(request.getProjectReference());
-        convention.setBailleur(resolveBailleur(request.getBailleurId()));
+        List<Bailleur> bailleurs = resolveBailleurs(request.getBailleurIds(), request.getBailleurId());
+        convention.setBailleur(bailleurs.isEmpty() ? null : bailleurs.get(0));
+        convention.getBailleurs().clear();
+        convention.getBailleurs().addAll(bailleurs);
         convention.setDateSignature(request.getDateSignature());
         convention.setDateFin(request.getDateFin());
         convention.setMontantDevise(request.getMontantDevise());
@@ -337,12 +341,22 @@ public class ConventionService {
         }
     }
 
-    /** L'appelant est l'autorité titulaire ou créatrice, et la convention attend sa validation. */
+    /**
+     * L'appelant est une autorité de la convention et celle-ci attend sa validation — ou, pour la
+     * modifier, l'appelant est le Président ou l'administrateur, à tout statut (décision de l'équipe,
+     * octobre 2026 : ce sont eux qui gèrent conventions, bailleurs et marchés).
+     */
     private void assertAutoriteSurConventionEnAttente(Convention convention, AuthenticatedUser user, Geste geste) {
         if (user == null || user.getUserId() == null) {
             throw ApiException.unauthorized(ApiErrorCode.AUTH_REQUIRED, "Utilisateur non authentifié");
         }
         Role role = effectiveIdentityService.effectiveRole(user);
+        if (geste == Geste.MODIFIER && (role == Role.PRESIDENT || role == Role.ADMIN_SI)) {
+            if (convention.getStatut() == StatutConvention.ANNULEE) {
+                throw ApiException.conflict(ApiErrorCode.DEMANDE_NON_EDITABLE, "Modification impossible : la convention est annulée");
+            }
+            return;
+        }
         if (role != Role.AUTORITE_CONTRACTANTE && role != Role.AUTORITE_UPM && role != Role.AUTORITE_UEP) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
                     "Seule l'autorité contractante titulaire ou créatrice peut " + geste.verbe + " une convention");
@@ -350,11 +364,7 @@ public class ConventionService {
         Utilisateur enBase = utilisateurRepository.findById(user.getUserId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisateur non trouvé"));
         Long acId = effectiveIdentityService.resolveAutoriteContractanteId(user, enBase);
-        boolean titulaire = acId != null && convention.getAutoriteContractante() != null
-                && acId.equals(convention.getAutoriteContractante().getId());
-        boolean creatrice = acId != null && convention.getCreeParAutoriteContractante() != null
-                && acId.equals(convention.getCreeParAutoriteContractante().getId());
-        if (!titulaire && !creatrice) {
+        if (!convention.concerne(acId)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé : convention hors périmètre");
         }
         StatutConvention statut = convention.getStatut();
@@ -456,6 +466,84 @@ public class ConventionService {
         return result;
     }
 
+    /**
+     * Les bailleurs d'une convention, le principal en tête : la liste si elle est fournie, sinon le
+     * seul bailleur principal. Sans doublon.
+     */
+    private List<Bailleur> resolveBailleurs(List<Long> bailleurIds, Long bailleurId) {
+        List<Long> ids = bailleurIds != null ? bailleurIds
+                : (bailleurId != null ? List.of(bailleurId) : List.of());
+        return ids.stream().filter(Objects::nonNull).distinct().map(this::resolveBailleur).collect(Collectors.toList());
+    }
+
+    /**
+     * Relie une autorité contractante à la convention. Le Président et l'administrateur seulement.
+     *
+     * <p>Une convention peut concerner plusieurs autorités (décision de l'équipe, octobre 2026).
+     * Reliée, l'autorité voit la convention et peut y loger ses marchés et ses demandes.
+     */
+    @Transactional
+    public ConventionDto lierAutorite(Long conventionId, Long autoriteId, AuthenticatedUser user) {
+        assertGestionnaireDesLiens(user);
+        Convention convention = conventionRepository.findById(conventionId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + conventionId));
+        AutoriteContractante autorite = autoriteRepository.findById(autoriteId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Autorité contractante non trouvée: " + autoriteId));
+        if (!convention.relieeA(autoriteId)) {
+            convention.getAutorites().addAll(convention.autoritesLiees());
+            convention.getAutorites().add(autorite);
+            convention = conventionRepository.save(convention);
+        }
+        ConventionDto result = toDto(convention);
+        auditService.log(AuditAction.UPDATE, "Convention", String.valueOf(conventionId), result);
+        return result;
+    }
+
+    /**
+     * Délie une autorité de la convention. Le Président et l'administrateur seulement, et à deux
+     * conditions : l'autorité n'y a encore ni marché ni demande de correction, et il en reste une
+     * autre. Délier l'autorité principale fait de la suivante la principale.
+     */
+    @Transactional
+    public ConventionDto delierAutorite(Long conventionId, Long autoriteId, AuthenticatedUser user) {
+        assertGestionnaireDesLiens(user);
+        Convention convention = conventionRepository.findById(conventionId)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + conventionId));
+        if (!convention.relieeA(autoriteId)) {
+            return toDto(convention);
+        }
+        List<AutoriteContractante> restantes = convention.autoritesLiees().stream()
+                .filter(a -> !autoriteId.equals(a.getId()))
+                .collect(Collectors.toList());
+        if (restantes.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Une convention reste reliée à au moins une autorité contractante");
+        }
+        if (marcheRepository.existsByConventionAndAutorite(conventionId, autoriteId)) {
+            throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Impossible de délier cette autorité : elle a déjà un marché sous cette convention");
+        }
+        if (demandeCorrectionRepository.existsByConventionIdAndAutoriteContractanteId(conventionId, autoriteId)) {
+            throw ApiException.conflict(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Impossible de délier cette autorité : elle a déjà une demande de correction sous cette convention");
+        }
+        convention.getAutorites().clear();
+        convention.getAutorites().addAll(restantes);
+        convention.setAutoriteContractante(restantes.get(0));
+        convention = conventionRepository.save(convention);
+        ConventionDto result = toDto(convention);
+        auditService.log(AuditAction.UPDATE, "Convention", String.valueOf(conventionId), result);
+        return result;
+    }
+
+    private static void assertGestionnaireDesLiens(AuthenticatedUser user) {
+        Role role = user != null ? user.getRole() : null;
+        if (role != Role.PRESIDENT && role != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Seuls le Président et l'administrateur relient ou délient une autorité contractante");
+        }
+    }
+
     private Bailleur resolveBailleur(Long bailleurId) {
         if (bailleurId == null) {
             return null;
@@ -512,6 +600,10 @@ public class ConventionService {
                         ? convention.getCreeParAutoriteContractante().getId() : null)
                 .creeParAutoriteContractanteNom(convention.getCreeParAutoriteContractante() != null
                         ? convention.getCreeParAutoriteContractante().getNom() : null)
+                .autorites(convention.autoritesLiees().stream()
+                        .map(a -> new EntiteLieeDto(a.getId(), a.getNom())).collect(Collectors.toList()))
+                .bailleurs(convention.bailleursLies().stream()
+                        .map(b -> new EntiteLieeDto(b.getId(), b.getNom())).collect(Collectors.toList()))
                 .dateCreation(convention.getDateCreation())
                 .valideParUserId(convention.getValideParUserId())
                 .dateValidation(convention.getDateValidation())
@@ -544,12 +636,10 @@ public class ConventionService {
     }
 
     private List<Long> resolveConventionNotificationRecipients(Convention convention) {
-        List<Long> acUsers = convention.getAutoriteContractante() == null
-                ? List.of()
-                : utilisateurRepository.findByAutoriteContractanteId(convention.getAutoriteContractante().getId())
-                        .stream()
-                        .map(Utilisateur::getId)
-                        .collect(Collectors.toList());
+        List<Long> acUsers = convention.autoritesLiees().stream()
+                .flatMap(a -> utilisateurRepository.findByAutoriteContractanteId(a.getId()).stream())
+                .map(Utilisateur::getId)
+                .collect(Collectors.toList());
         List<Long> commission = resolveCommissionMemberUserIds();
         return Stream.concat(acUsers.stream(), commission.stream())
                 .distinct()

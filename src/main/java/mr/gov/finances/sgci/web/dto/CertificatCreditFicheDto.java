@@ -38,6 +38,9 @@ public class CertificatCreditFicheDto {
     /** Intitulé libre du marché saisi à la demande de correction (si le marché réel n'existe pas encore). */
     private String intituleMarche;
 
+    /** Référence de l'appel d'offres, reprise de la demande de correction. */
+    private String referenceAppelOffre;
+
     /** Documents rattachés au certificat. */
     private List<DocumentCertificatCreditDto> documents;
 

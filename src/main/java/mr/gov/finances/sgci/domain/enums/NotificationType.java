@@ -19,5 +19,7 @@ public enum NotificationType {
     /** Une demande de rattachement attend la décision du Président. */
     RATTACHEMENT_DEMANDE,
     /** La décision est prise sur une demande de rattachement. */
-    RATTACHEMENT_TRAITEE
+    RATTACHEMENT_TRAITEE,
+    /** Un avenant (modification du crédit) change de statut. Nom attendu par le front. */
+    MODIFICATION_STATUT_CHANGE
 }

@@ -10,4 +10,8 @@ import java.util.List;
 public interface AvenantRepository extends JpaRepository<Avenant, Long> {
 
     List<Avenant> findByCertificatCreditId(Long certificatCreditId);
+
+    List<Avenant> findByDemandeCorrectionId(Long demandeCorrectionId);
+
+    boolean existsByDemandeCorrectionId(Long demandeCorrectionId);
 }

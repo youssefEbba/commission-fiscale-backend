@@ -121,7 +121,10 @@ public class ReportingPredicates {
         StringBuilder sb = new StringBuilder();
         sb.append(alias).append(".dateCreation between :from and :to");
         if (scope.autoriteContractanteId() != null) {
-            sb.append(" and ").append(alias).append(".autoriteContractante.id = :scopeAc");
+            // Toute autorité reliée à la convention, et non plus la seule principale.
+            sb.append(" and (").append(alias).append(".autoriteContractante.id = :scopeAc or exists (select 1 from ")
+                    .append("Convention cx join cx.autorites ax where cx = ").append(alias)
+                    .append(" and ax.id = :scopeAc))");
         }
         if (scope.entrepriseId() != null) {
             sb.append(" and exists (select 1 from DemandeCorrection d where d.convention = ")

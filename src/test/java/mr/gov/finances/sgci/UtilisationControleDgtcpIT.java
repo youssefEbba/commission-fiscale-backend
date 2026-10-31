@@ -141,7 +141,7 @@ class UtilisationControleDgtcpIT {
         UtilisationCreditDto emis = service.emettreCertificatUtilisation(util.getId(), president);
 
         assertThat(emis.getStatut()).isEqualTo(StatutUtilisation.CERTIFICAT_EMIS);
-        assertThat(emis.getNumeroCertificatUtilisation()).matches("^CU-\\d{3}/\\d{4}$");
+        assertThat(emis.getNumeroCertificatUtilisation()).matches("^CU-\\d{4}-\\d{4}$");
     }
 
     @Test

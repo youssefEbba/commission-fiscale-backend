@@ -145,7 +145,11 @@ public class DataInitializer implements CommandLineRunner {
      * refuse de démarrer.
      */
     static void seedDemo(String nom, Runnable seed) {
-        seed.run();
+        try {
+            seed.run();
+        } catch (RuntimeException e) {
+            log.error("Données de démonstration « {} » non créées ; le démarrage continue sans elles.", nom, e);
+        }
     }
 
     /**
@@ -185,9 +189,8 @@ public class DataInitializer implements CommandLineRunner {
      *
      * <p><b>N'écrit que si le sens est nul</b>, c'est-à-dire si personne n'a tranché. Un
      * administrateur qui classe délibérément une pièce en entrée ne doit pas voir sa décision
-     * reprise au redémarrage suivant : c'est précisément ce que fait
-     * {@code upgradeTransfertCreditDocumentsToObligatoires}, seul endroit du seed à forcer une
-     * valeur, et ce n'est pas un modèle à suivre ici.
+     * reprise au redémarrage suivant. Le seed ne force aucune valeur déjà en base : les pièces du
+     * transfert, repassées en obligatoire à chaque démarrage, défaisaient le choix fait dans la GED.
      *
      * <p>{@code RECU_DEPOT} reste volontairement en entrée : c'est la preuve de dépôt du déposant,
      * elle lui est due immédiatement. La classer en sortie la lui masquerait jusqu'à l'adoption.
@@ -365,23 +368,6 @@ public class DataInitializer implements CommandLineRunner {
                 all, "Projet: document joint", 1);
         seedDocReq(ProcessusDocument.MARCHE, "AUTRE_DOCUMENT", false,
                 all, "Marché: document joint", 1);
-
-        upgradeTransfertCreditDocumentsToObligatoires();
-    }
-
-    /** Bases déjà seedées avec obligatoire=false : passage à obligatoire pour le P9. */
-    private void upgradeTransfertCreditDocumentsToObligatoires() {
-        for (String code : java.util.List.of(
-                "DEMANDE_MOTIVEE_TRANSFERT",
-                "DECLARATION_CLOTURE_DOUANE",
-                "JUSTIFICATIFS_CLOTURE_DOUANE")) {
-            documentRequirementRepository.findByProcessusAndCodeDocument(ProcessusDocument.TRANSFERT_CREDIT, code)
-                    .filter(req -> !Boolean.TRUE.equals(req.getObligatoire()))
-                    .ifPresent(req -> {
-                        req.setObligatoire(true);
-                        documentRequirementRepository.save(req);
-                    });
-        }
     }
 
     private void seedDocReq(ProcessusDocument processus, String codeDocument, boolean obligatoire,
@@ -443,6 +429,9 @@ public class DataInitializer implements CommandLineRunner {
         // Le numéro est unique dans toute la base : c'est lui qu'il faut tester d'abord. Ne chercher la
         // démo que sous l'entreprise NIF_DEFAULT la recréait dès qu'elle n'y était plus rattachée — un
         // doublon que MySQL refuse, et qui a bloqué le démarrage en production le 2026-10-27.
+        if (demandeCorrectionRepository.existsByNumero(DEMO_CORRECTION_NUMERO)) {
+            return;
+        }
         AutoriteContractante autoriteContractante = autoriteContractanteRepository.findByCode("AC_DEFAULT")
                 .orElseThrow(() -> new IllegalStateException("Autorité Contractante par défaut manquante"));
         Entreprise entreprise = entrepriseRepository.findByNif("NIF_DEFAULT")
@@ -1576,6 +1565,9 @@ public class DataInitializer implements CommandLineRunner {
 
         createPermission("bailleur.list", "Consulter la liste des bailleurs");
         createPermission("bailleur.create", "Créer un bailleur");
+        createPermission("bailleur.update", "Modifier un bailleur (Président et administrateur)");
+        createPermission("modification.admin_override",
+                "Se substituer à la DGTCP ou au Président sur un avenant (motif obligatoire)");
         createPermission("devise.list", "Consulter la liste des devises");
         createPermission("devise.create", "Créer une devise");
         createPermission("taux_change.view", "Consulter le taux de change");
@@ -1965,6 +1957,13 @@ public class DataInitializer implements CommandLineRunner {
         );
 
     assign(Role.ADMIN_SI,
+        // Gestion des conventions, de leurs autorités et bailleurs, et des marchés (équipe, octobre 2026).
+        "convention.update",
+        "bailleur.list",
+        "bailleur.update",
+        // Avenants : consultation et substitution à la DGTCP ou au Président, motif obligatoire.
+        "modification.view",
+        "modification.admin_override",
         "signature.manage",
         "parametre.manage",
         "document.requirements.view",

@@ -58,6 +58,27 @@ public class DocumentRequirementValidator {
     }
 
     @Transactional(readOnly = true)
+    /**
+     * Les pièces qu'un rejet temporaire réclame : codes normalisés, tous paramétrés dans la GED pour
+     * ce processus, et au moins un.
+     *
+     * <p>Une seule règle pour les quatre circuits. Seule la mise en place contrôlait les codes : la
+     * correction, l'utilisation et le transfert acceptaient n'importe lequel, et le front proposait
+     * à l'agent une liste écrite en dur, distincte de celle que la GED paramètre.
+     */
+    public Set<String> piecesDemandeesParRejet(ProcessusDocument processus, Collection<String> codes) {
+        Set<String> normalisees = codes == null ? Set.of() : codes.stream()
+                .map(DocumentCodeValidator::normalize)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        if (normalisees.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "La liste des documents demandés est obligatoire");
+        }
+        assertDocumentsConfiguredForProcessus(processus, normalisees);
+        return normalisees;
+    }
+
     public void assertDocumentsConfiguredForProcessus(ProcessusDocument processus, Collection<String> codes) {
         if (processus == null || codes == null || codes.isEmpty()) {
             return;

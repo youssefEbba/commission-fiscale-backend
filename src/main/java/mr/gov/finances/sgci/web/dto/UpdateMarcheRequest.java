@@ -44,4 +44,10 @@ public class UpdateMarcheRequest {
 
     @NotNull(message = "Le statut est obligatoire")
     private StatutMarche statut;
+
+    /**
+     * Les conventions du marché, la principale en tête. Réservé au Président et à l'administrateur ;
+     * absent, les conventions ne changent pas.
+     */
+    private java.util.List<Long> conventionIds;
 }

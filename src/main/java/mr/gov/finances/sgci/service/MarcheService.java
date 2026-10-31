@@ -5,6 +5,7 @@ import mr.gov.finances.sgci.web.exception.ApiException;
 
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.convention.ConventionDisponibilitePolicy;
+import mr.gov.finances.sgci.domain.entity.AutoriteContractante;
 import mr.gov.finances.sgci.domain.entity.Convention;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.DocumentMarche;
@@ -49,6 +50,7 @@ public class MarcheService {
     private final MarcheDelegueRepository marcheDelegueRepository;
     private final DemandeCorrectionRepository demandeRepository;
     private final ConventionRepository conventionRepository;
+    private final mr.gov.finances.sgci.repository.AutoriteContractanteRepository autoriteRepository;
     private final UtilisateurRepository utilisateurRepository;
     private final DocumentMarcheRepository documentMarcheRepository;
     private final MinioService minioService;
@@ -112,7 +114,7 @@ public class MarcheService {
         Role role = user.getRole();
 
         if (role == Role.AUTORITE_CONTRACTANTE) {
-            return marcheRepository.findAllByConventionAutoriteContractanteId(requireAutoriteEffective(user, u))
+            return marcheRepository.findAllByAutoriteContractanteId(requireAutoriteEffective(user, u))
                     .stream()
                     .sorted(PLUS_RECENT_D_ABORD)
                     .map(this::toDto)
@@ -254,9 +256,7 @@ public class MarcheService {
         Marche marche = marcheRepository.findById(marcheId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
 
-        Long marcheAcId = marche.getConvention() != null && marche.getConvention().getAutoriteContractante() != null
-                ? marche.getConvention().getAutoriteContractante().getId()
-                : null;
+        Long marcheAcId = marche.autoriteEffective() != null ? marche.autoriteEffective().getId() : null;
 
         if (marcheAcId == null || !marcheAcId.equals(acId)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: marché hors périmètre de votre autorité contractante",
@@ -367,9 +367,7 @@ public class MarcheService {
         Marche marche = marcheRepository.findById(marcheId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
 
-        Long marcheAcId = marche.getConvention() != null && marche.getConvention().getAutoriteContractante() != null
-                ? marche.getConvention().getAutoriteContractante().getId()
-                : null;
+        Long marcheAcId = marche.autoriteEffective() != null ? marche.autoriteEffective().getId() : null;
 
         if (marcheAcId == null || !marcheAcId.equals(acId)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: marché hors périmètre de votre autorité contractante");
@@ -400,9 +398,7 @@ public class MarcheService {
         Marche marche = marcheRepository.findById(marcheId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Marché non trouvé: " + marcheId));
 
-        Long marcheAcId = marche.getConvention() != null && marche.getConvention().getAutoriteContractante() != null
-                ? marche.getConvention().getAutoriteContractante().getId()
-                : null;
+        Long marcheAcId = marche.autoriteEffective() != null ? marche.autoriteEffective().getId() : null;
 
         if (marcheAcId == null || !marcheAcId.equals(acId)) {
             throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: marché hors périmètre de votre autorité contractante");
@@ -474,12 +470,19 @@ public class MarcheService {
         // Le rôle du jeton, pas celui du compte : en relais, le compte est « commission_relais » et
         // échappait à ce contrôle, ce qui permettait de créer un marché sur la convention de
         // n'importe quelle autorité.
+        List<Convention> conventions = resoudreConventions(convention, request.getConventionIds());
+        AutoriteContractante porteuse = convention.getAutoriteContractante();
         if (estAutorite(user.getRole())) {
             Long acId = requireAutoriteEffective(user, u);
-            Long conventionAcId = convention.getAutoriteContractante() != null ? convention.getAutoriteContractante().getId() : null;
-            if (conventionAcId == null || !conventionAcId.equals(acId)) {
-                throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé: convention hors périmètre de votre autorité contractante");
+            // Chaque convention doit concerner l'autorité : reliée, ou créée par elle. Une seule qui
+            // ne la concerne pas suffirait à loger son marché chez une autre autorité.
+            for (Convention c : conventions) {
+                if (!c.concerne(acId)) {
+                    throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED,
+                            "Accès refusé: convention " + c.getReference() + " hors périmètre de votre autorité contractante");
+                }
             }
+            porteuse = autoriteRepository.findById(acId).orElse(porteuse);
         }
 
         Marche marche = Marche.builder()
@@ -491,8 +494,10 @@ public class MarcheService {
                 .statut(request.getStatut())
                 .typeMarche(request.getTypeMarche())
                 .convention(convention)
+                .autoriteContractante(porteuse)
                 .demandeCorrection(demande)
                 .build();
+        marche.getConventions().addAll(conventions);
 
         if (user.getRole() == Role.AUTORITE_UPM || user.getRole() == Role.AUTORITE_UEP) {
             MarcheDelegue link = MarcheDelegue.builder()
@@ -540,14 +545,80 @@ public class MarcheService {
         if (request.getTypeMarche() != null) {
             marche.setTypeMarche(request.getTypeMarche());
         }
+        if (request.getConventionIds() != null) {
+            changerConventions(marche, request.getConventionIds(), user);
+        }
         marche = marcheRepository.save(marche);
         return toDto(marche);
     }
 
+    /**
+     * Les conventions d'un marché, la principale en tête : celles demandées, ou la seule principale.
+     * Toutes doivent exister et être ouvertes aux nouveaux rattachements.
+     */
+    private List<Convention> resoudreConventions(Convention principale, List<Long> conventionIds) {
+        List<Convention> out = new java.util.ArrayList<>();
+        out.add(principale);
+        if (conventionIds != null) {
+            for (Long id : conventionIds) {
+                if (id == null || out.stream().anyMatch(c -> id.equals(c.getId()))) {
+                    continue;
+                }
+                Convention c = conventionRepository.findById(id)
+                        .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + id));
+                if (!ConventionDisponibilitePolicy.estActive(c)) {
+                    throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                            ConventionDisponibilitePolicy.MOTIF_DESACTIVEE + " (" + c.getReference() + ")");
+                }
+                out.add(c);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Change les conventions d'un marché : le Président et l'administrateur seulement (décision de
+     * l'équipe, octobre 2026). La première devient la principale.
+     */
+    private void changerConventions(Marche marche, List<Long> conventionIds, AuthenticatedUser user) {
+        Role role = user != null ? user.getRole() : null;
+        if (role != Role.PRESIDENT && role != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Seuls le Président et l'administrateur modifient les conventions d'un marché");
+        }
+        List<Long> ids = conventionIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Un marché garde au moins une convention");
+        }
+        Convention principale = conventionRepository.findById(ids.get(0))
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + ids.get(0)));
+        List<Convention> conventions = new java.util.ArrayList<>();
+        conventions.add(principale);
+        for (Long id : ids.subList(1, ids.size())) {
+            conventions.add(conventionRepository.findById(id)
+                    .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + id)));
+        }
+        if (marche.getDemandeCorrection() != null && marche.getDemandeCorrection().getConvention() != null
+                && conventions.stream().noneMatch(c -> c.getId().equals(marche.getDemandeCorrection().getConvention().getId()))) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "La convention de la demande de correction liée doit rester parmi celles du marché");
+        }
+        if (marche.getAutoriteContractante() == null) {
+            marche.setAutoriteContractante(marche.autoriteEffective());
+        }
+        marche.setConvention(principale);
+        marche.getConventions().clear();
+        marche.getConventions().addAll(conventions);
+    }
+
     private MarcheDto toDto(Marche marche) {
+        AutoriteContractante porteuse = marche.autoriteEffective();
         return MarcheDto.builder()
                 .id(marche.getId())
                 .conventionId(marche.getConvention() != null ? marche.getConvention().getId() : null)
+                .conventionIds(marche.conventionsLiees().stream().map(Convention::getId).toList())
+                .autoriteContractanteId(porteuse != null ? porteuse.getId() : null)
+                .autoriteContractanteNom(porteuse != null ? porteuse.getNom() : null)
                 .demandeCorrectionId(marche.getDemandeCorrection() != null ? marche.getDemandeCorrection().getId() : null)
                 .numeroMarche(marche.getNumeroMarche())
                 .reference(marche.getReference())
@@ -610,10 +681,10 @@ public class MarcheService {
             if (acId == null) {
                 return false;
             }
-            if (marche.getConvention() == null || marche.getConvention().getAutoriteContractante() == null) {
-                return false;
-            }
-            return marche.getConvention().getAutoriteContractante().getId().equals(acId);
+            // L'autorité qui porte le marché, et non celle de la convention : une convention relie
+            // désormais plusieurs autorités, qui ne voient pas pour autant les marchés des autres.
+            AutoriteContractante porteuse = marche.autoriteEffective();
+            return porteuse != null && acId.equals(porteuse.getId());
         }
 
         return true;

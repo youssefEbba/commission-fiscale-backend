@@ -15,7 +15,8 @@ public interface ConventionRepository extends JpaRepository<Convention, Long> {
     Optional<Convention> findByReference(String reference);
     List<Convention> findByStatut(StatutConvention statut);
 
-    List<Convention> findByBailleurId(Long bailleurId);
+    @Query("select distinct c from Convention c left join c.bailleurs b where b.id = :bailleurId or c.bailleur.id = :bailleurId")
+    List<Convention> findByBailleurId(@Param("bailleurId") Long bailleurId);
 
     List<Convention> findAllByAutoriteContractanteId(Long autoriteContractanteId);
 
@@ -26,12 +27,12 @@ public interface ConventionRepository extends JpaRepository<Convention, Long> {
      * créatrice renseignée, le champ étant postérieur. Filtrer sur elle seule aurait vidé la liste
      * de toutes les autorités.
      */
-    @Query("select c from Convention c where c.autoriteContractante.id = :acId "
-            + "or c.creeParAutoriteContractante.id = :acId")
+    @Query("select distinct c from Convention c left join c.autorites a where c.autoriteContractante.id = :acId "
+            + "or c.creeParAutoriteContractante.id = :acId or a.id = :acId")
     List<Convention> findAllPourAutorite(@Param("acId") Long acId);
 
-    @Query("select c from Convention c where (c.autoriteContractante.id = :acId "
-            + "or c.creeParAutoriteContractante.id = :acId) and c.statut = :statut")
+    @Query("select distinct c from Convention c left join c.autorites a where (c.autoriteContractante.id = :acId "
+            + "or c.creeParAutoriteContractante.id = :acId or a.id = :acId) and c.statut = :statut")
     List<Convention> findAllPourAutoriteAndStatut(@Param("acId") Long acId,
                                                   @Param("statut") StatutConvention statut);
 
@@ -39,13 +40,13 @@ public interface ConventionRepository extends JpaRepository<Convention, Long> {
 
     List<Convention> findAllByAutoriteContractanteIdAndStatut(Long autoriteContractanteId, StatutConvention statut);
 
-    @Query("select distinct m.convention from Marche m join m.delegues md where md.delegue.id = :delegueId")
+    @Query("select distinct c from Marche m join m.delegues md join m.conventions c where md.delegue.id = :delegueId")
     List<Convention> findAllByDelegueId(@Param("delegueId") Long delegueId);
 
-    @Query("select distinct m.convention from Marche m join m.delegues md where md.delegue.id = :delegueId and m.convention.statut = :statut")
+    @Query("select distinct c from Marche m join m.delegues md join m.conventions c where md.delegue.id = :delegueId and c.statut = :statut")
     List<Convention> findAllByDelegueIdAndStatut(@Param("delegueId") Long delegueId, @Param("statut") StatutConvention statut);
 
-    @Query("select count(m) > 0 from Marche m join m.delegues md where md.delegue.id = :delegueId and m.convention.id = :conventionId")
+    @Query("select count(m) > 0 from Marche m join m.delegues md join m.conventions c where md.delegue.id = :delegueId and c.id = :conventionId")
     boolean existsAccessByDelegue(@Param("delegueId") Long delegueId, @Param("conventionId") Long conventionId);
 
     /**
@@ -55,7 +56,7 @@ public interface ConventionRepository extends JpaRepository<Convention, Long> {
      * dans la clause where, elle était interne : toute convention sans bailleur disparaissait des
      * résultats, même quand sa référence correspondait exactement.
      */
-    @Query("SELECT c FROM Convention c LEFT JOIN c.bailleur b "
+    @Query("SELECT DISTINCT c FROM Convention c LEFT JOIN c.bailleurs b "
             + "WHERE LOWER(c.reference) LIKE LOWER(CONCAT('%', :q, '%')) "
             + "OR LOWER(c.intitule) LIKE LOWER(CONCAT('%', :q, '%')) "
             + "OR (c.projectReference IS NOT NULL AND LOWER(c.projectReference) LIKE LOWER(CONCAT('%', :q, '%'))) "

@@ -21,4 +21,5 @@ public class AdminCorrectionDemandeCorrectionRequest {
     private BigDecimal creditInterieur;
     private BigDecimal creditExterieur;
     private String intituleMarche;
+    private String referenceAppelOffre;
 }

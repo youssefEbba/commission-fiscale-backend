@@ -35,6 +35,10 @@ public class ConventionDto {
     private String autoriteContractanteNom;
     private Long creeParAutoriteContractanteId;
     private String creeParAutoriteContractanteNom;
+    /** Toutes les autorités reliées, la principale en tête ({@link #autoriteContractanteId}). */
+    private List<EntiteLieeDto> autorites;
+    /** Tous les bailleurs, le principal en tête ({@link #bailleurId}). */
+    private List<EntiteLieeDto> bailleurs;
     private Instant dateCreation;
     private Long valideParUserId;
     private Instant dateValidation;

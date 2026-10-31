@@ -112,9 +112,9 @@ class ConventionModificationIT {
     @Test
     @Transactional
     void uneDirectionNeModifiePas() {
-        // Le Président détient toutes les permissions, la route compris : c'est le service qui
-        // réserve la modification à l'autorité.
-        for (Role role : List.of(Role.DGB, Role.PRESIDENT, Role.ADMIN_SI)) {
+        // Le Président et l'administrateur, eux, gèrent les conventions depuis octobre 2026 (voir
+        // ConventionMultiLiensIT). Les autres directions restent refusées par le service.
+        for (Role role : List.of(Role.DGB, Role.DGD, Role.DGI, Role.DGTCP)) {
             Utilisateur u = utilisateurRepository.findAll().stream()
                     .filter(x -> x.getRole() == role).findFirst().orElse(null);
             if (u == null) {

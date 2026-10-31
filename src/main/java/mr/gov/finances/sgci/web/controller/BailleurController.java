@@ -36,7 +36,14 @@ public class BailleurController {
         return service.create(dto);
     }
 
-    /** Conventions liées à ce bailleur (même relation que {@code Convention.bailleur}). */
+    /** Modification d'un bailleur : Président et administrateur (décision de l'équipe, octobre 2026). */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('bailleur.update')")
+    public BailleurDto update(@PathVariable Long id, @Valid @RequestBody BailleurDto dto) {
+        return service.update(id, dto);
+    }
+
+    /** Conventions liées à ce bailleur, qu'il en soit le principal ou l'un des bailleurs. */
     @GetMapping("/{id}/conventions")
     @PreAuthorize("hasAnyAuthority('convention.view', 'convention.view.all')")
     public List<ConventionDto> listConventions(

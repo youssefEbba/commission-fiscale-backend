@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.domain.reference.FormatReference;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.Entreprise;
@@ -51,8 +52,11 @@ public class VerificationPubliqueService {
             return introuvable(code);
         }
 
+        // Les QR codes imprimés avant octobre 2026 portent l'ancien format (CU-007/2026).
         Optional<UtilisationCredit> utilisation =
-                utilisationCreditRepository.findByNumeroCertificatUtilisation(code);
+                utilisationCreditRepository.findByNumeroCertificatUtilisation(code)
+                        .or(() -> utilisationCreditRepository.findByNumeroCertificatUtilisation(
+                                FormatReference.convertirAncienFormat(code)));
         if (utilisation.isPresent()) {
             return depuisUtilisation(utilisation.get(), code);
         }
