@@ -29,6 +29,7 @@ public final class ExigencesProduction {
             "SGCI-Secret-Key-Minimum-256-bits-For-HS256-Please-Change-In-Production",
             "X7mD!r8KpE6@Z5YVQ#s1A4dFJ0Uo$B9%2H^tWCLN*eG",
             "Admin@1234",
+            "RootPassword@2026",
             "admin",
             "password123",
             "123456");

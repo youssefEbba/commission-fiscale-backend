@@ -56,6 +56,9 @@ class ExigencesProductionTest {
                 .anyMatch(m -> m.contains("SPRING_DATASOURCE_PASSWORD"));
         assertThat(ExigencesProduction.manquements(production().withProperty("spring.datasource.password", "Admin@1234")))
                 .anyMatch(m -> m.contains("SPRING_DATASOURCE_PASSWORD"));
+        // Publié à son tour dans le dépôt par le commit 29e9a32 (2026-10-27).
+        assertThat(ExigencesProduction.manquements(production().withProperty("spring.datasource.password", "RootPassword@2026")))
+                .anyMatch(m -> m.contains("SPRING_DATASOURCE_PASSWORD"));
     }
 
     @Test

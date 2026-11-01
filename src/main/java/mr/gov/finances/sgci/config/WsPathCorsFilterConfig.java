@@ -12,9 +12,9 @@ import org.springframework.core.Ordered;
 public class WsPathCorsFilterConfig {
 
     @Bean
-    public FilterRegistrationBean<WsPathCorsFilter> wsPathCorsFilterRegistration() {
+    public FilterRegistrationBean<WsPathCorsFilter> wsPathCorsFilterRegistration(org.springframework.core.env.Environment environment) {
         FilterRegistrationBean<WsPathCorsFilter> reg = new FilterRegistrationBean<>();
-        reg.setFilter(new WsPathCorsFilter());
+        reg.setFilter(new WsPathCorsFilter(CorsAllowedOrigins.pour(environment)));
         reg.addUrlPatterns("/ws", "/ws/*");
         reg.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return reg;

@@ -9,9 +9,9 @@ import org.springframework.core.Ordered;
 public class ApiPathCorsFilterConfig {
 
     @Bean
-    public FilterRegistrationBean<ApiPathCorsFilter> apiPathCorsFilterRegistration() {
+    public FilterRegistrationBean<ApiPathCorsFilter> apiPathCorsFilterRegistration(org.springframework.core.env.Environment environment) {
         FilterRegistrationBean<ApiPathCorsFilter> reg = new FilterRegistrationBean<>();
-        reg.setFilter(new ApiPathCorsFilter());
+        reg.setFilter(new ApiPathCorsFilter(CorsAllowedOrigins.pour(environment)));
         reg.addUrlPatterns("/api/*");
         reg.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return reg;

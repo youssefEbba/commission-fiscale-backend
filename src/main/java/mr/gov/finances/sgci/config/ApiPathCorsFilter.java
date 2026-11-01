@@ -16,6 +16,12 @@ import java.io.IOException;
  */
 public class ApiPathCorsFilter extends OncePerRequestFilter {
 
+    private final java.util.List<String> origines;
+
+    public ApiPathCorsFilter(java.util.List<String> origines) {
+        this.origines = origines;
+    }
+
     @Override
     protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
         String path = request.getRequestURI();
@@ -35,7 +41,7 @@ public class ApiPathCorsFilter extends OncePerRequestFilter {
 
         String originHeader = request.getHeader("Origin");
         String origin = originHeader != null ? originHeader.trim() : null;
-        boolean allowed = origin != null && CorsAllowedOrigins.matchesFrontendOrigin(origin);
+        boolean allowed = origin != null && origines.contains(origin);
 
         if (allowed) {
             response.setHeader("Access-Control-Allow-Origin", origin);

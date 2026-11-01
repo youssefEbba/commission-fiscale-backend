@@ -1,11 +1,17 @@
 package mr.gov.finances.sgci.config;
 
+import org.springframework.core.env.Environment;
+
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
- * Origines explicites du front (Vite). Pas de slash final.
+ * Origines explicites du front, selon le profil. Pas de slash final.
  * Avec {@code allowCredentials(true)}, il ne faut ni {@code *} ni motifs du type {@code http://host:*}
- * (Spring peut rejeter la config). Ajouter ici les URLs de prod si besoin.
+ * (Spring peut rejeter la config).
+ * <p>
+ * En production, le seul domaine officiel (restriction posée le 2026-10-31). Hors production, aussi
+ * les aperçus Lovable et le front local : sans eux, on ne peut ni développer ni prévisualiser.
  * <p>
  * Tunnel ngrok vers l’API : si le navigateur reçoit une page d’avertissement ngrok sans en-têtes CORS,
  * envoyer depuis le front l’en-tête {@code ngrok-skip-browser-warning: true} sur les requêtes vers l’URL ngrok.
@@ -14,11 +20,16 @@ public final class CorsAllowedOrigins {
 
     private CorsAllowedOrigins() {}
 
-    public static final List<String> FRONTEND = List.of(
-            // Production. Le front et l'API partagent ce domaine, mais derrière nginx l'application voit
-            // une requête http : pour Spring, l'origine https est donc étrangère, et une origine absente
-            // de cette liste fait refuser la connexion (403 « Invalid CORS request », le 2026-10-27).
-            "https://commission-fiscale.gov.mr",
+    /**
+     * Le front et l'API partagent ce domaine, mais derrière nginx l'application voit une requête
+     * http : pour Spring, l'origine https est donc étrangère, et une origine absente de cette liste
+     * fait refuser la connexion (403 « Invalid CORS request », le 2026-10-27).
+     */
+    public static final List<String> PRODUCTION = List.of(
+            "https://commission-fiscale.gov.mr"
+    );
+
+    public static final List<String> DEVELOPPEMENT = Stream.concat(PRODUCTION.stream(), Stream.of(
             "https://e6e2ee9f-7068-4371-95aa-8f4613a60836.lovableproject.com",
             "https://id-preview--e6e2ee9f-7068-4371-95aa-8f4613a60836.lovable.app",
             "https://commission-fiscale.lovable.app",
@@ -33,9 +44,13 @@ public final class CorsAllowedOrigins {
             "http://172.18.0.1:8081",
             "http://10.1.230.60:8082",
             "http://46.202.171.85:8080"
-    );
+    )).toList();
 
-    public static boolean matchesFrontendOrigin(String originTrimmed) {
-        return originTrimmed != null && FRONTEND.contains(originTrimmed);
+    public static List<String> pour(Environment env) {
+        return ExigencesProduction.estProduction(env) ? PRODUCTION : DEVELOPPEMENT;
+    }
+
+    public static boolean autorisee(Environment env, String origineNettoyee) {
+        return origineNettoyee != null && pour(env).contains(origineNettoyee);
     }
 }
