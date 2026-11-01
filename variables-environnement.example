@@ -1,0 +1,37 @@
+# Variables d'environnement du serveur SGCI en production (profil prod).
+# Copier ce fichier hors du dépôt, renseigner chaque valeur, et le charger dans le conteneur
+# (docker compose : env_file). Ne jamais commiter le fichier renseigné.
+#
+# Sans les variables marquées [obligatoire], le serveur refuse de démarrer et nomme celles qui manquent.
+# Les anciennes valeurs par défaut (publiées dans l'historique du dépôt) sont refusées.
+
+SPRING_PROFILES_ACTIVE=prod
+
+# [obligatoire] Clé de signature des jetons de connexion : 32 caractères au moins, aléatoire.
+# Exemple de génération : openssl rand -base64 48
+APP_JWT_SECRET=
+
+# [obligatoire] Base MySQL
+SPRING_DATASOURCE_URL=jdbc:mysql://HOTE:3306/sgci_db_n?serverTimezone=UTC&useSSL=true
+SPRING_DATASOURCE_USERNAME=
+SPRING_DATASOURCE_PASSWORD=
+
+# [obligatoire si APP_STORAGE_BACKEND=minio] Stockage des pièces, servi en HTTPS
+APP_STORAGE_BACKEND=minio
+MINIO_URL=https://
+MINIO_ACCESS_KEY=
+MINIO_SECRET_KEY=
+MINIO_BUCKET=documents
+
+# [obligatoire à la première installation] Mot de passe du compte « admin » s'il n'existe pas
+# encore (12 caractères au moins), à changer après la première connexion.
+APP_ADMIN_INITIAL_PASSWORD=
+
+# Messagerie (mot de passe d'application Gmail)
+APP_MAIL_ENABLED=true
+SPRING_MAIL_USERNAME=
+SPRING_MAIL_PASSWORD=
+APP_MAIL_FROM=
+
+# [obligatoire pour la conversion de devises] Clé exchangerate.host (l'ancienne, publiée, est à renouveler)
+APP_EXCHANGERATE_HOST_ACCESS_KEY=

@@ -29,7 +29,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/demandes-correction")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class DemandeCorrectionController {
 
     private final DemandeCorrectionService service;

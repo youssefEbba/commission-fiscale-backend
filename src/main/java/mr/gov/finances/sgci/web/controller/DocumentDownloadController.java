@@ -32,7 +32,6 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/documents")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class DocumentDownloadController {
 
     private final DocumentUtilisationCreditRepository documentRepository;

@@ -17,7 +17,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/bailleurs")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class BailleurController {
 
     private final BailleurService service;

@@ -37,7 +37,6 @@ import java.io.IOException;
 @RestController
 @RequestMapping("/api/certificats-credit")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class CertificatCreditController {
 
     private final CertificatCreditService service;

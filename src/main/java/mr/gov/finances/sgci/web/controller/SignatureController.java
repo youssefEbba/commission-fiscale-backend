@@ -38,7 +38,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/signatures")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class SignatureController {
 
     private final SignatureService service;

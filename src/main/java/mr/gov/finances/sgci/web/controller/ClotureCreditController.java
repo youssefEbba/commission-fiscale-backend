@@ -22,7 +22,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/clotures-credit")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class ClotureCreditController {
 
     private final ClotureCreditService service;

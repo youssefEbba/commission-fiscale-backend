@@ -21,7 +21,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/delegues")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class DelegueController {
 
     private final DelegueService service;

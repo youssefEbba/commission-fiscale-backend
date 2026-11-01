@@ -13,7 +13,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/devises")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class DeviseController {
 
     private final DeviseService service;

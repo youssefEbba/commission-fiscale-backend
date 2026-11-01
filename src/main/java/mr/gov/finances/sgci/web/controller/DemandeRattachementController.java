@@ -7,7 +7,6 @@ import mr.gov.finances.sgci.service.DemandeRattachementService;
 import mr.gov.finances.sgci.web.dto.DemandeRattachementDto;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,7 +26,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/demandes-rattachement")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class DemandeRattachementController {
 
     private final DemandeRattachementService service;

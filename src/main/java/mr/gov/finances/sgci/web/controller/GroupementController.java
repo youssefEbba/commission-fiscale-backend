@@ -13,7 +13,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/groupements")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class GroupementController {
 
     private final GroupementService service;

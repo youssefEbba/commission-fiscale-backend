@@ -21,7 +21,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/referentiel-taxes")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class ReferentielTaxeController {
 
     private final ReferentielTaxeService service;

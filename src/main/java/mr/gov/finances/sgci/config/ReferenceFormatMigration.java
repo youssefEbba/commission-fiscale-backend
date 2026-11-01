@@ -51,9 +51,11 @@ public class ReferenceFormatMigration implements ApplicationRunner {
     }
 
     private void convertir(ColonneReference c) {
+        String table = IdentifiantSql.sur(c.table());
+        String colonne = IdentifiantSql.sur(c.colonne());
         try {
             List<Map<String, Object>> lignes = jdbcTemplate.queryForList(
-                    "SELECT id, " + c.colonne() + " AS ref FROM " + c.table() + " WHERE " + c.colonne() + " LIKE '%/%'");
+                    "SELECT id, " + colonne + " AS ref FROM " + table + " WHERE " + colonne + " LIKE '%/%'");
             int converties = 0;
             for (Map<String, Object> ligne : lignes) {
                 String ancienne = (String) ligne.get("ref");
@@ -62,12 +64,12 @@ public class ReferenceFormatMigration implements ApplicationRunner {
                 }
                 String nouvelle = FormatReference.convertirAncienFormat(ancienne);
                 Integer deja = jdbcTemplate.queryForObject(
-                        "SELECT COUNT(*) FROM " + c.table() + " WHERE " + c.colonne() + " = ?", Integer.class, nouvelle);
+                        "SELECT COUNT(*) FROM " + table + " WHERE " + colonne + " = ?", Integer.class, nouvelle);
                 if (deja != null && deja > 0) {
                     log.warn("{}.{}: {} non convertie, {} existe déjà", c.table(), c.colonne(), ancienne, nouvelle);
                     continue;
                 }
-                jdbcTemplate.update("UPDATE " + c.table() + " SET " + c.colonne() + " = ? WHERE id = ?",
+                jdbcTemplate.update("UPDATE " + table + " SET " + colonne + " = ? WHERE id = ?",
                         nouvelle, ligne.get("id"));
                 converties++;
             }

@@ -24,7 +24,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/utilisations-credit")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class DecisionUtilisationCreditController {
 
     private final DecisionUtilisationCreditService service;

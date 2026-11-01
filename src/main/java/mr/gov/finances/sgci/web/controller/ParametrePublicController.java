@@ -2,7 +2,6 @@ package mr.gov.finances.sgci.web.controller;
 
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.service.ParametreService;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,7 +22,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/public/parametres")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class ParametrePublicController {
 
     private final ParametreService service;

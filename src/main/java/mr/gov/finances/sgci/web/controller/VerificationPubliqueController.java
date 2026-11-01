@@ -8,7 +8,6 @@ import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 import mr.gov.finances.sgci.web.support.VerificationPubliqueRateLimiter;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -32,7 +31,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/public/verification")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class VerificationPubliqueController {
 
     private final VerificationPubliqueService service;

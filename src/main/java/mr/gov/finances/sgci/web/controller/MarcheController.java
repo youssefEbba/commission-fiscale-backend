@@ -26,7 +26,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/marches")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class MarcheController {
 
     private final MarcheService service;

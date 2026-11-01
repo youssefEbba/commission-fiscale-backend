@@ -21,7 +21,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/referentiels-projet")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class ReferentielProjetController {
 
     private final ReferentielProjetService service;

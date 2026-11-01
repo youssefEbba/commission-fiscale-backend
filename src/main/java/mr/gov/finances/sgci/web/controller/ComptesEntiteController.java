@@ -7,7 +7,6 @@ import mr.gov.finances.sgci.service.ComptesEntiteService;
 import mr.gov.finances.sgci.web.dto.UtilisateurDto;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,7 +30,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/entites/{type}/{entiteId}/comptes")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class ComptesEntiteController {
 
     private final ComptesEntiteService service;

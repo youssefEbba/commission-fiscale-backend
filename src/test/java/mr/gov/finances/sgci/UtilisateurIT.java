@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,24 @@ class UtilisateurIT {
 
     @Autowired
     private TestRestTemplate restTemplate;
+
+    @Autowired
+    private mr.gov.finances.sgci.repository.UtilisateurRepository utilisateurRepository;
+
+    @Autowired
+    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+
+    /**
+     * Le compte « entreprise » est partagé par toute la suite, qui s'y connecte avec 123456 : ce test
+     * le lui change, il doit le lui rendre. Sans cela, chaque test web suivant échouait à se connecter.
+     */
+    @AfterEach
+    void rendreLeMotDePasseDeDepart() {
+        utilisateurRepository.findByUsername("entreprise").ifPresent(u -> {
+            u.setPasswordHash(passwordEncoder.encode("123456"));
+            utilisateurRepository.save(u);
+        });
+    }
 
     private String baseUrl() {
         return "http://localhost:" + port;

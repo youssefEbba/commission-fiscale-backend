@@ -5,7 +5,6 @@ import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.maincourante.MainCouranteService;
 import mr.gov.finances.sgci.web.dto.maincourante.MainCouranteDto;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,7 +20,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/main-courante")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class MainCouranteController {
 
     private final MainCouranteService service;

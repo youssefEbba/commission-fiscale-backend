@@ -98,7 +98,7 @@ public class ColonnesTexteSchemaMigration implements ApplicationRunner {
         }
         String nullClause = notNull ? " NOT NULL" : " NULL";
         try {
-            jdbcTemplate.execute("ALTER TABLE " + table + " MODIFY COLUMN " + column
+            jdbcTemplate.execute("ALTER TABLE " + IdentifiantSql.sur(table) + " MODIFY COLUMN " + IdentifiantSql.sur(column)
                     + " VARCHAR(" + minLength + ")" + nullClause);
             log.info("{}: colonne {} migrée vers VARCHAR({})", table, column, minLength);
         } catch (Exception e) {

@@ -63,6 +63,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         response.getWriter().write("{\"status\":403,\"error\":\"Compte désactivé ou introuvable\"}");
                         return;
                     }
+                    // Session fermée depuis l'émission du jeton : déconnexion, changement de mot de passe.
+                    if (jwtService.extractVersionSessions(token) != account.versionSessionsCourante()) {
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        response.setContentType("application/json;charset=UTF-8");
+                        response.getWriter().write("{\"status\":401,\"error\":\"Session expirée : reconnectez-vous\"}");
+                        return;
+                    }
                 }
                 Collection<SimpleGrantedAuthority> authorities = new ArrayList<>();
                 authorities.add(new SimpleGrantedAuthority("ROLE_" + role.name()));

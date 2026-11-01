@@ -50,7 +50,6 @@ public class SecurityConfig {
                         // cles de la liste blanche de ParametreService, jamais la table.
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/public/parametres").permitAll()
                         .requestMatchers("/api/local-files/**").authenticated()
-                        .requestMatchers("/h2-console/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
@@ -64,7 +63,16 @@ public class SecurityConfig {
                             response.getWriter().write("{\"status\":403,\"error\":\"Accès refusé\"}");
                         })
                 )
-                .headers(headers -> headers.frameOptions(f -> f.sameOrigin()))
+                // HSTS : le navigateur reste en HTTPS un an (posé seulement sur les réponses HTTPS).
+                // L'API ne s'affiche jamais dans un cadre : DENY plutôt que SAMEORIGIN, qui ne
+                // servait qu'à la console H2.
+                .headers(headers -> headers
+                        .httpStrictTransportSecurity(h -> h.includeSubDomains(true).maxAgeInSeconds(31_536_000))
+                        .contentTypeOptions(org.springframework.security.config.Customizer.withDefaults())
+                        .frameOptions(f -> f.deny())
+                        .referrerPolicy(r -> r.policy(
+                                org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy
+                                        .STRICT_ORIGIN_WHEN_CROSS_ORIGIN)))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

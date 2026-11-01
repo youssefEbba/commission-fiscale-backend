@@ -85,10 +85,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MultipartException.class)
     public ResponseEntity<ErrorResponse> handleMultipart(MultipartException ex) {
+        // Le message de l'exception porte des chemins du serveur : il va au journal, pas à l'écran.
+        log.warn("Téléversement illisible", ex);
         return body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(),
                 ApiErrorCode.VALIDATION_FAILED,
-                "Erreur de traitement du fichier uploadé: " + ex.getMessage(),
+                "Le fichier n'a pas pu être lu : vérifiez qu'il n'est pas vide ni endommagé, puis réessayez.",
                 null));
     }
 

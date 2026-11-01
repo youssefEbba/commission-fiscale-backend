@@ -12,7 +12,6 @@ import java.math.BigDecimal;
 @RestController
 @RequestMapping("/api/forex")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class ForexController {
 
     private final ForexService service;

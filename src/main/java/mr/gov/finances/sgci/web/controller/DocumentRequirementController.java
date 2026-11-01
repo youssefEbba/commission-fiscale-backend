@@ -15,7 +15,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/document-requirements")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class DocumentRequirementController {
 
     private final DocumentRequirementService service;

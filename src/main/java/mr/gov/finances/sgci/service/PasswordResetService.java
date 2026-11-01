@@ -49,10 +49,14 @@ public class PasswordResetService {
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Transactional(readOnly = true)
+    /**
+     * Ne dit plus si l'adresse a un compte : la route est publique, et sa réponse permettait de
+     * vérifier une liste d'adresses une à une. Elle répond toujours oui ; la demande elle-même
+     * ({@link #submitRequest}) rend le même message, que le compte existe ou non.
+     */
     public CheckEmailResponse checkEmail(String email) {
-        String normalized = normalizeEmail(email);
-        List<Utilisateur> users = findActiveUsersByEmail(normalized);
-        return CheckEmailResponse.builder().exists(!users.isEmpty()).build();
+        normalizeEmail(email);
+        return CheckEmailResponse.builder().exists(true).build();
     }
 
     @Transactional

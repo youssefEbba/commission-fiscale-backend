@@ -14,7 +14,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/autorites-contractantes")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class AutoriteContractanteController {
 
     private final AutoriteContractanteService service;

@@ -1,6 +1,8 @@
 package mr.gov.finances.sgci.service;
 
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.domain.document.DocumentCodeValidator;
+import mr.gov.finances.sgci.domain.document.DocumentDepotPolicy;
 import mr.gov.finances.sgci.domain.entity.Avenant;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
@@ -118,6 +120,14 @@ public class AvenantService {
 
     /** L'avenant, s'il est dans le périmètre de l'appelant : celui de son crédit. */
     @Transactional(readOnly = true)
+    /** Les pièces obligatoires de la GED (MODIFICATION_CI), hors celles qui ne sont pas encore dues. */
+    private void exigerPiecesObligatoires(Avenant a, Set<String> pasEncoreDues) {
+        List<String> presentes = new ArrayList<>(pasEncoreDues);
+        documentAvenantRepository.findByAvenantIdAndActifTrue(a.getId())
+                .forEach(d -> presentes.add(d.getCodeDocument()));
+        requirementValidator.assertRequiredDocumentsPresent(ProcessusDocument.MODIFICATION_CI, presentes);
+    }
+
     public Avenant charger(Long id, AuthenticatedUser user) {
         Avenant a = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Avenant non trouvé: " + id));
@@ -127,7 +137,38 @@ public class AvenantService {
         return a;
     }
 
+    /**
+     * Qui peut joindre cette pièce à cet avenant, et quand.
+     *
+     * <p>Les pièces du dépôt accompagnent l'avenant tant qu'il est déposé : la prise en charge par la
+     * DGTCP les clôt. La décision de la Commission, elle, n'existe qu'après l'examen : le Président
+     * (ou l'administrateur qui le supplée) la joint une fois l'avenant pris en charge, jusqu'à son
+     * application.
+     */
+    @Transactional(readOnly = true)
     public void verifierDepotPiece(Long id, String codeDocument, AuthenticatedUser user) {
+        Avenant a = charger(id, user);
+        String code = DocumentCodeValidator.normalize(codeDocument);
+        if (DocumentDepotPolicy.horsDepot(ProcessusDocument.MODIFICATION_CI).contains(code)) {
+            Role role = user != null ? user.getRole() : null;
+            if (role != Role.PRESIDENT && role != Role.ADMIN_SI) {
+                throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                        "Cette pièce est produite par la Commission : le Président la joint");
+            }
+            if (a.getStatut() != StatutAvenant.EN_COURS_TRAITEMENT && a.getStatut() != StatutAvenant.ADOPTE) {
+                throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                        "La décision de la Commission se joint une fois l'avenant pris en charge, avant son application");
+            }
+            return;
+        }
+        if (user == null || !DEPOSANTS.contains(user.getRole())) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Les pièces du dépôt sont jointes par l'entreprise ou l'autorité contractante");
+        }
+        if (a.getStatut() != StatutAvenant.DEPOSE) {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                    "Les pièces se déposent tant que l'avenant n'est pas pris en charge");
+        }
     }
 
     // ── dépôt ───────────────────────────────────────────────────────────────────────────────
@@ -182,12 +223,10 @@ public class AvenantService {
         exigerActeur(user, Role.DGTCP, motif, "La prise en charge d'un avenant revient à la DGTCP");
         Avenant a = charger(id, user);
         exigerStatut(a, StatutAvenant.DEPOSE, "prendre en charge");
-        // Les pièces se déposent tant que l'avenant est déposé : la prise en charge les clôt, c'est
-        // donc là que les pièces rendues obligatoires dans la GED (MODIFICATION_CI) sont exigées.
-        requirementValidator.assertRequiredDocumentsPresent(ProcessusDocument.MODIFICATION_CI,
-                documentAvenantRepository.findByAvenantIdAndActifTrue(a.getId()).stream()
-                        .map(d -> d.getCodeDocument())
-                        .toList());
+        // Les pièces du dépôt se joignent tant que l'avenant est déposé : la prise en charge les clôt,
+        // c'est donc là que celles que la GED rend obligatoires sont exigées. La décision de la
+        // Commission n'existe pas encore : elle est réputée présente ici et exigée à la validation.
+        exigerPiecesObligatoires(a, DocumentDepotPolicy.horsDepot(ProcessusDocument.MODIFICATION_CI));
         a.setStatut(StatutAvenant.EN_COURS_TRAITEMENT);
         a.setExamineParId(user.getUserId());
         a.setDateExamen(Instant.now());
@@ -203,6 +242,7 @@ public class AvenantService {
             throw ApiException.conflict(ApiErrorCode.CONFLICT,
                     "Avenant déjà validé : sa demande de correction suit son circuit");
         }
+        exigerPiecesObligatoires(a, Set.of());
         a.setValideParId(user.getUserId());
         a.setDateValidation(Instant.now());
         if (!a.estFinancier()) {

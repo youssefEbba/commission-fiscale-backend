@@ -76,6 +76,20 @@ public final class DocumentDepotPolicy {
             "QUITTANCE_TRESOR",
             "QUITTANCE_DGI");
 
+    /** Avenant : apportées par l'entreprise ou l'autorité contractante à l'appui de son avenant. */
+    public static final Set<String> AVENANT_CODES_DEPOSES = Set.of(
+            "NOTE_SERVICE",
+            "JUSTIFICATIONS_LEGALES",
+            "LETTRES_MOTIVEES",
+            "AVENANT_CONTRAT",
+            "LETTRES_AUTORITE_CONTRACTANTE",
+            "DETAIL_CORRECTIONS_NECESSAIRES",
+            "DOCUMENTS_OFFICIELS");
+
+    /** Avenant : produite par la Commission, jointe par le Président une fois l'avenant examiné. */
+    public static final Set<String> AVENANT_CODES_DE_LA_COMMISSION = Set.of(
+            "DECISION_COMMISSION");
+
     private DocumentDepotPolicy() {
     }
 
@@ -100,6 +114,7 @@ public final class DocumentDepotPolicy {
             case CORRECTION_OFFRE_FISCALE -> CODES_PRODUITS_PAR_LA_COMMISSION;
             case UTILISATION_CI, UTILISATION_CI_DOUANE, UTILISATION_CI_TVA_INTERIEURE,
                  UTILISATION_CI_EXTERIEUR, UTILISATION_CI_INTERIEUR -> UTILISATION_CODES_DU_CIRCUIT;
+            case MODIFICATION_CI -> AVENANT_CODES_DE_LA_COMMISSION;
             default -> Set.of();
         };
     }
@@ -113,6 +128,7 @@ public final class DocumentDepotPolicy {
             case CORRECTION_OFFRE_FISCALE -> CODES_DEPOSES_PAR_LE_DEMANDEUR;
             case UTILISATION_CI, UTILISATION_CI_DOUANE, UTILISATION_CI_TVA_INTERIEURE,
                  UTILISATION_CI_EXTERIEUR, UTILISATION_CI_INTERIEUR -> UTILISATION_CODES_DEPOSES;
+            case MODIFICATION_CI -> AVENANT_CODES_DEPOSES;
             default -> Set.of();
         };
     }

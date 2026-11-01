@@ -27,7 +27,6 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class AuthController {
 
     private final AuthService authService;
@@ -37,6 +36,13 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
+    }
+
+    /** Déconnexion réelle : le jeton présenté, et tous ceux du même compte, sont refusés ensuite. */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@AuthenticationPrincipal AuthenticatedUser user) {
+        authService.deconnecter(user != null ? user.getUserId() : null);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/password-reset/check-email")

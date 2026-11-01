@@ -14,7 +14,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/referentiel/types-document")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class ReferentielTypeDocumentController {
 
     private final ReferentielTypeDocumentService service;

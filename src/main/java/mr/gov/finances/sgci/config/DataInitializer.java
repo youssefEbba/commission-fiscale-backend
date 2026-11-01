@@ -59,7 +59,9 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
 import java.time.Instant;
 
@@ -98,7 +100,7 @@ public class DataInitializer implements CommandLineRunner {
         if (utilisateurRepository.findByUsername("admin").isEmpty()) {
             Utilisateur admin = Utilisateur.builder()
                     .username("admin")
-                    .passwordHash(passwordEncoder.encode("admin"))
+                    .passwordHash(passwordEncoder.encode(motDePasseAdministrateurInitial(environment)))
                     .role(Role.ADMIN_SI)
                     .nomComplet("Administrateur SGCI")
                     .email(seedUserEmail("admin"))
@@ -116,22 +118,83 @@ public class DataInitializer implements CommandLineRunner {
         seedDocumentRequirements();
         marquerPiecesDeSortie();
         seedParametresApplication();
-        seedDefaultUsers();
+        if (comptesDeDemonstration(environment)) {
+            seedDefaultUsers();
+        }
         seedReferentielTaxes();
-        if (Boolean.TRUE.equals(environment.getProperty("app.seed.demande-correction.enabled", Boolean.class, Boolean.TRUE))) {
+        if (donneesDeDemonstration(environment, "app.seed.demande-correction.enabled")) {
             seedDemo("demande de correction adoptée", this::seedDemandeCorrectionAdopteeDemo);
             seedDemo("demande en validation Président", this::seedDemandeCorrectionEnValidationPresidentDemo);
             seedDemo("certificat en validation Président", this::seedCertificatEnValidationPresidentDemo);
             seedDemo("certificat en contrôle, visas DGD et DGI", this::seedCertificatEnControleVisasDgdDgiDemo);
         }
-        if (Boolean.TRUE.equals(environment.getProperty("app.seed.utilisation-credit-demo.enabled", Boolean.class, Boolean.TRUE))
-                && Boolean.TRUE.equals(environment.getProperty("app.seed.demande-correction.enabled", Boolean.class, Boolean.TRUE))) {
+        if (donneesDeDemonstration(environment, "app.seed.utilisation-credit-demo.enabled")
+                && donneesDeDemonstration(environment, "app.seed.demande-correction.enabled")) {
             seedDemo("scénarios d'utilisation du crédit", this::seedUtilisationCreditDemoScenarios);
         }
-        if (Boolean.TRUE.equals(environment.getProperty("app.seed.certificat-ouvert.enabled", Boolean.class, Boolean.FALSE))) {
+        if (Boolean.TRUE.equals(environment.getProperty("app.seed.certificat-ouvert.enabled", Boolean.class, Boolean.FALSE))
+                && !ExigencesProduction.estProduction(environment)) {
             seedDemo("certificat ouvert", this::seedCertificatOuvertDemo);
         }
         referenceBackfillMigration.migrateIfNeeded();
+        signalerComptesAuMotDePasseConnu();
+    }
+
+    /** Les comptes que les versions précédentes créaient en production, et leurs mots de passe. */
+    private static final List<String> COMPTES_DE_DEMONSTRATION = List.of(
+            "admin", "president", "dgd", "dgtcp", "dgi", "dgb", "ac", "entreprise", "test", "commission_relais");
+
+    /**
+     * Comptes et données de démonstration : actifs hors production, jamais en production sauf
+     * demande explicite. Les versions précédentes créaient en production dix comptes au mot de passe
+     * {@code 123456}, et chaque démarrage réactivait ceux qu'un administrateur avait désactivés.
+     */
+    static boolean comptesDeDemonstration(Environment env) {
+        return env.getProperty("app.seed.comptes-demo.enabled", Boolean.class, !ExigencesProduction.estProduction(env));
+    }
+
+    static boolean donneesDeDemonstration(Environment env, String cle) {
+        return env.getProperty(cle, Boolean.class, !ExigencesProduction.estProduction(env));
+    }
+
+    /**
+     * Le mot de passe du compte {@code admin}, quand il n'existe pas encore. Hors production, celui
+     * du poste de développement ; en production, {@code APP_ADMIN_INITIAL_PASSWORD}, à changer
+     * après la première connexion. Sans lui, le démarrage s'arrête plutôt que de créer un compte
+     * administrateur au mot de passe connu.
+     */
+    static String motDePasseAdministrateurInitial(Environment env) {
+        if (!ExigencesProduction.estProduction(env)) {
+            return "admin";
+        }
+        String mdp = env.getProperty("app.admin.initial-password", "");
+        if (ExigencesProduction.inutilisable(mdp) || mdp.length() < 12) {
+            throw new IllegalStateException("Compte administrateur absent : définir APP_ADMIN_INITIAL_PASSWORD "
+                    + "(12 caractères au moins) pour le créer, puis changer ce mot de passe après la première connexion");
+        }
+        return mdp;
+    }
+
+    /**
+     * En production, nomme dans le journal les comptes de démonstration encore actifs avec leur mot
+     * de passe d'origine. Ils ont été créés par les versions précédentes : les désactiver ou changer
+     * leur mot de passe est une décision d'exploitation, pas du démarrage.
+     */
+    private void signalerComptesAuMotDePasseConnu() {
+        if (!ExigencesProduction.estProduction(environment)) {
+            return;
+        }
+        List<String> exposes = new ArrayList<>();
+        for (String username : COMPTES_DE_DEMONSTRATION) {
+            utilisateurRepository.findByUsername(username)
+                    .filter(u -> !Boolean.FALSE.equals(u.getActif()) && u.getPasswordHash() != null)
+                    .filter(u -> passwordEncoder.matches("123456", u.getPasswordHash())
+                            || passwordEncoder.matches("admin", u.getPasswordHash()))
+                    .ifPresent(u -> exposes.add(username));
+        }
+        if (!exposes.isEmpty()) {
+            log.error("SÉCURITÉ : comptes actifs au mot de passe connu de tous, à désactiver ou à changer : {}", exposes);
+        }
     }
 
     /**
@@ -205,6 +268,8 @@ public class DataInitializer implements CommandLineRunner {
                 "BULLETIN_ANNOTE", "QUITTANCE_TRESOR", "CERTIFICAT_UTILISATION");
         marquerSorties(ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE,
                 "QUITTANCE_DGI", "CERTIFICAT_UTILISATION");
+        marquerSorties(ProcessusDocument.MODIFICATION_CI,
+                "DECISION_COMMISSION");
     }
 
     private void marquerSorties(ProcessusDocument processus, String... codes) {

@@ -38,6 +38,9 @@ class RejetWorkflowsIT {
     @Autowired
     private TestRestTemplate restTemplate;
 
+    @Autowired
+    private org.springframework.context.ApplicationContext context;
+
     private String baseUrl() {
         return "http://localhost:" + port;
     }
@@ -81,6 +84,23 @@ class RejetWorkflowsIT {
         return new HttpEntity<>(body, h);
     }
 
+    /** Le bulletin de liquidation se saisit ligne par ligne : droits de douane et TVA à l'import. */
+    private static List<Map<String, Object>> douaneLignes(BigDecimal droits, BigDecimal tva) {
+        Map<String, Object> ligneDd = new LinkedHashMap<>();
+        ligneDd.put("codeTaxe", "DD");
+        ligneDd.put("denominationTaxe", "Droits de douane");
+        ligneDd.put("typeLigne", "ARTICLE");
+        ligneDd.put("valeurTaxe", droits);
+        ligneDd.put("affectation", "AU_CI");
+        Map<String, Object> ligneTva = new LinkedHashMap<>();
+        ligneTva.put("codeTaxe", "TVA");
+        ligneTva.put("denominationTaxe", "TVA importation");
+        ligneTva.put("typeLigne", "ARTICLE");
+        ligneTva.put("valeurTaxe", tva);
+        ligneTva.put("affectation", "AU_CI");
+        return List.of(ligneDd, ligneTva);
+    }
+
     private static Long findCertificatIdByNumero(List<?> certs, String numero) {
         for (Object o : certs) {
             if (o instanceof Map m && numero.equals(String.valueOf(m.get("numero")))) {
@@ -90,14 +110,6 @@ class RejetWorkflowsIT {
         throw new AssertionError("Certificat introuvable: " + numero);
     }
 
-    private static Map<String, Object> findDemandeAdoptee(List<?> demandes) {
-        for (Object o : demandes) {
-            if (o instanceof Map m && "ADOPTEE".equals(String.valueOf(m.get("statut")))) {
-                return m;
-            }
-        }
-        throw new AssertionError("Aucune demande ADOPTEE dans la liste");
-    }
 
     private static Long findDecisionIdForRole(List<?> decisions, String roleName) {
         for (Object o : decisions) {
@@ -122,24 +134,13 @@ class RejetWorkflowsIT {
                 bearer(president.token()),
                 List.class
         );
-        Long seedCertId = findCertificatIdByNumero(certsList.getBody(), "CI-TEST-OUVERT");
-        assertThat(restTemplate.exchange(
-                baseUrl() + "/api/certificats-credit/" + seedCertId + "/statut?statut=ANNULE",
-                HttpMethod.PATCH,
-                bearer(president.token()),
-                Map.class
-        ).getStatusCode()).isEqualTo(HttpStatus.OK);
-
+        // Une demande adoptée neuve, sans certificat : celles de la démonstration ont toutes le leur
+        // (un seul actif par demande), et annuler CI-TEST-OUVERT cassait les tests suivants.
+        DemandeAdopteeDeTest.Ids neuve = DemandeAdopteeDeTest.creer(context);
         LoginResult ac = login("ac", "123456");
-        ResponseEntity<List> demandesAc = restTemplate.exchange(
-                baseUrl() + "/api/demandes-correction/by-autorite/" + ac.autoriteContractanteId(),
-                HttpMethod.GET,
-                bearer(ac.token()),
-                List.class
-        );
-        Map<String, Object> demande = findDemandeAdoptee(demandesAc.getBody());
-        Long demandeId = ((Number) demande.get("id")).longValue();
-        Long entrepriseId = ((Number) demande.get("entrepriseId")).longValue();
+        assertThat(ac.autoriteContractanteId()).isNotNull();
+        Long demandeId = neuve.demandeId();
+        Long entrepriseId = neuve.entrepriseId();
 
         Map<String, Object> createCertBody = new LinkedHashMap<>();
         createCertBody.put("entrepriseId", entrepriseId);
@@ -162,7 +163,12 @@ class RejetWorkflowsIT {
 
         LoginResult dgtcp = login("dgtcp", "123456");
         Map<String, Object> montants = new LinkedHashMap<>();
+        // Récapitulatif ventilé : cordon = b + c + d, TVA intérieure = g − d.
         montants.put("montantCordon", new BigDecimal("3500000"));
+        montants.put("droitsEtTaxesDouaneHorsTva", new BigDecimal("2000000"));
+        montants.put("taxesConsommation", new BigDecimal("500000"));
+        montants.put("tvaImportationDouane", new BigDecimal("1000000"));
+        montants.put("tvaCollecteeTravaux", new BigDecimal("2500000"));
         montants.put("montantTVAInterieure", new BigDecimal("1500000"));
         assertThat(restTemplate.exchange(
                 baseUrl() + "/api/certificats-credit/" + certId + "/montants",
@@ -237,8 +243,7 @@ class RejetWorkflowsIT {
         utilBody.put("entrepriseId", ent.entrepriseId());
         utilBody.put("numeroDeclaration", "DEC-REJ-TEMP-" + System.currentTimeMillis());
         utilBody.put("numeroBulletin", "BUL-REJ-001");
-        utilBody.put("montantDroits", new BigDecimal("5000"));
-        utilBody.put("montantTVA", new BigDecimal("2000"));
+        utilBody.put("lignes", douaneLignes(new BigDecimal("5000"), new BigDecimal("2000")));
         utilBody.put("enregistreeSYDONIA", true);
         ResponseEntity<Map> utilResp = restTemplate.postForEntity(
                 baseUrl() + "/api/utilisations-credit",
@@ -311,8 +316,7 @@ class RejetWorkflowsIT {
         utilBody.put("entrepriseId", ent.entrepriseId());
         utilBody.put("numeroDeclaration", "DEC-REJ-DEF-" + System.currentTimeMillis());
         utilBody.put("numeroBulletin", "BUL-REJ-DEF");
-        utilBody.put("montantDroits", new BigDecimal("3000"));
-        utilBody.put("montantTVA", new BigDecimal("1000"));
+        utilBody.put("lignes", douaneLignes(new BigDecimal("3000"), new BigDecimal("1000")));
         utilBody.put("enregistreeSYDONIA", false);
         ResponseEntity<Map> utilResp = restTemplate.postForEntity(
                 baseUrl() + "/api/utilisations-credit",

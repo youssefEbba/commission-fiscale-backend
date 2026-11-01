@@ -215,12 +215,14 @@ class AdminVisaCertificatIT {
 
     @Test
     @Order(4)
-    void refuse_un_fichier_pour_un_visa_de_membre_sans_document_attendu() {
+    void un_visa_refuse_ne_laisse_aucun_fichier_orphelin() {
         String adminToken = admin();
         Long id = certificatId(adminToken, CI_VISAS);
 
+        // La DGD a déjà visé ce certificat de démonstration : le contrôle métier (409) précède le
+        // téléversement. Le refus d'un fichier non attendu est vérifié sur la DGTCP, au test suivant.
         ResponseEntity<Map> resp = adminVisa(adminToken, id, "DGD", "motif", true);
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
 
         // Aucun fichier orphelin ne doit subsister : les contrôles métier précèdent le téléversement.
         ResponseEntity<List> docs = restTemplate.exchange(
@@ -236,9 +238,14 @@ class AdminVisaCertificatIT {
         String adminToken = admin();
         Long id = certificatId(adminToken, CI_VISAS);
 
-        // L'administrateur renseigne lui-même les montants : aucun retour vers la DGTCP.
+        // L'administrateur renseigne lui-même les montants : aucun retour vers la DGTCP. Le
+        // récapitulatif est ventilé : cordon = b + c + d, TVA intérieure = g − d.
         Map<String, Object> montants = new LinkedHashMap<>();
         montants.put("montantCordon", new BigDecimal("4000000"));
+        montants.put("droitsEtTaxesDouaneHorsTva", new BigDecimal("2500000"));
+        montants.put("taxesConsommation", new BigDecimal("500000"));
+        montants.put("tvaImportationDouane", new BigDecimal("1000000"));
+        montants.put("tvaCollecteeTravaux", new BigDecimal("3000000"));
         montants.put("montantTVAInterieure", new BigDecimal("2000000"));
         ResponseEntity<Map> patch = restTemplate.exchange(
                 baseUrl() + "/api/certificats-credit/" + id + "/montants/admin?motif=dgtcp+indisponible",
@@ -246,6 +253,15 @@ class AdminVisaCertificatIT {
         assertThat(patch.getStatusCode()).isEqualTo(HttpStatus.OK);
         // Les soldes provisoires doivent être initialisés comme par le parcours DGTCP.
         assertThat(certificat(adminToken, id).get("soldeCordon")).isNotNull();
+
+        // Aucun document n'est attendu pour le visa d'un membre : un fichier joint est refusé, et
+        // le refus précède le téléversement.
+        assertThat(adminVisa(adminToken, id, "DGTCP", "directeur en mission", true).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        ResponseEntity<List> docs = restTemplate.exchange(
+                baseUrl() + "/api/certificats-credit/" + id + "/documents",
+                HttpMethod.GET, bearer(adminToken), List.class);
+        assertThat(docs.getBody()).isEmpty();
 
         ResponseEntity<Map> resp = adminVisa(adminToken, id, "DGTCP", "directeur en mission", false);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -283,11 +299,14 @@ class AdminVisaCertificatIT {
 
     @Test
     @Order(6)
-    void refuse_un_second_visa_pour_le_meme_role() {
+    void refuse_un_second_visa_apres_la_cloture_du_controle() {
         String adminToken = admin();
         Long id = certificatId(adminToken, CI_VISAS);
+        // Les trois visas posés, le certificat est passé en validation présidentielle : le contrôle
+        // de statut (400) précède celui du visa en double. Le refus d'un visa déjà posé (409) est
+        // vérifié sur la DGD par un_visa_refuse_ne_laisse_aucun_fichier_orphelin.
         assertThat(adminVisa(adminToken, id, "DGTCP", "nouvelle tentative", false).getStatusCode())
-                .isEqualTo(HttpStatus.CONFLICT);
+                .isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     // ------------------------------------------------------------------ substitution présidentielle
@@ -391,8 +410,9 @@ class AdminVisaCertificatIT {
         assertThat(restTemplate.exchange(baseUrl() + "/api/certificats-credit/" + id + "/visas",
                 HttpMethod.GET, bearer(login("dgi", "123456")), List.class)
                 .getStatusCode()).isEqualTo(HttpStatus.OK);
+        // Le refus porte un corps d'erreur JSON, pas une liste : lu comme texte.
         assertThat(restTemplate.exchange(baseUrl() + "/api/certificats-credit/" + id + "/visas",
-                HttpMethod.GET, bearer(login("entreprise", "123456")), List.class)
+                HttpMethod.GET, bearer(login("entreprise", "123456")), String.class)
                 .getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 }

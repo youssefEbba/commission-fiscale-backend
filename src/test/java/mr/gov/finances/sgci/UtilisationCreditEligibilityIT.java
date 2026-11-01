@@ -178,17 +178,15 @@ class UtilisationCreditEligibilityIT {
         );
         Long certId = findCertificatIdByNumero(certsList.getBody(), "CI-TEST-OUVERT");
 
-        assertThat(restTemplate.exchange(
-                baseUrl() + "/api/certificats-credit/" + certId + "/statut?statut=MODIFIE",
-                HttpMethod.PATCH,
-                bearer(president.token()),
-                Map.class
-        ).getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        ResponseEntity<Map> created = createDouaneUtilisation(
-                ent.token(), ent.entrepriseId(), certId,
-                douaneLignes(new BigDecimal("1000"), new BigDecimal("500")));
-        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        var statutAvant = forcerStatut(certId, mr.gov.finances.sgci.domain.enums.StatutCertificat.MODIFIE);
+        try {
+            ResponseEntity<Map> created = createDouaneUtilisation(
+                    ent.token(), ent.entrepriseId(), certId,
+                    douaneLignes(new BigDecimal("1000"), new BigDecimal("500")));
+            assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        } finally {
+            forcerStatut(certId, statutAvant);
+        }
     }
 
     @Test
@@ -203,17 +201,15 @@ class UtilisationCreditEligibilityIT {
         );
         Long certId = findCertificatIdByNumero(certsList.getBody(), "CI-DEMO-SCEN-E");
 
-        assertThat(restTemplate.exchange(
-                baseUrl() + "/api/certificats-credit/" + certId + "/statut?statut=CLOTURE",
-                HttpMethod.PATCH,
-                bearer(president.token()),
-                Map.class
-        ).getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        ResponseEntity<Map> created = createDouaneUtilisation(
-                ent.token(), ent.entrepriseId(), certId,
-                douaneLignes(new BigDecimal("10"), new BigDecimal("5")));
-        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        var statutAvant = forcerStatut(certId, mr.gov.finances.sgci.domain.enums.StatutCertificat.CLOTURE);
+        try {
+            ResponseEntity<Map> created = createDouaneUtilisation(
+                    ent.token(), ent.entrepriseId(), certId,
+                    douaneLignes(new BigDecimal("10"), new BigDecimal("5")));
+            assertThat(created.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        } finally {
+            forcerStatut(certId, statutAvant);
+        }
     }
 
     @Test
@@ -281,22 +277,34 @@ class UtilisationCreditEligibilityIT {
         );
         Long certId = findCertificatIdByNumero(certsList.getBody(), "CI-DEMO-SCEN-F");
 
-        assertThat(restTemplate.exchange(
-                baseUrl() + "/api/certificats-credit/" + certId + "/statut?statut=CLOTURE",
-                HttpMethod.PATCH,
-                bearer(president.token()),
-                Map.class
-        ).getStatusCode()).isEqualTo(HttpStatus.OK);
+        var statutAvant = forcerStatut(certId, mr.gov.finances.sgci.domain.enums.StatutCertificat.CLOTURE);
+        try {
+            ResponseEntity<Map> elig = restTemplate.exchange(
+                    baseUrl() + "/api/certificats-credit/" + certId + "/eligibilite-utilisation?type=DOUANIER",
+                    HttpMethod.GET,
+                    bearer(ent.token()),
+                    Map.class
+            );
+            assertThat(elig.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(elig.getBody().get("eligible")).isEqualTo(false);
+            assertThat(String.valueOf(((List<?>) elig.getBody().get("motifs")).get(0)))
+                    .contains("clôturé");
+        } finally {
+            forcerStatut(certId, statutAvant);
+        }
+    }
 
-        ResponseEntity<Map> elig = restTemplate.exchange(
-                baseUrl() + "/api/certificats-credit/" + certId + "/eligibilite-utilisation?type=DOUANIER",
-                HttpMethod.GET,
-                bearer(ent.token()),
-                Map.class
-        );
-        assertThat(elig.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(elig.getBody().get("eligible")).isEqualTo(false);
-        assertThat(String.valueOf(((List<?>) elig.getBody().get("motifs")).get(0)))
-                .contains("clôturé");
+    /**
+     * Place le certificat dans ce statut directement en base, et rend le statut d'avant. La clôture
+     * et la modification ne se font plus par PATCH /statut : elles ont leur circuit (proposition et
+     * approbation, application d'un avenant). Ce test porte sur ce qui suit, pas sur ce circuit.
+     */
+    private mr.gov.finances.sgci.domain.enums.StatutCertificat forcerStatut(Long certificatId,
+                                                                          mr.gov.finances.sgci.domain.enums.StatutCertificat statut) {
+        CertificatCredit c = certificatCreditRepository.findById(certificatId).orElseThrow();
+        mr.gov.finances.sgci.domain.enums.StatutCertificat avant = c.getStatut();
+        c.setStatut(statut);
+        certificatCreditRepository.saveAndFlush(c);
+        return avant;
     }
 }

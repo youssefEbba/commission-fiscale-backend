@@ -41,6 +41,19 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void unTeleversementEnEchecNeRecopiePasLExceptionTechnique() {
+        // Revue de sécurité : le message de l'exception, chemins du serveur compris, était recopié.
+        var reponse = new GlobalExceptionHandler().handleMultipart(new org.springframework.web.multipart.MultipartException(
+                "Failed to parse multipart servlet request; nested exception is java.io.IOException: "
+                        + "C:\\Users\\serveur\\AppData\\Local\\Temp\\tomcat.8080\\work\\upload_123.tmp"));
+
+        assertThat(reponse.getBody().message())
+                .doesNotContain("tomcat")
+                .doesNotContain("IOException")
+                .doesNotContain("C:\\");
+    }
+
+    @Test
     void uneErreurMetierResteMetier() {
         // Ces messages-là sont écrits pour l'utilisateur : les masquer serait une régression.
         assertThat(GlobalExceptionHandler.estDOrigineTechnique(

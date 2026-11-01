@@ -11,7 +11,6 @@ import java.math.BigDecimal;
 @RestController
 @RequestMapping("/api/taux-change")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class TauxChangeController {
 
     private final TauxChangeService service;
