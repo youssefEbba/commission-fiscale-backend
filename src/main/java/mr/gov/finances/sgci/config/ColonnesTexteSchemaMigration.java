@@ -68,7 +68,20 @@ public class ColonnesTexteSchemaMigration implements ApplicationRunner {
             new ColonneTexte("document_requirement", "sens", 16, false),
             // Statut de l'avenant (octobre 2026) : texte dès sa création, pour qu'un statut ajouté
             // plus tard ne bute pas sur un ENUM MySQL natif.
-            new ColonneTexte("avenant", "statut", 32, false));
+            new ColonneTexte("avenant", "statut", 32, false),
+            // Indicateurs de référence avant digitalisation (novembre 2026) : texte dès la création.
+            new ColonneTexte("valeur_reference_digitalisation", "code", 64, true),
+            // Suivi des bénéficiaires (novembre 2026) : catégorie de l'entreprise et du bailleur.
+            new ColonneTexte("entreprise", "categorie", 32, false),
+            new ColonneTexte("bailleur", "categorie", 32, false),
+            // Feedback et satisfaction (novembre 2026).
+            new ColonneTexte("retour_utilisateur", "role", 32, true),
+            new ColonneTexte("retour_utilisateur", "profil", 32, true),
+            new ColonneTexte("retour_utilisateur", "categorie", 32, true),
+            new ColonneTexte("enquete_satisfaction", "statut", 32, true),
+            new ColonneTexte("question_enquete", "type", 16, true),
+            new ColonneTexte("question_enquete", "categorie", 32, false),
+            new ColonneTexte("reponse_enquete", "profil", 32, true));
 
     public void migrateIfNeeded() {
         REGISTRE.forEach(this::widenStringColumnIfNeeded);

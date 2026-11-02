@@ -458,6 +458,8 @@ public class ImportArchiveCreditService {
         d.setDateLiquidation(u.getDate());
         d.setNumeroDeclaration(u.getLibelle());
         d.setOrigineArchiveLibelle(u.getLibelle());
+        // Reprise d'un dossier clos sur papier : aucune émission de certificat n'est attendue (A20).
+        d.setEmissionCertificatRequise(Boolean.FALSE);
         d.setNumeroBulletin(u.getNumeroQuittance());
         d.setTotalPrisEnCharge(u.getTotalPrisEnCharge());
         d.setTotalAPayer(u.getTotalAPayer());
@@ -492,6 +494,7 @@ public class ImportArchiveCreditService {
         i.setDateLiquidation(u.getDate());
         i.setNumeroFacture(u.getLibelle());
         i.setOrigineArchiveLibelle(u.getLibelle());
+        i.setEmissionCertificatRequise(Boolean.FALSE);
         i.setCreditInterieurUtilise(u.getMontant());
         return i;
     }

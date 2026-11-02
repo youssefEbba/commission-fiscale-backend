@@ -138,6 +138,18 @@ class UtilisationControleDgtcpIT {
         UtilisationDouaniere util = dossierPretATransmettre();
 
         service.transmettreAuPresident(util.getId(), dgtcp);
+        // Numéro réservé pour le modèle, certificat signé déposé, puis émission (anomalie A34).
+        service.reserverNumeroCertificatUtilisation(util.getId(), president);
+        documentRepository.save(DocumentUtilisationCredit.builder()
+                .codeDocument("CERTIFICAT_UTILISATION")
+                .nomFichier("certificat-signe.pdf")
+                .chemin("/api/local-files/certificat.pdf")
+                .dateUpload(Instant.now())
+                .taille(1024L)
+                .version(1)
+                .actif(true)
+                .utilisationCredit(util)
+                .build());
         UtilisationCreditDto emis = service.emettreCertificatUtilisation(util.getId(), president);
 
         assertThat(emis.getStatut()).isEqualTo(StatutUtilisation.CERTIFICAT_EMIS);

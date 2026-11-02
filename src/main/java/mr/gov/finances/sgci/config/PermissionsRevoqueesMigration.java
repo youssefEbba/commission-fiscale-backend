@@ -70,13 +70,35 @@ public class PermissionsRevoqueesMigration implements ApplicationRunner {
                     "entreprise.update",
                     "entreprise.delete"));
 
+    /**
+     * Les conventions et projets de toute la plateforme ne sont plus lus par les entreprises ni les
+     * sous-traitants : seulement ceux de leurs dossiers (anomalie A30).
+     */
+    private static final List<String> LECTURE_PARTAGEE_RETIREE = List.of("convention.view.all", "projet.view.all");
+    private static final List<Role> ROLES_DEPOSANTS = List.of(Role.ENTREPRISE, Role.SOUS_TRAITANT);
+
     private final PermissionRepository permissionRepository;
     private final RolePermissionRepository rolePermissionRepository;
+
+    /** Les suppléances de l'administrateur, réservées à l'ADMIN_SI (anomalie A45). */
+    public static boolean estSuppleanceAdministrateur(String code) {
+        return code != null && code.endsWith("admin_override");
+    }
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
         int retirees = 0;
+        for (Role role : ROLES_DEPOSANTS) {
+            for (String code : LECTURE_PARTAGEE_RETIREE) {
+                retirees += retirer(role, code);
+            }
+        }
+        for (Permission permission : permissionRepository.findAll()) {
+            if (estSuppleanceAdministrateur(permission.getCode())) {
+                retirees += retirer(Role.PRESIDENT, permission.getCode());
+            }
+        }
         for (Map.Entry<Role, List<String>> entry : A_REVOQUER.entrySet()) {
             Role role = entry.getKey();
             for (String code : entry.getValue()) {
@@ -94,5 +116,16 @@ public class PermissionsRevoqueesMigration implements ApplicationRunner {
         if (retirees > 0) {
             log.info("Migration permissions : {} liaison(s) rôle/permission retirée(s)", retirees);
         }
+    }
+
+    private int retirer(Role role, String code) {
+        Optional<Permission> permission = permissionRepository.findByCode(code);
+        if (permission.isEmpty()
+                || rolePermissionRepository.findByRoleAndPermission(role, permission.get()).isEmpty()) {
+            return 0;
+        }
+        rolePermissionRepository.deleteByRoleAndPermission(role, permission.get());
+        log.info("Permission {} retirée au rôle {}", code, role);
+        return 1;
     }
 }

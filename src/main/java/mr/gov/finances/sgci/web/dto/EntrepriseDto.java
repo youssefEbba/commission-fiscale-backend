@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import mr.gov.finances.sgci.domain.enums.CategorieEntreprise;
 
 @Data
 @NoArgsConstructor
@@ -26,4 +27,10 @@ public class EntrepriseDto {
     private boolean entrepriseEtrangere;
     /** Registre de commerce étranger (obligatoire si {@link #entrepriseEtrangere}). */
     private String registreCommerceEtranger;
+
+    /** PME, GRANDE_ENTREPRISE ou NON_RENSEIGNEE (défaut). */
+    private CategorieEntreprise categorie;
+    private Long secteurId;
+    /** Libellé du secteur, en lecture. */
+    private String secteurLibelle;
 }

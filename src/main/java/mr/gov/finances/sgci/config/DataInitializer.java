@@ -90,6 +90,7 @@ public class DataInitializer implements CommandLineRunner {
     private final ParametreApplicationRepository parametreApplicationRepository;
     private final DossierGedService dossierGedService;
     private final ReferentielTypeDocumentService referentielTypeDocumentService;
+    private final mr.gov.finances.sgci.service.SecteurActiviteService secteurActiviteService;
     private final DocumentRequirementLegacyMigration documentRequirementLegacyMigration;
     private final EntrepriseLegacyGroupementMigration entrepriseLegacyGroupementMigration;
     private final ReferenceBackfillMigration referenceBackfillMigration;
@@ -112,6 +113,7 @@ public class DataInitializer implements CommandLineRunner {
         seedPermissions();
         seedRolePermissions();
         referentielTypeDocumentService.seedMissingFromEnum();
+        secteurActiviteService.seedInitial();
         documentRequirementLegacyMigration.migrateIfNeeded();
         // Avant tout seed / création d'entreprise : retire les colonnes NOT NULL obsolètes.
         entrepriseLegacyGroupementMigration.migrateIfNeeded();
@@ -229,6 +231,8 @@ public class DataInitializer implements CommandLineRunner {
                 "Adresse de courriel de contact");
         seedParametre(ParametreService.CONTACT_TELEPHONE, "+222 48 69 89 83",
                 "Numéro de téléphone de contact");
+        seedParametre(ParametreService.DIGITALISATION_DATE_BASCULE, "",
+                "Date de mise en service de la plateforme (AAAA-MM-JJ), frontière avant / après des indicateurs d'impact");
     }
 
     private void seedParametre(String cle, String valeur, String description) {
@@ -762,6 +766,7 @@ public class DataInitializer implements CommandLineRunner {
             demande.setModeleFiscal(modeleFiscal);
             demande.setDqe(dqe);
             demande = demandeCorrectionRepository.save(demande);
+            seedVisasCommission(demande);
 
             dossierGedService.ensureCreatedForDemandeCorrection(demande.getId());
 
@@ -794,6 +799,17 @@ public class DataInitializer implements CommandLineRunner {
     private Utilisateur requireSeedUser(String username) {
         return utilisateurRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalStateException("Utilisateur seed manquant: " + username));
+    }
+
+    /**
+     * Une demande de démonstration créée directement adoptée doit porter les quatre visas comme une
+     * demande instruite : sans eux, sa fiche montrait la DGD « en attente de décision » (anomalie A11).
+     */
+    private void seedVisasCommission(DemandeCorrection demande) {
+        seedCorrectionVisaDecision(demande, Role.DGD, "dgd");
+        seedCorrectionVisaDecision(demande, Role.DGTCP, "dgtcp");
+        seedCorrectionVisaDecision(demande, Role.DGI, "dgi");
+        seedCorrectionVisaDecision(demande, Role.DGB, "dgb");
     }
 
     private void seedCorrectionVisaDecision(DemandeCorrection demande, Role role, String username) {
@@ -1041,6 +1057,7 @@ public class DataInitializer implements CommandLineRunner {
         demande.setModeleFiscal(modeleFiscal);
         demande.setDqe(dqe);
         demande = demandeCorrectionRepository.save(demande);
+        seedVisasCommission(demande);
         dossierGedService.ensureCreatedForDemandeCorrection(demande.getId());
         marche.setDemandeCorrection(demande);
         marche = marcheRepository.save(marche);
@@ -1643,6 +1660,12 @@ public class DataInitializer implements CommandLineRunner {
         createPermission("delegue.disable", "Activer/désactiver un délégué");
 
         createPermission("reporting.view", "Consulter les tableaux de bord et statistiques agrégées");
+        createPermission("referentiel.secteur.manage", "Gérer le référentiel des secteurs d'activité");
+        createPermission("feedback.submit", "Donner son avis et répondre aux enquêtes de satisfaction");
+        createPermission("feedback.enquete.manage", "Concevoir, publier et relancer les enquêtes de satisfaction");
+        createPermission("feedback.dashboard.view", "Consulter le tableau de bord de la satisfaction des usagers");
+        createPermission("reporting.reference.manage",
+                "Saisir les valeurs de référence d'avant la digitalisation (indicateurs d'impact)");
 
         createPermission("commission.relais.list.entreprises", "Commission relais : lister les entreprises (choix d’impersonation)");
         createPermission("commission.relais.list.autorites", "Commission relais : lister les autorités contractantes");
@@ -2021,6 +2044,14 @@ public class DataInitializer implements CommandLineRunner {
                 "referentiel.taxe.manage"
         );
 
+    assign(Role.ADMIN_SI, "reporting.reference.manage", "referentiel.secteur.manage",
+            "feedback.enquete.manage", "feedback.dashboard.view");
+    // Tout usager donne son avis ; l'administrateur SI exploite la plateforme, il n'en est pas l'usager.
+    for (Role role : Role.values()) {
+        if (role != Role.ADMIN_SI && role != Role.COMMISSION_RELAIS) {
+            assign(role, "feedback.submit");
+        }
+    }
     assign(Role.ADMIN_SI,
         // Gestion des conventions, de leurs autorités et bailleurs, et des marchés (équipe, octobre 2026).
         "convention.update",
@@ -2111,17 +2142,20 @@ public class DataInitializer implements CommandLineRunner {
     /**
      * Référentiels métier (entreprise, convention, marché, projet) : lecture partagée pour tous les rôles.
      * Les autorités contractantes sont déjà lisibles via {@code GET /api/autorites-contractantes} (authentifié).
+     *
+     * <p>Sauf les conventions et les projets pour l'entreprise et le sous-traitant : ils ne lisent
+     * que ceux de leurs propres dossiers ({@code convention.view} / {@code projet.view}, périmètre
+     * appliqué par le service). Décision de la Commission sur l'anomalie A30 ; le retrait sur les
+     * bases existantes est fait par {@code PermissionsRevoqueesMigration}.
      */
     private void seedReferentielReadPermissions() {
-        String[] readReferentiel = {
-                "entreprise.list",
-                "groupement.list",
-                "convention.view.all",
-                "marche.view",
-                "projet.view.all"
-        };
         for (Role role : Role.values()) {
-            assign(role, readReferentiel);
+            assign(role, "entreprise.list", "groupement.list", "marche.view");
+            if (role == Role.ENTREPRISE || role == Role.SOUS_TRAITANT) {
+                assign(role, "convention.view", "projet.view");
+            } else {
+                assign(role, "convention.view.all", "projet.view.all");
+            }
         }
     }
 
@@ -2153,8 +2187,16 @@ private void assign(Role role, String... permissionCodes) {
     }
 }
 
+/**
+ * Toutes les permissions, sauf les suppléances de l'administrateur ({@code *admin_override}) : les
+ * services les réservent à l'ADMIN_SI, et le Président voyait des boutons « à la place de » qui
+ * aboutissaient en 403 (anomalie A45).
+ */
 private void assignAllPermissions(Role role) {
     for (Permission permission : permissionRepository.findAll()) {
+        if (PermissionsRevoqueesMigration.estSuppleanceAdministrateur(permission.getCode())) {
+            continue;
+        }
         rolePermissionRepository.findByRoleAndPermission(role, permission)
                 .orElseGet(() -> rolePermissionRepository.save(RolePermission.builder()
                         .role(role)

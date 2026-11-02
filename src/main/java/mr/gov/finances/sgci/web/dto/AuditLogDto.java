@@ -21,6 +21,8 @@ public class AuditLogDto {
     private AuditAction action;
     private String entityType;
     private String entityId;
+    /** Référence lisible du dossier (DC-…, CR-…, AV-…), {@code null} si le type n'en a pas. */
+    private String entityReference;
     private String objectSnapshot;
     private String motif;
 }

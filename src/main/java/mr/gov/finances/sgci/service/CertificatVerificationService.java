@@ -51,6 +51,7 @@ public class CertificatVerificationService {
         }
 
         return certificatCreditRepository.findByNumero(numero)
+                .or(() -> certificatCreditRepository.findByReference(numero))
                 .map(this::buildFound)
                 .orElseGet(() -> buildNotFound(numero));
     }

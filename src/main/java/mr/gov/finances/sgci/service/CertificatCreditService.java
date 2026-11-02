@@ -354,6 +354,7 @@ public class CertificatCreditService {
                 .intitule(marche.getIntitule())
                 .dateSignature(marche.getDateSignature())
                 .montantContratHt(marche.getMontantContratHt())
+                .montantContratTtc(marche.getMontantContratTtc())
                 .statut(marche.getStatut())
                 .build();
     }
@@ -554,6 +555,11 @@ public class CertificatCreditService {
                 : request.getMontantCordon();
         BigDecimal soldeCordon = request.getSoldeCordon() != null ? request.getSoldeCordon() : defaultSolde;
         BigDecimal soldeTVA = request.getSoldeTVA() != null ? request.getSoldeTVA() : request.getMontantTVAInterieure();
+        // Même règle que la demande de correction : sans ses pièces obligatoires, la mise en place
+        // reste en brouillon, et la soumission les vérifie (anomalies A31 et A42).
+        if (!brouillon && requirementValidator.exigeDesPiecesAuDepot(ProcessusDocument.MISE_EN_PLACE_CI)) {
+            brouillon = true;
+        }
         StatutCertificat initialStatut = brouillon ? StatutCertificat.BROUILLON : StatutCertificat.ENVOYEE;
         CertificatCredit entity = CertificatCredit.builder()
                 .numero(numero)
@@ -611,6 +617,8 @@ public class CertificatCreditService {
             assertAtMostOneActiveCertificatPourDemande(entity.getDemandeCorrection().getId(), entity.getId());
         }
         assertMiseEnPlaceTrigger(entity.getLettreCorrection(), entity.getDemandeCorrection());
+        requirementValidator.assertPiecesDepotPresentes(ProcessusDocument.MISE_EN_PLACE_CI,
+                documentService.findActiveDocumentTypes(entity.getId()));
         workflow.validateTransition(StatutCertificat.BROUILLON, StatutCertificat.ENVOYEE);
         entity.setStatut(StatutCertificat.ENVOYEE);
         entity = repository.save(entity);
@@ -1442,9 +1450,9 @@ public class CertificatCreditService {
         Entreprise e = c.getEntreprise();
         Long demandeCorrectionId = c.getDemandeCorrection() != null ? c.getDemandeCorrection().getId() : null;
         AutoriteContractante autorite = c.getDemandeCorrection() != null ? c.getDemandeCorrection().getAutoriteContractante() : null;
-        Long marcheId = c.getDemandeCorrection() != null && c.getDemandeCorrection().getMarche() != null
-                ? c.getDemandeCorrection().getMarche().getId()
-                : null;
+        mr.gov.finances.sgci.domain.entity.Marche marche = c.getDemandeCorrection() != null
+                ? c.getDemandeCorrection().getMarche() : null;
+        Long marcheId = marche != null ? marche.getId() : null;
         BigDecimal bRec = c.getDroitsEtTaxesDouaneHorsTva();
         BigDecimal dPourRecap = resolveTvaImportationDouanePourRecap(c);
         BigDecimal dRestant = c.getTvaImportationDouane();
@@ -1487,9 +1495,16 @@ public class CertificatCreditService {
                 .entrepriseId(e != null ? e.getId() : null)
                 .entrepriseRaisonSociale(e != null ? e.getRaisonSociale() : null)
                 .demandeCorrectionId(demandeCorrectionId)
+                .demandeCorrectionReference(c.getDemandeCorrection() != null
+                        ? (c.getDemandeCorrection().getReference() != null
+                                ? c.getDemandeCorrection().getReference() : c.getDemandeCorrection().getNumero())
+                        : null)
                 .equipementsPresents(c.getDemandeCorrection() != null
                         ? c.getDemandeCorrection().getEquipementsPresents() : null)
                 .marcheId(marcheId)
+                .marcheNumero(marche != null ? marche.getNumeroMarche() : null)
+                .marcheReference(marche != null ? marche.getReference() : null)
+                .marcheIntitule(marche != null ? marche.getIntitule() : null)
                 .autoriteContractanteNom(autorite != null ? autorite.getNom() : null)
                 .autoriteContractanteMinistereTutelleNom(autorite != null ? autorite.getMinistereTutelleNom() : null)
                 .autoriteContractanteMinistereTutelleCode(autorite != null ? autorite.getMinistereTutelleCode() : null)

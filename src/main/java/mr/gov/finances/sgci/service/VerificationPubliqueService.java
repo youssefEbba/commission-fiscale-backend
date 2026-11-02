@@ -60,7 +60,9 @@ public class VerificationPubliqueService {
         if (utilisation.isPresent()) {
             return depuisUtilisation(utilisation.get(), code);
         }
+        // La référence CR-… est celle que l'entreprise connaît ; le numéro technique reste accepté (A14).
         return certificatCreditRepository.findByNumero(code)
+                .or(() -> certificatCreditRepository.findByReference(code))
                 .map(c -> depuisCertificat(c, code))
                 .orElseGet(() -> introuvable(code));
     }

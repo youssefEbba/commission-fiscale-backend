@@ -14,5 +14,8 @@ public enum Granularite {
 
     MOIS,
 
-    TRIMESTRE
+    TRIMESTRE,
+
+    /** Année civile : l'année fiscale du suivi des bénéficiaires et de l'évolution des montants. */
+    ANNEE
 }

@@ -27,26 +27,28 @@ public class ReferentielProjetController {
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('projet.view', 'projet.view.all')")
-    public List<ReferentielProjetDto> getAll() {
-        return service.findAll();
+    public List<ReferentielProjetDto> getAll(@AuthenticationPrincipal AuthenticatedUser user) {
+        return service.findAll(user);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('projet.view', 'projet.view.all')")
-    public ReferentielProjetDto getById(@PathVariable Long id) {
-        return service.findById(id);
+    public ReferentielProjetDto getById(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.findById(id, user);
     }
 
     @GetMapping("/by-autorite/{autoriteId}")
     @PreAuthorize("hasAnyAuthority('projet.view', 'projet.view.all')")
-    public List<ReferentielProjetDto> getByAutorite(@PathVariable Long autoriteId) {
-        return service.findByAutoriteContractante(autoriteId);
+    public List<ReferentielProjetDto> getByAutorite(@PathVariable Long autoriteId,
+                                                    @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.findByAutoriteContractante(autoriteId, user);
     }
 
     @GetMapping("/by-statut")
     @PreAuthorize("hasAnyAuthority('projet.view', 'projet.view.all')")
-    public List<ReferentielProjetDto> getByStatut(@RequestParam StatutReferentielProjet statut) {
-        return service.findByStatut(statut);
+    public List<ReferentielProjetDto> getByStatut(@RequestParam StatutReferentielProjet statut,
+                                                  @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.findByStatut(statut, user);
     }
 
     @PostMapping
@@ -73,7 +75,8 @@ public class ReferentielProjetController {
 
     @GetMapping("/{id}/documents")
     @PreAuthorize("hasAnyAuthority('projet.view', 'projet.view.all')")
-    public List<DocumentProjetDto> getDocuments(@PathVariable Long id) {
+    public List<DocumentProjetDto> getDocuments(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
+        service.findById(id, user);
         return service.findDocuments(id);
     }
 

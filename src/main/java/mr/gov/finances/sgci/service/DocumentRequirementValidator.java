@@ -2,6 +2,7 @@ package mr.gov.finances.sgci.service;
 
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.document.DocumentCodeValidator;
+import mr.gov.finances.sgci.domain.document.DocumentDepotPolicy;
 import mr.gov.finances.sgci.domain.entity.DocumentRequirement;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.TypeFichierAutorise;
@@ -135,6 +136,47 @@ public class DocumentRequirementValidator {
         if (!missing.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Documents obligatoires manquants: " + missing, missing);
         }
+    }
+
+    /**
+     * Vrai si le référentiel exige au moins une pièce que le demandeur apporte lui-même. Une
+     * création « directe » (sans brouillon) ne peut pas encore porter ses pièces : elle part alors
+     * en brouillon, et la soumission vérifie les pièces (anomalies A16 et A31).
+     */
+    @Transactional(readOnly = true)
+    public boolean exigeDesPiecesAuDepot(ProcessusDocument processus) {
+        return !piecesDepotManquantes(processus, List.of()).isEmpty();
+    }
+
+    /**
+     * Contrôle à la soumission : les pièces obligatoires que le demandeur apporte sont toutes
+     * présentes. Les pièces produites en cours de circuit (hors dépôt) ne sont pas réclamées.
+     */
+    @Transactional(readOnly = true)
+    public void assertPiecesDepotPresentes(ProcessusDocument processus, Collection<String> presentActiveCodes) {
+        List<String> missing = piecesDepotManquantes(processus, presentActiveCodes);
+        if (!missing.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                    "Documents obligatoires manquants: " + missing, missing);
+        }
+    }
+
+    private List<String> piecesDepotManquantes(ProcessusDocument processus, Collection<String> presentActiveCodes) {
+        if (processus == null) {
+            return List.of();
+        }
+        Set<String> present = presentActiveCodes == null ? Set.of() : presentActiveCodes.stream()
+                .map(DocumentCodeValidator::normalize)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        return requirementRepository.findByProcessusOrderByOrdreAffichageAsc(processus).stream()
+                .filter(DocumentRequirement::estUtilisable)
+                .filter(r -> Boolean.TRUE.equals(r.getObligatoire()))
+                .map(DocumentRequirement::getCodeDocument)
+                .filter(c -> DocumentDepotPolicy.deposableParLeDemandeur(processus, c))
+                .filter(c -> !present.contains(c))
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     private TypeFichierAutorise resolveTypeFichierAutorise(MultipartFile file) {

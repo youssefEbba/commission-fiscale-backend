@@ -9,6 +9,20 @@ import mr.gov.finances.sgci.domain.enums.Granularite;
 import mr.gov.finances.sgci.service.reporting.AFermerService;
 import mr.gov.finances.sgci.service.reporting.BlocagesService;
 import mr.gov.finances.sgci.service.reporting.EngagementEtatService;
+import mr.gov.finances.sgci.service.reporting.IndicateursImpactService;
+import mr.gov.finances.sgci.service.reporting.BeneficiairesService;
+import mr.gov.finances.sgci.web.dto.reporting.BeneficiairesDto;
+import mr.gov.finances.sgci.service.reporting.ValeurReferenceService;
+import mr.gov.finances.sgci.domain.enums.IndicateurReference;
+import mr.gov.finances.sgci.web.dto.reporting.IndicateursImpactDto;
+import mr.gov.finances.sgci.web.dto.reporting.ValeurReferenceDto;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import mr.gov.finances.sgci.service.reporting.ProductionPeriodeService;
 import mr.gov.finances.sgci.service.reporting.ReportingDossierService;
 import mr.gov.finances.sgci.service.reporting.export.CsvReportWriter;
@@ -53,6 +67,9 @@ public class ReportingController {
     private final AFermerService aFermerService;
     private final ProductionPeriodeService productionPeriodeService;
     private final ReportingDossierService reportingDossierService;
+    private final IndicateursImpactService indicateursImpactService;
+    private final BeneficiairesService beneficiairesService;
+    private final ValeurReferenceService valeurReferenceService;
     private final XlsxReportWriter xlsxReportWriter;
     private final CsvReportWriter csvReportWriter;
     private final PdfReportWriter pdfReportWriter;
@@ -254,6 +271,63 @@ public class ReportingController {
                 user, from, to, autoriteContractanteId, entrepriseId, blocs);
         return fichier(nom("pdf"), "application/pdf",
                 sortie -> pdfReportWriter.ecrire(dossier, sortie));
+    }
+
+    /**
+     * Les indicateurs d'impact de la digitalisation : volumes et taux par processus, délais par
+     * phase, montants, utilisation effective des crédits et comparaison avant / après la bascule.
+     * Mêmes filtres et même périmètre que les autres blocs du reporting.
+     */
+    @GetMapping("/impact")
+    @PreAuthorize("hasAuthority('reporting.view')")
+    public IndicateursImpactDto impact(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(required = false) Long autoriteContractanteId,
+            @RequestParam(required = false) Long entrepriseId
+    ) {
+        return indicateursImpactService.indicateurs(user, from, to, autoriteContractanteId, entrepriseId);
+    }
+
+    /**
+     * Les bénéficiaires des crédits d'impôt : nombre, nature (nationale / étrangère, PME / grande
+     * entreprise), secteurs, origine du financement et évolution par année fiscale. Sans borne de
+     * date, tout l'historique est couvert.
+     */
+    @GetMapping("/beneficiaires")
+    @PreAuthorize("hasAuthority('reporting.view')")
+    public BeneficiairesDto beneficiaires(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(required = false) Long autoriteContractanteId,
+            @RequestParam(required = false) Long entrepriseId
+    ) {
+        return beneficiairesService.beneficiaires(user, from, to, autoriteContractanteId, entrepriseId);
+    }
+
+    /** Les valeurs d'avant la digitalisation, saisies ou à saisir, une par indicateur. */
+    @GetMapping("/references")
+    @PreAuthorize("hasAnyAuthority('reporting.view', 'reporting.reference.manage')")
+    public List<ValeurReferenceDto> references() {
+        return valeurReferenceService.lister();
+    }
+
+    @PutMapping("/references")
+    @PreAuthorize("hasAuthority('reporting.reference.manage')")
+    public ValeurReferenceDto enregistrerReference(
+            @Valid @RequestBody ValeurReferenceDto request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return valeurReferenceService.enregistrer(request, user);
+    }
+
+    @DeleteMapping("/references/{code}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAuthority('reporting.reference.manage')")
+    public void supprimerReference(@PathVariable IndicateurReference code) {
+        valeurReferenceService.supprimer(code);
     }
 
     private static String nom(String extension) {

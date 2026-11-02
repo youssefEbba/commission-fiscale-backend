@@ -9,6 +9,7 @@ import mr.gov.finances.sgci.domain.entity.ClotureCredit;
 import mr.gov.finances.sgci.domain.entity.TvaDeductibleStock;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.MotifCloture;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
@@ -107,6 +108,7 @@ public class ClotureCreditService {
                     : "Certificat non éligible à la clôture";
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, detail);
         }
+        assertMotifCompatible(request.getMotif(), evaluation);
 
         ClotureCredit existing = clotureCreditRepository.findByCertificatCreditId(c.getId()).orElse(null);
         if (existing != null && existing.getDateCloture() != null) {
@@ -269,6 +271,33 @@ public class ClotureCreditService {
         return cc == null || cc.getDateCloture() == null;
     }
 
+    /**
+     * Le motif choisi fixe ce que le crédit doit remplir : un solde à zéro pour SOLDE_ZERO, une
+     * validité dépassée pour EXPIRATION_VALIDITE. La réception définitive et la renonciation
+     * s'appliquent à tout crédit ouvert sans opération en cours ; le solde restant est alors
+     * consigné dans la proposition.
+     */
+    private static void assertMotifCompatible(MotifCloture motif, CertificatClotureQueueItemDto evaluation) {
+        if (motif == MotifCloture.SOLDE_ZERO && !evaluation.isSoldesEpuises()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Motif « solde à zéro » impossible : " + String.join(" ; ", evaluation.getSoldesRestants()));
+        }
+        if (motif == MotifCloture.EXPIRATION_VALIDITE && !evaluation.isValiditeDepassee()) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Motif « expiration de validité » impossible : la date de validité du crédit n'est pas dépassée");
+        }
+    }
+
+    /**
+     * Évaluation d'un crédit pour la clôture.
+     *
+     * <p>Seules les opérations en cours (proposition, utilisation, transfert) empêchent de proposer
+     * une clôture. Jusqu'au 02/11/2026 un solde restant le faisait aussi : la liste du formulaire
+     * était vide dès qu'aucun crédit n'avait un solde nul ou une validité dépassée, alors que la
+     * réception définitive et la renonciation valent pour tout crédit ouvert (anomalie A24). Les
+     * soldes restants sont désormais rapportés à part, et {@code detecteAutomatiquement} signale les
+     * crédits que rien ne retient plus (soldes épuisés ou validité dépassée).
+     */
     private CertificatClotureQueueItemDto toQueueItem(CertificatCredit c) {
         BigDecimal soldeCordon = nz(c.getSoldeCordon());
         BigDecimal soldeTva = nz(c.getSoldeTVA());
@@ -293,31 +322,35 @@ public class ClotureCreditService {
             motifs.add("Demande de transfert de crédit en cours");
         }
 
-        boolean soldeZero = soldeCordon.compareTo(BigDecimal.ZERO) == 0 && soldeTva.compareTo(BigDecimal.ZERO) == 0;
         boolean expire = c.getDateValidite() != null && c.getDateValidite().isBefore(Instant.now());
 
-        if (!soldeZero && !expire) {
-            if (soldeCordon.compareTo(BigDecimal.ZERO) > 0) {
-                motifs.add("Solde cordon (e) restant : " + soldeCordon + " MRU");
-            }
-            if (soldeTva.compareTo(BigDecimal.ZERO) > 0) {
-                motifs.add("Solde TVA intérieure (h) restant : " + soldeTva + " MRU");
-            }
+        List<String> soldesRestants = new ArrayList<>();
+        if (soldeCordon.compareTo(BigDecimal.ZERO) > 0) {
+            soldesRestants.add("Solde cordon (e) restant : " + soldeCordon + " MRU");
+        }
+        if (soldeTva.compareTo(BigDecimal.ZERO) > 0) {
+            soldesRestants.add("Solde TVA intérieure (h) restant : " + soldeTva + " MRU");
         }
         if (tvaImport.compareTo(BigDecimal.ZERO) > 0) {
-            motifs.add("TVA importation (d) non épuisée : " + tvaImport + " MRU");
+            soldesRestants.add("TVA importation (d) non épuisée : " + tvaImport + " MRU");
         }
         if (stockRestant.compareTo(BigDecimal.ZERO) > 0) {
-            motifs.add("Stock TVA déductible restant : " + stockRestant + " MRU");
+            soldesRestants.add("Stock TVA déductible restant : " + stockRestant + " MRU");
         }
+        boolean soldesEpuises = soldesRestants.isEmpty();
 
-        boolean eligible = motifs.isEmpty() && (soldeZero || expire);
+        boolean eligible = motifs.isEmpty();
 
         String raisonSociale = c.getEntreprise() != null ? c.getEntreprise().getRaisonSociale() : null;
 
         return CertificatClotureQueueItemDto.builder()
                 .certificatCreditId(c.getId())
                 .numero(c.getNumero())
+                .reference(c.getReference())
+                .soldesEpuises(soldesEpuises)
+                .validiteDepassee(expire)
+                .soldesRestants(List.copyOf(soldesRestants))
+                .detecteAutomatiquement(eligible && (soldesEpuises || expire))
                 .statut(c.getStatut())
                 .dateEmission(c.getDateEmission())
                 .dateValidite(c.getDateValidite())

@@ -62,6 +62,13 @@ public class Marche {
     @Column(name = "montant_contrat_ttc", nullable = false, precision = 18, scale = 2)
     private BigDecimal montantContratHt;
 
+    /**
+     * Montant TTC du contrat, facultatif. Colonne distincte : la colonne historique
+     * {@code montant_contrat_ttc} porte le HT.
+     */
+    @Column(name = "montant_ttc", precision = 18, scale = 2)
+    private BigDecimal montantContratTtc;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private StatutMarche statut;

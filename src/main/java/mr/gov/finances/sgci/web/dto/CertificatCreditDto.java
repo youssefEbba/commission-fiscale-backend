@@ -54,6 +54,8 @@ public class CertificatCreditDto {
     private String entrepriseRaisonSociale;
 
     private Long demandeCorrectionId;
+    /** Référence lisible de la demande de correction (DC-…), à afficher au lieu de l'identifiant (A12). */
+    private String demandeCorrectionReference;
 
     /**
      * Report de la déclaration portée par la demande de correction d'origine.
@@ -64,6 +66,10 @@ public class CertificatCreditDto {
      */
     private Boolean equipementsPresents;
     private Long marcheId;
+    /** Numéro, référence et intitulé du marché, pour la liste « Mes crédits » et la fiche (A12, A13). */
+    private String marcheNumero;
+    private String marcheReference;
+    private String marcheIntitule;
 
     private String autoriteContractanteNom;
     /** Nom du ministère de tutelle de l'autorité contractante (affichage en-tête / PDF). */

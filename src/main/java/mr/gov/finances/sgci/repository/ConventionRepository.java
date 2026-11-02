@@ -27,6 +27,19 @@ public interface ConventionRepository extends JpaRepository<Convention, Long> {
      * créatrice renseignée, le champ étant postérieur. Filtrer sur elle seule aurait vidé la liste
      * de toutes les autorités.
      */
+    /**
+     * Les conventions qui concernent une entreprise : celles de ses demandes de correction, comme
+     * titulaire ou membre d'un groupement, et celles des marchés de ces demandes.
+     */
+    @Query("select c.id from Convention c where c.id in ("
+            + "  select dc.convention.id from DemandeCorrection dc left join dc.groupement g left join g.membres gm"
+            + "  where dc.entreprise.id = :entId or gm.id = :entId)"
+            + " or c.id in ("
+            + "  select mc.id from DemandeCorrection dc join dc.marche m join m.conventions mc"
+            + "    left join dc.groupement g left join g.membres gm"
+            + "  where dc.entreprise.id = :entId or gm.id = :entId)")
+    List<Long> findIdsPourEntreprise(@Param("entId") Long entId);
+
     @Query("select distinct c from Convention c left join c.autorites a where c.autoriteContractante.id = :acId "
             + "or c.creeParAutoriteContractante.id = :acId or a.id = :acId")
     List<Convention> findAllPourAutorite(@Param("acId") Long acId);

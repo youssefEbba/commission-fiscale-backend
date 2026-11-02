@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.domain.document.LibellesTypeDocument;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.document.DocumentCodeValidator;
 import mr.gov.finances.sgci.domain.entity.ReferentielTypeDocument;
@@ -128,10 +129,29 @@ public class ReferentielTypeDocumentService {
             }
             repository.save(ReferentielTypeDocument.builder()
                     .code(code)
-                    .libelle(humanizeEnumName(code))
+                    .libelle(LibellesTypeDocument.libelle(code))
                     .actif(true)
                     .systeme(true)
                     .build());
+        }
+        corrigerLibellesDerives();
+    }
+
+    /**
+     * Remplace les libellés encore dérivés du code (« Piece Identite ») par le libellé français
+     * (« Pièce d'identité ») — anomalie A09. Un libellé retouché par l'administrateur n'est jamais
+     * modifié : seul celui que l'amorçage avait produit tel quel est reconnu.
+     */
+    private void corrigerLibellesDerives() {
+        for (TypeDocument type : TypeDocument.values()) {
+            String code = type.name();
+            repository.findById(code).ifPresent(t -> {
+                String attendu = LibellesTypeDocument.libelle(code);
+                if (LibellesTypeDocument.libelleDerive(code).equals(t.getLibelle()) && !attendu.equals(t.getLibelle())) {
+                    t.setLibelle(attendu);
+                    repository.save(t);
+                }
+            });
         }
     }
 
@@ -154,12 +174,6 @@ public class ReferentielTypeDocumentService {
                     "Code document invalide (attendu: A-Z, 0-9, _, 2-64 caractères): " + code);
         }
         return normalized;
-    }
-
-    private static String humanizeEnumName(String code) {
-        return Arrays.stream(code.split("_"))
-                .map(part -> part.length() <= 3 ? part : part.charAt(0) + part.substring(1).toLowerCase())
-                .collect(Collectors.joining(" "));
     }
 
     private ReferentielTypeDocumentDto toDto(ReferentielTypeDocument e) {

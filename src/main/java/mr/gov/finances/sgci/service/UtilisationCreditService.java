@@ -393,6 +393,13 @@ public class UtilisationCreditService {
             }
             entity = repository.save(t);
         }
+        // Sans ses pièces obligatoires, l'utilisation reste en brouillon le temps du dépôt ; la
+        // soumission les vérifie (anomalie A16). Le dossier partait chez la DGTCP et revenait bloqué.
+        if (!brouillon && requirementValidator.exigeDesPiecesAuDepot(resolveProcessus(entity))) {
+            brouillon = true;
+            entity.setStatut(StatutUtilisation.BROUILLON);
+            entity = repository.save(entity);
+        }
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.CREATE, "UtilisationCredit", String.valueOf(entity.getId()), result);
         if (!brouillon) {
@@ -490,6 +497,9 @@ public class UtilisationCreditService {
             assertLignesBulletinAffectationEntrepriseFromEntities(lignes, true);
             eligibilityHelper.assertSoldesDouaneProposesFromEntities(certificat, lignes);
         }
+        // Le contrôle que la DGTCP appliquait au passage en vérification, appliqué dès la
+        // soumission : le dossier ne part plus incomplet (anomalie A16).
+        assertRequiredDocumentsPresent(entity);
         workflow.validateTransition(StatutUtilisation.BROUILLON, StatutUtilisation.DEMANDEE);
         entity.setStatut(StatutUtilisation.DEMANDEE);
         entity = repository.save(entity);
@@ -1559,7 +1569,7 @@ public class UtilisationCreditService {
             trace.put("motif", motif);
             trace.put("roleSubstitue", Role.DGTCP.name());
             trace.put("statut", StatutUtilisation.CLOTUREE.name());
-            auditService.log(AuditAction.ADMIN_CORRECTION, "UtilisationCredit", String.valueOf(id), trace);
+            auditService.log(AuditAction.ADMIN_CORRECTION, "UtilisationCredit", String.valueOf(id), trace, motif);
         } else {
             auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
         }
@@ -1677,11 +1687,13 @@ public class UtilisationCreditService {
      * pièce que l'entreprise présente au Trésor (douane) ou à la DGI (TVA intérieure) pour obtenir
      * sa quittance. Le numéro ({@code CU-nnn/AAAA}) est attribué ici, et une seule fois.
      *
-     * <p><b>Ne pas exiger ici la présence du document {@code CERTIFICAT_UTILISATION}.</b> Le
-     * document doit porter le numéro, donc le numéro le précède nécessairement. Calquer le contrôle
-     * de la lettre d'adoption ({@code DemandeCorrectionService}, qui exige la pièce au moment de
-     * l'adoption) créerait ici une impasse circulaire. La séquence est : émission → composition du
-     * document avec le numéro → dépôt de la pièce signée.
+     * <p>Le document doit porter le numéro, donc le numéro le précède : il est réservé à part
+     * ({@link #reserverNumeroCertificatUtilisation}), sans rien changer au dossier. La séquence est :
+     * réservation du numéro → composition du modèle → dépôt de la pièce signée → émission. Avant le
+     * 02/11/2026 l'émission attribuait le numéro elle-même, et le simple téléchargement du modèle
+     * suffisait à émettre un certificat que personne n'avait signé (anomalie A34). L'émission par le
+     * Président exige donc désormais la pièce signée ; elle est d'ailleurs déclenchée par son dépôt
+     * ({@link #emettreApresDepotCertificatSigne}).
      *
      * <p>Statut résultant : {@link StatutUtilisation#CERTIFICAT_EMIS}, d'où le dossier repart vers
      * {@code ENVOYEE_AU_TRESOR} en douane ou {@code QUITTANCE_DGI_ENREGISTREE} en TVA intérieure.
@@ -1691,7 +1703,67 @@ public class UtilisationCreditService {
         UtilisationCredit entity = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
                         "Utilisation de crédit non trouvée: " + id));
+        if (entity.getStatut() != StatutUtilisation.CERTIFICAT_EMIS) {
+            String code = codeBlocageEmissionCertificat(entity, user, Role.PRESIDENT);
+            if (code != null) {
+                throw exceptionBlocageEmissionCertificat(code, entity, user, Role.PRESIDENT);
+            }
+        }
+        if (entity.getStatut() != StatutUtilisation.CERTIFICAT_EMIS && !certificatSigneDepose(id)) {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                    "Le certificat d'utilisation n'est émis qu'au dépôt du document signé : "
+                            + "téléversez d'abord le certificat signé, ou utilisez la signature automatique");
+        }
         return appliquerEmissionCertificat(entity, user, Role.PRESIDENT);
+    }
+
+    /**
+     * Réserve le numéro du certificat d'utilisation pour composer le modèle à signer, sans changer le
+     * statut du dossier. Idempotent : un second appel rend le même numéro.
+     *
+     * <p>Mêmes portes que l'émission (rôle Président, dossier au statut préalable) : un numéro ne se
+     * consomme pas pour un dossier qui ne pourrait pas être émis.
+     */
+    @Transactional
+    public UtilisationCreditDto reserverNumeroCertificatUtilisation(Long id, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
+                        "Utilisation de crédit non trouvée: " + id));
+        if (entity.getNumeroCertificatUtilisation() != null
+                || entity.getStatut() == StatutUtilisation.CERTIFICAT_EMIS) {
+            return toDto(entity);
+        }
+        String code = codeBlocageEmissionCertificat(entity, user, Role.PRESIDENT);
+        if (code != null) {
+            throw exceptionBlocageEmissionCertificat(code, entity, user, Role.PRESIDENT);
+        }
+        entity.setNumeroCertificatUtilisation(referenceSequenceGenerator
+                .nextSansMois(ReferenceSequenceGenerator.PREFIX_CERTIFICAT_UTILISATION));
+        entity.setDateCertificatUtilisation(Instant.now());
+        entity = repository.save(entity);
+        UtilisationCreditDto result = toDto(entity);
+        auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(entity.getId()), result);
+        return result;
+    }
+
+    /**
+     * Émission déclenchée par le dépôt du certificat signé par le Président. Ne lève rien : la pièce
+     * est déjà enregistrée, et un dossier qui ne peut pas encore être émis (statut, rôle) garde
+     * simplement son document jusqu'à l'émission.
+     */
+    @Transactional
+    public void emettreApresDepotCertificatSigne(Long id, AuthenticatedUser user) {
+        UtilisationCredit entity = repository.findById(id).orElse(null);
+        if (entity == null || entity.getStatut() == StatutUtilisation.CERTIFICAT_EMIS
+                || codeBlocageEmissionCertificat(entity, user, Role.PRESIDENT) != null) {
+            return;
+        }
+        appliquerEmissionCertificat(entity, user, Role.PRESIDENT);
+    }
+
+    private boolean certificatSigneDepose(Long utilisationId) {
+        return documentService.findActiveDocumentTypes(utilisationId)
+                .contains(TypeDocument.CERTIFICAT_UTILISATION.name());
     }
 
     /**
@@ -1732,7 +1804,7 @@ public class UtilisationCreditService {
         trace.put("roleSubstitue", Role.PRESIDENT.name());
         trace.put("numeroCertificatUtilisation", result.getNumeroCertificatUtilisation());
         trace.put("documentDepose", file != null && !file.isEmpty());
-        auditService.log(AuditAction.ADMIN_CORRECTION, "UtilisationCredit", String.valueOf(id), trace);
+        auditService.log(AuditAction.ADMIN_CORRECTION, "UtilisationCredit", String.valueOf(id), trace, motif);
         return result;
     }
 
@@ -2139,6 +2211,7 @@ public class UtilisationCreditService {
                 // Portes par la classe mere : les deux branches ont un certificat d'utilisation.
                 .numeroCertificatUtilisation(u.getNumeroCertificatUtilisation())
                 .dateCertificatUtilisation(u.getDateCertificatUtilisation())
+                .repriseArchive(u.getOrigineArchiveLibelle() != null)
                 .id(u.getId())
                 .reference(u.getReference())
                 .type(u.getType())

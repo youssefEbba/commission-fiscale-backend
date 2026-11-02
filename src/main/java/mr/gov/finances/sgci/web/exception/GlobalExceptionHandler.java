@@ -36,6 +36,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApi(ApiException ex) {
+        // Une erreur serveur (stockage indisponible, par exemple) doit laisser une trace : le reçu
+        // de dépôt manquait sans que rien n'en dise la cause (anomalie A08).
+        if (ex.getStatus() >= 500) {
+            log.error("Erreur {} {} : {}", ex.getStatus(), ex.getCode(), ex.getMessage(), ex.getCause() != null ? ex.getCause() : ex);
+        }
         return body(ErrorResponse.of(ex.getStatus(), ex.getCode(), ex.getMessage(), ex.getDetails()));
     }
 
@@ -295,6 +300,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleAny(Exception ex) {
+        log.error("Erreur interne non traitée", ex);
         return body(ErrorResponse.of(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
                 ApiErrorCode.INTERNAL_ERROR,

@@ -8,7 +8,10 @@ import mr.gov.finances.sgci.domain.entity.UtilisationTVAInterieure;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
+import mr.gov.finances.sgci.domain.entity.DocumentUtilisationCredit;
+import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
+import mr.gov.finances.sgci.repository.DocumentUtilisationCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.UtilisationCreditService;
@@ -56,6 +59,9 @@ class UtilisationCertificatPresidentIT {
     @Autowired
     private CertificatCreditRepository certificatRepository;
 
+    @Autowired
+    private DocumentUtilisationCreditRepository documentRepository;
+
     private AuthenticatedUser president;
     private AuthenticatedUser dgtcp;
     private AuthenticatedUser dgi;
@@ -73,12 +79,81 @@ class UtilisationCertificatPresidentIT {
 
     // ── l'émission, et sa place dans le circuit ────────────────────────────────────────────────
 
+    /**
+     * Le chemin nominal depuis l'anomalie A34 : le numéro est réservé pour composer le modèle, le
+     * certificat signé est déposé, puis l'émission a lieu.
+     */
+    private UtilisationCreditDto emettreSigne(Long utilisationId) {
+        service.reserverNumeroCertificatUtilisation(utilisationId, president);
+        deposerCertificatSigne(utilisationId);
+        return service.emettreCertificatUtilisation(utilisationId, president);
+    }
+
+    private void deposerCertificatSigne(Long utilisationId) {
+        if (documentRepository.findByUtilisationCreditIdAndCodeDocumentAndActifTrue(
+                utilisationId, TypeDocument.CERTIFICAT_UTILISATION.name()).isPresent()) {
+            return;
+        }
+        documentRepository.save(DocumentUtilisationCredit.builder()
+                .codeDocument(TypeDocument.CERTIFICAT_UTILISATION.name())
+                .nomFichier("certificat-signe.pdf")
+                .chemin("local/certificat-signe.pdf")
+                .dateUpload(Instant.now())
+                .taille(10L)
+                .version(1)
+                .actif(true)
+                .utilisationCredit(utilisationRepository.findById(utilisationId).orElseThrow())
+                .build());
+    }
+
+    @Test
+    @Transactional
+    void reserverLeNumero_neChangePasLeStatut() {
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
+
+        UtilisationCreditDto dto = service.reserverNumeroCertificatUtilisation(util.getId(), president);
+        UtilisationCreditDto encore = service.reserverNumeroCertificatUtilisation(util.getId(), president);
+
+        // Télécharger le modèle à signer ne doit rien émettre (anomalie A34).
+        assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
+        assertThat(dto.getNumeroCertificatUtilisation()).matches("^CU-\\d{4}-\\d{4}$");
+        assertThat(encore.getNumeroCertificatUtilisation()).isEqualTo(dto.getNumeroCertificatUtilisation());
+    }
+
+    @Test
+    @Transactional
+    void emissionRefuseeSansCertificatSigne() {
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
+        service.reserverNumeroCertificatUtilisation(util.getId(), president);
+
+        assertThatThrownBy(() -> service.emettreCertificatUtilisation(util.getId(), president))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(409));
+        assertThat(utilisationRepository.findById(util.getId()).orElseThrow().getStatut())
+                .isEqualTo(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
+    }
+
+    @Test
+    @Transactional
+    void leDepotDuCertificatSigneVautEmission() {
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
+        String numero = service.reserverNumeroCertificatUtilisation(util.getId(), president)
+                .getNumeroCertificatUtilisation();
+        deposerCertificatSigne(util.getId());
+
+        service.emettreApresDepotCertificatSigne(util.getId(), president);
+
+        UtilisationCredit apres = utilisationRepository.findById(util.getId()).orElseThrow();
+        assertThat(apres.getStatut()).isEqualTo(StatutUtilisation.CERTIFICAT_EMIS);
+        assertThat(apres.getNumeroCertificatUtilisation()).isEqualTo(numero);
+    }
+
     @Test
     @Transactional
     void douaneChequeSaisi_presidentEmet_numeroAttribueEtStatutCertificatEmis() {
         UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
 
-        UtilisationCreditDto dto = service.emettreCertificatUtilisation(util.getId(), president);
+        UtilisationCreditDto dto = emettreSigne(util.getId());
 
         assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CERTIFICAT_EMIS);
         assertThat(dto.getNumeroCertificatUtilisation()).matches("^CU-\\d{4}-\\d{4}$");
@@ -90,7 +165,7 @@ class UtilisationCertificatPresidentIT {
     void tvaValidee_presidentEmet_avantLaQuittanceDgi() {
         UtilisationTVAInterieure util = tvaAu(StatutUtilisation.VALIDEE);
 
-        UtilisationCreditDto dto = service.emettreCertificatUtilisation(util.getId(), president);
+        UtilisationCreditDto dto = emettreSigne(util.getId());
 
         assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.CERTIFICAT_EMIS);
         assertThat(dto.getNumeroCertificatUtilisation()).matches("^CU-\\d{4}-\\d{4}$");
@@ -117,9 +192,9 @@ class UtilisationCertificatPresidentIT {
     void emissionIdempotente_secondAppelRendLeMemeNumero() {
         UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
 
-        String premier = service.emettreCertificatUtilisation(util.getId(), president)
+        String premier = emettreSigne(util.getId())
                 .getNumeroCertificatUtilisation();
-        String second = service.emettreCertificatUtilisation(util.getId(), president)
+        String second = emettreSigne(util.getId())
                 .getNumeroCertificatUtilisation();
 
         assertThat(second).isEqualTo(premier);
@@ -177,7 +252,7 @@ class UtilisationCertificatPresidentIT {
         util.setNumeroCheque("CHQ-002");
         utilisationRepository.save(util);
 
-        service.emettreCertificatUtilisation(util.getId(), president);
+        emettreSigne(util.getId());
         UtilisationCreditDto dto = service.envoyerAuTresor(util.getId(), dgtcp);
 
         assertThat(dto.getStatut()).isEqualTo(StatutUtilisation.ENVOYEE_AU_TRESOR);
@@ -200,7 +275,7 @@ class UtilisationCertificatPresidentIT {
     @Transactional
     void certificatEmis_puisQuittanceDgiAcceptee() throws Exception {
         UtilisationTVAInterieure util = tvaAu(StatutUtilisation.VALIDEE);
-        service.emettreCertificatUtilisation(util.getId(), president);
+        emettreSigne(util.getId());
 
         // Le justificatif est obligatoire au premier dépôt : c'est la pièce qui atteste le paiement.
         MockMultipartFile justificatif = new MockMultipartFile(

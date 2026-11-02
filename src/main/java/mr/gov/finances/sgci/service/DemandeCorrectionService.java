@@ -264,6 +264,11 @@ public class DemandeCorrectionService {
                 throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Le marché est hors périmètre de l'autorité contractante sélectionnée");
             }
         }
+        // Une demande ne part pas sans ses pièces obligatoires : créée sans brouillon alors que le
+        // référentiel en exige, elle reste en brouillon le temps du dépôt (anomalie A31).
+        if (!brouillon && requirementValidator.exigeDesPiecesAuDepot(ProcessusDocument.CORRECTION_OFFRE_FISCALE)) {
+            brouillon = true;
+        }
         StatutDemande initial = brouillon ? StatutDemande.BROUILLON : StatutDemande.RECUE;
         DemandeCorrection entity = DemandeCorrection.builder()
                 .numero(generateNumero())
@@ -421,6 +426,8 @@ public class DemandeCorrectionService {
                     "Soumission réservée aux demandes en brouillon (statut actuel: " + entity.getStatut() + ")");
         }
         assertSoumissionCorrectionPret(entity);
+        requirementValidator.assertPiecesDepotPresentes(ProcessusDocument.CORRECTION_OFFRE_FISCALE,
+                documentService.findActiveDocumentTypes(entity.getId()));
         workflow.validateTransition(StatutDemande.BROUILLON, StatutDemande.RECUE);
         entity.setStatut(StatutDemande.RECUE);
         entity = demandeRepository.save(entity);

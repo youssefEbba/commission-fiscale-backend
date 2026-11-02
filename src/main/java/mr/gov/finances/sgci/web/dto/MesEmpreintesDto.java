@@ -34,4 +34,10 @@ public class MesEmpreintesDto {
 
     /** {@code true} si le cachet résolu est l'empreinte générique du rôle, pas une empreinte personnelle. */
     private boolean cachetGeneriqueDuRole;
+
+    /**
+     * {@code true} si une empreinte est enregistrée mais que son image n'a pas pu être lue (stockage
+     * des documents indisponible) : ce n'est pas une empreinte manquante, et l'écran doit le dire.
+     */
+    private boolean contenuIndisponible;
 }

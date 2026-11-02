@@ -1,6 +1,7 @@
 package mr.gov.finances.sgci.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import mr.gov.finances.sgci.domain.entity.Signature;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
@@ -30,6 +31,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SignatureService {
@@ -130,10 +132,26 @@ public class SignatureService {
                 .cachet(cachet.map(this::toDto).orElse(null))
                 .cachetGeneriqueDuRole(cachet.isPresent() && cachet.get().getUtilisateur() == null);
         if (withContent) {
-            b.signatureDataUrl(signature.map(this::dataUrl).orElse(null))
-                    .cachetDataUrl(cachet.map(this::dataUrl).orElse(null));
+            // Une image illisible (stockage indisponible) ne doit pas faire échouer tout l'appel :
+            // le front concluait alors à des empreintes « manquantes » alors qu'elles sont
+            // enregistrées (anomalie A35). On rend les métadonnées et on dit ce qui manque vraiment.
+            String signatureUrl = signature.map(this::dataUrlOuNull).orElse(null);
+            String cachetUrl = cachet.map(this::dataUrlOuNull).orElse(null);
+            b.signatureDataUrl(signatureUrl)
+                    .cachetDataUrl(cachetUrl)
+                    .contenuIndisponible((signature.isPresent() && signatureUrl == null)
+                            || (cachet.isPresent() && cachetUrl == null));
         }
         return b.build();
+    }
+
+    private String dataUrlOuNull(Signature entity) {
+        try {
+            return dataUrl(entity);
+        } catch (RuntimeException e) {
+            log.warn("Empreinte {} illisible dans le stockage : {}", entity.getId(), e.getMessage());
+            return null;
+        }
     }
 
     /**

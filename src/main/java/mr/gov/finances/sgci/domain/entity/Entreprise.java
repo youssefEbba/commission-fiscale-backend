@@ -2,6 +2,7 @@ package mr.gov.finances.sgci.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import mr.gov.finances.sgci.domain.enums.CategorieEntreprise;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +47,17 @@ public class Entreprise {
 
     /** Numéro de registre de commerce étranger (obligatoire pour une entreprise étrangère sans NIF local). */
     private String registreCommerceEtranger;
+
+    /** PME ou grande entreprise ; {@code NON_RENSEIGNEE} tant que l'administration ne l'a pas saisie. */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    @Builder.Default
+    private CategorieEntreprise categorie = CategorieEntreprise.NON_RENSEIGNEE;
+
+    /** Secteur d'activité, choisi dans le référentiel ({@code activite} reste le libellé libre). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "secteur_activite_id")
+    private SecteurActivite secteur;
 
     @OneToMany(mappedBy = "entreprise", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

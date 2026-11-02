@@ -12,7 +12,7 @@ SPRING_PROFILES_ACTIVE=prod
 APP_JWT_SECRET=
 
 # [obligatoire] Base MySQL
-SPRING_DATASOURCE_URL=jdbc:mysql://HOTE:3306/sgci_db_n?serverTimezone=UTC&useSSL=true
+SPRING_DATASOURCE_URL=jdbc:mysql://HOTE:3306/sgci-new?serverTimezone=UTC&useSSL=true
 SPRING_DATASOURCE_USERNAME=
 SPRING_DATASOURCE_PASSWORD=
 
