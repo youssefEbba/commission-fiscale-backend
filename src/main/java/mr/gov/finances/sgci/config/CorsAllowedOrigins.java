@@ -35,6 +35,7 @@ public final class CorsAllowedOrigins {
             "https://commission-fiscale.lovable.app",
             "https://e6b3-197-231-5-85.ngrok-free.app",
             "http://localhost:8081",
+            "https://cftest2.lovable.app",
             "http://127.0.0.1:8081",
             "http://localhost:5173",
             "http://127.0.0.1:5173",

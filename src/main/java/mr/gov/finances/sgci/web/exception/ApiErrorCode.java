@@ -20,6 +20,8 @@ public final class ApiErrorCode {
     public static final String INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
     public static final String FILE_TOO_LARGE = "FILE_TOO_LARGE";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
+    /** Route appelée avec une méthode HTTP qu'elle n'accepte pas (HTTP 405). */
+    public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
     public static final String STORAGE_UPLOAD_FAILED = "STORAGE_UPLOAD_FAILED";
     /** MinIO / S3 indisponible ou mal configuré (HTTP 503). */
     public static final String OBJECT_STORAGE_UNAVAILABLE = "OBJECT_STORAGE_UNAVAILABLE";

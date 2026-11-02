@@ -10,6 +10,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.servlet.NoHandlerFoundException;
@@ -266,6 +267,29 @@ public class GlobalExceptionHandler {
                 HttpStatus.NOT_FOUND.value(),
                 ApiErrorCode.RESOURCE_NOT_FOUND,
                 "Route inconnue",
+                null));
+    }
+
+    /**
+     * Une route appelée avec la mauvaise méthode rend 405, et non 500.
+     *
+     * <p>Constaté en recette : le front envoyait POST sur une route PATCH, et l'écran ne recevait
+     * qu'une « Erreur interne ». Le message donne les méthodes acceptées, pour que l'appel se
+     * corrige du premier coup.
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodeNonAutorisee(HttpRequestMethodNotSupportedException ex) {
+        String acceptees = ex.getSupportedHttpMethods() == null ? ""
+                : ex.getSupportedHttpMethods().stream().map(Object::toString).sorted().collect(Collectors.joining(", "));
+        ResponseEntity.BodyBuilder reponse = ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED);
+        if (ex.getSupportedHttpMethods() != null) {
+            reponse.allow(ex.getSupportedHttpMethods().toArray(new org.springframework.http.HttpMethod[0]));
+        }
+        return reponse.body(ErrorResponse.of(
+                HttpStatus.METHOD_NOT_ALLOWED.value(),
+                ApiErrorCode.METHOD_NOT_ALLOWED,
+                "Méthode " + ex.getMethod() + " non acceptée sur cette route"
+                        + (acceptees.isEmpty() ? "" : " (acceptées : " + acceptees + ")"),
                 null));
     }
 
