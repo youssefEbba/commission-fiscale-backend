@@ -1,6 +1,5 @@
 package mr.gov.finances.sgci.web.dto;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
@@ -35,8 +34,16 @@ public class UpdateMarcheRequest {
 
     @NotNull(message = "Le montant HT est obligatoire")
     @JsonProperty("montantContratHt")
-    @JsonAlias("montantContratTtc")
     private BigDecimal montantContratHt;
+
+    /**
+     * Montant TTC, facultatif. Jusqu'au 02/11/2026 ce nom était un alias de {@code montantContratHt} :
+     * un formulaire qui envoyait les deux voyait le TTC écraser le HT (anomalie A41).
+     */
+    private BigDecimal montantContratTtc;
+
+    /** Durée d'exécution en texte libre ; absente, la durée enregistrée est gardée. */
+    private String dureeExecution;
 
     /** Fourniture, prestation ou travaux. Optionnel : rien ne permet de le déduire. */
     private TypeMarche typeMarche;

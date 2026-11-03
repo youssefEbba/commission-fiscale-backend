@@ -18,6 +18,7 @@ public class NotificationNavigationHelper {
             case "CertificatCredit" -> entityId != null ? "/dashboard/certificats/" + entityId : null;
             case "UtilisationCredit" -> entityId != null ? "/dashboard/utilisations/" + entityId : null;
             case "TransfertCredit" -> entityId != null ? "/dashboard/transferts/" + entityId : null;
+            case "EnqueteSatisfaction" -> entityId != null ? "/dashboard/satisfaction/enquetes/" + entityId : null;
             case "ClotureCredit" -> certificatCreditId != null
                     ? "/dashboard/certificats/" + certificatCreditId
                     : null;

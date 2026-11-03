@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.web.dto;
 
+import jakarta.validation.constraints.DecimalMin;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,13 +21,21 @@ import java.time.Instant;
 public class AdminCorrectionCertificatRequest {
 
     private Instant dateValidite;
+    @DecimalMin("0")
     private BigDecimal montantCordon;
+    @DecimalMin("0")
     private BigDecimal montantTVAInterieure;
+    @DecimalMin("0")
     private BigDecimal valeurDouaneFournitures;
+    @DecimalMin("0")
     private BigDecimal droitsEtTaxesDouaneHorsTva;
     /** (c) Taxes de consommation — part du crédit douanier hors TVA, facultative. */
+    @DecimalMin("0")
     private BigDecimal taxesConsommation;
+    @DecimalMin("0")
     private BigDecimal tvaImportationDouane;
+    @DecimalMin("0")
     private BigDecimal montantMarcheHt;
+    @DecimalMin("0")
     private BigDecimal tvaCollecteeTravaux;
 }

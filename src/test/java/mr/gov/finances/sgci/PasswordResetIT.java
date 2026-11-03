@@ -5,6 +5,7 @@ import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.StatutDemandeResetPassword;
 import mr.gov.finances.sgci.repository.DemandeResetPasswordRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,11 +48,29 @@ class PasswordResetIT {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    /** E-mail d'origine du compte partagé « entreprise », rendu après chaque test. */
+    private String emailDOrigine;
+
     @BeforeEach
     void ensureEntrepriseEmail() {
         Utilisateur entreprise = utilisateurRepository.findByUsername("entreprise").orElseThrow();
+        emailDOrigine = entreprise.getEmail();
         entreprise.setEmail(TEST_EMAIL);
         utilisateurRepository.save(entreprise);
+        demandeResetPasswordRepository.deleteAll();
+    }
+
+    /**
+     * Le compte « entreprise » est partagé par toute la suite, qui s'y connecte avec 123456 : une
+     * réinitialisation approuvée lui donne un mot de passe temporaire, qu'il faut lui reprendre.
+     */
+    @AfterEach
+    void rendreLeCompteEntreprise() {
+        utilisateurRepository.findByUsername("entreprise").ifPresent(u -> {
+            u.setEmail(emailDOrigine);
+            u.setPasswordHash(passwordEncoder.encode("123456"));
+            utilisateurRepository.save(u);
+        });
         demandeResetPasswordRepository.deleteAll();
     }
 
@@ -91,13 +110,14 @@ class PasswordResetIT {
     }
 
     @Test
-    void checkEmail_unknown_returnsFalse() {
+    void checkEmail_unknown_neRevelePasLAbsenceDeCompte() {
+        // Revue de sécurité : la route est publique, sa réponse ne doit pas distinguer une adresse inconnue.
         ResponseEntity<Map> resp = restTemplate.postForEntity(
                 baseUrl() + "/api/auth/password-reset/check-email",
                 jsonEntity(Map.of("email", "nobody@test.local"), null),
                 Map.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(resp.getBody()).containsEntry("exists", false);
+        assertThat(resp.getBody()).containsEntry("exists", true);
     }
 
     @Test

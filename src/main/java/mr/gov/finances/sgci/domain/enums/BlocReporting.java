@@ -13,5 +13,14 @@ public enum BlocReporting {
 
     A_FERMER,
 
-    PRODUCTION
+    PRODUCTION,
+
+    /** Indicateurs d'impact de la digitalisation : volumes, délais, taux, montants, avant / après. */
+    IMPACT,
+
+    /** Bénéficiaires : nature, catégorie, secteur, financement, évolution par année fiscale. */
+    BENEFICIAIRES,
+
+    /** Satisfaction des usagers, réservée aux titulaires de {@code feedback.dashboard.view}. */
+    SATISFACTION
 }

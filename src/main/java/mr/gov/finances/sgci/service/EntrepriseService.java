@@ -1,5 +1,9 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.domain.entity.SecteurActivite;
+import mr.gov.finances.sgci.domain.enums.CategorieEntreprise;
+import mr.gov.finances.sgci.repository.SecteurActiviteRepository;
+
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 
@@ -25,6 +29,7 @@ import java.util.stream.Collectors;
 public class EntrepriseService {
 
     private final EntrepriseRepository repository;
+    private final SecteurActiviteRepository secteurActiviteRepository;
     private final UtilisateurRepository utilisateurRepository;
     private final EffectiveIdentityService effectiveIdentityService;
     private final AuditService auditService;
@@ -71,6 +76,8 @@ public class EntrepriseService {
                 .situationFiscale(dto.getSituationFiscale())
                 .entrepriseEtrangere(dto.isEntrepriseEtrangere())
                 .registreCommerceEtranger(dto.getRegistreCommerceEtranger())
+                .categorie(dto.getCategorie() != null ? dto.getCategorie() : CategorieEntreprise.NON_RENSEIGNEE)
+                .secteur(secteur(dto.getSecteurId()))
                 .build();
         entity = repository.save(entity);
         EntrepriseDto result = toDto(entity);
@@ -91,6 +98,13 @@ public class EntrepriseService {
         entity.setSituationFiscale(dto.getSituationFiscale());
         entity.setEntrepriseEtrangere(dto.isEntrepriseEtrangere());
         entity.setRegistreCommerceEtranger(dto.getRegistreCommerceEtranger());
+        // Un formulaire qui n'envoie ni catégorie ni secteur ne doit pas effacer ce qui est saisi.
+        if (dto.getCategorie() != null) {
+            entity.setCategorie(dto.getCategorie());
+        }
+        if (dto.getSecteurId() != null) {
+            entity.setSecteur(secteur(dto.getSecteurId()));
+        }
         entity = repository.save(entity);
         EntrepriseDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "Entreprise", String.valueOf(id), result);
@@ -155,6 +169,15 @@ public class EntrepriseService {
                 .anyMatch(a -> authority.equals(a.getAuthority()));
     }
 
+    private SecteurActivite secteur(Long secteurId) {
+        if (secteurId == null) {
+            return null;
+        }
+        return secteurActiviteRepository.findById(secteurId)
+                .orElseThrow(() -> ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                        "Secteur d'activité inconnu : " + secteurId));
+    }
+
     private EntrepriseDto toDto(Entreprise e) {
         return EntrepriseDto.builder()
                 .id(e.getId())
@@ -167,6 +190,9 @@ public class EntrepriseService {
                 .situationFiscale(e.getSituationFiscale())
                 .entrepriseEtrangere(e.isEntrepriseEtrangere())
                 .registreCommerceEtranger(e.getRegistreCommerceEtranger())
+                .categorie(e.getCategorie() != null ? e.getCategorie() : CategorieEntreprise.NON_RENSEIGNEE)
+                .secteurId(e.getSecteur() != null ? e.getSecteur().getId() : null)
+                .secteurLibelle(e.getSecteur() != null ? e.getSecteur().getLibelle() : null)
                 .build();
     }
 }

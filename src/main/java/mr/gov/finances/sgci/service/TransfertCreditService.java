@@ -435,6 +435,7 @@ public class TransfertCreditService {
                 .dateDemande(t.getDateDemande())
                 .certificatCreditId(certId)
                 .certificatNumero(certNumero)
+                .certificatReference(c != null ? c.getReference() : null)
                 .entrepriseSourceId(entrepriseSourceId)
                 .montant(t.getMontant())
                 .operationsDouaneCloturees(t.getOperationsDouaneCloturees())

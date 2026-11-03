@@ -1,10 +1,13 @@
 package mr.gov.finances.sgci.service;
 
 import lombok.RequiredArgsConstructor;
+import mr.gov.finances.sgci.domain.document.DocumentCodeValidator;
+import mr.gov.finances.sgci.domain.document.DocumentDepotPolicy;
 import mr.gov.finances.sgci.domain.entity.Avenant;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.Dqe;
+import mr.gov.finances.sgci.domain.entity.Marche;
 import mr.gov.finances.sgci.domain.entity.ModeleFiscal;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
@@ -118,6 +121,14 @@ public class AvenantService {
 
     /** L'avenant, s'il est dans le périmètre de l'appelant : celui de son crédit. */
     @Transactional(readOnly = true)
+    /** Les pièces obligatoires de la GED (MODIFICATION_CI), hors celles qui ne sont pas encore dues. */
+    private void exigerPiecesObligatoires(Avenant a, Set<String> pasEncoreDues) {
+        List<String> presentes = new ArrayList<>(pasEncoreDues);
+        documentAvenantRepository.findByAvenantIdAndActifTrue(a.getId())
+                .forEach(d -> presentes.add(d.getCodeDocument()));
+        requirementValidator.assertRequiredDocumentsPresent(ProcessusDocument.MODIFICATION_CI, presentes);
+    }
+
     public Avenant charger(Long id, AuthenticatedUser user) {
         Avenant a = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Avenant non trouvé: " + id));
@@ -127,7 +138,38 @@ public class AvenantService {
         return a;
     }
 
+    /**
+     * Qui peut joindre cette pièce à cet avenant, et quand.
+     *
+     * <p>Les pièces du dépôt accompagnent l'avenant tant qu'il est déposé : la prise en charge par la
+     * DGTCP les clôt. La décision de la Commission, elle, n'existe qu'après l'examen : le Président
+     * (ou l'administrateur qui le supplée) la joint une fois l'avenant pris en charge, jusqu'à son
+     * application.
+     */
+    @Transactional(readOnly = true)
     public void verifierDepotPiece(Long id, String codeDocument, AuthenticatedUser user) {
+        Avenant a = charger(id, user);
+        String code = DocumentCodeValidator.normalize(codeDocument);
+        if (DocumentDepotPolicy.horsDepot(ProcessusDocument.MODIFICATION_CI).contains(code)) {
+            Role role = user != null ? user.getRole() : null;
+            if (role != Role.PRESIDENT && role != Role.ADMIN_SI) {
+                throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                        "Cette pièce est produite par la Commission : le Président la joint");
+            }
+            if (a.getStatut() != StatutAvenant.EN_COURS_TRAITEMENT && a.getStatut() != StatutAvenant.ADOPTE) {
+                throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                        "La décision de la Commission se joint une fois l'avenant pris en charge, avant son application");
+            }
+            return;
+        }
+        if (user == null || !DEPOSANTS.contains(user.getRole())) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Les pièces du dépôt sont jointes par l'entreprise ou l'autorité contractante");
+        }
+        if (a.getStatut() != StatutAvenant.DEPOSE) {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                    "Les pièces se déposent tant que l'avenant n'est pas pris en charge");
+        }
     }
 
     // ── dépôt ───────────────────────────────────────────────────────────────────────────────
@@ -148,6 +190,15 @@ public class AvenantService {
         if (!CREDIT_OUVERT.contains(certificat.getStatut())) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Un avenant ne se dépose que sur un crédit ouvert (statut actuel : " + certificat.getStatut() + ")");
+        }
+        // Le formulaire fait choisir le marché, puis l'un de ses crédits : les deux doivent concorder.
+        if (request.getMarcheId() != null) {
+            Marche marcheDuCredit = certificat.getDemandeCorrection() != null
+                    ? certificat.getDemandeCorrection().getMarche() : null;
+            if (marcheDuCredit == null || !request.getMarcheId().equals(marcheDuCredit.getId())) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Le crédit choisi n'appartient pas au marché sélectionné");
+            }
         }
         if (request.getType() == mr.gov.finances.sgci.domain.enums.TypeAvenant.FINANCIER) {
             BigDecimal ext = request.getCreditExterieurPropose();
@@ -182,12 +233,10 @@ public class AvenantService {
         exigerActeur(user, Role.DGTCP, motif, "La prise en charge d'un avenant revient à la DGTCP");
         Avenant a = charger(id, user);
         exigerStatut(a, StatutAvenant.DEPOSE, "prendre en charge");
-        // Les pièces se déposent tant que l'avenant est déposé : la prise en charge les clôt, c'est
-        // donc là que les pièces rendues obligatoires dans la GED (MODIFICATION_CI) sont exigées.
-        requirementValidator.assertRequiredDocumentsPresent(ProcessusDocument.MODIFICATION_CI,
-                documentAvenantRepository.findByAvenantIdAndActifTrue(a.getId()).stream()
-                        .map(d -> d.getCodeDocument())
-                        .toList());
+        // Les pièces du dépôt se joignent tant que l'avenant est déposé : la prise en charge les clôt,
+        // c'est donc là que celles que la GED rend obligatoires sont exigées. La décision de la
+        // Commission n'existe pas encore : elle est réputée présente ici et exigée à la validation.
+        exigerPiecesObligatoires(a, DocumentDepotPolicy.horsDepot(ProcessusDocument.MODIFICATION_CI));
         a.setStatut(StatutAvenant.EN_COURS_TRAITEMENT);
         a.setExamineParId(user.getUserId());
         a.setDateExamen(Instant.now());
@@ -203,6 +252,7 @@ public class AvenantService {
             throw ApiException.conflict(ApiErrorCode.CONFLICT,
                     "Avenant déjà validé : sa demande de correction suit son circuit");
         }
+        exigerPiecesObligatoires(a, Set.of());
         a.setValideParId(user.getUserId());
         a.setDateValidation(Instant.now());
         if (!a.estFinancier()) {
@@ -389,6 +439,8 @@ public class AvenantService {
         CertificatCredit c = a.getCertificatCredit();
         DemandeCorrection origine = c != null ? c.getDemandeCorrection() : null;
         DemandeCorrection d = a.getDemandeCorrection();
+        // L'avenant modifie le marché du crédit : celui de la demande de correction d'origine.
+        Marche marche = origine != null ? origine.getMarche() : null;
         return AvenantDto.builder()
                 .id(a.getId())
                 .numero(a.getNumero())
@@ -399,6 +451,9 @@ public class AvenantService {
                 .certificatCreditId(c != null ? c.getId() : null)
                 .certificatNumero(c != null ? c.getNumero() : null)
                 .certificatReference(c != null ? c.getReference() : null)
+                .marcheId(marche != null ? marche.getId() : null)
+                .marcheNumero(marche != null ? marche.getNumeroMarche() : null)
+                .marcheIntitule(marche != null ? marche.getIntitule() : null)
                 .entrepriseId(c != null && c.getEntreprise() != null ? c.getEntreprise().getId() : null)
                 .entrepriseNom(c != null && c.getEntreprise() != null ? c.getEntreprise().getRaisonSociale() : null)
                 .autoriteContractanteId(origine != null && origine.getAutoriteContractante() != null ? origine.getAutoriteContractante().getId() : null)

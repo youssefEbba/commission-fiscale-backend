@@ -19,7 +19,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/demandes-explication")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class DemandeExplicationController {
 
     private final DemandeExplicationService service;

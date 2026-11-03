@@ -34,9 +34,11 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -134,10 +136,25 @@ public class ConventionService {
             return perimetre;
         }
 
+        // Une entreprise ne voit que les conventions de ses propres dossiers (anomalie A30) : les
+        // montants et les bailleurs des autres conventions ne la concernent pas.
+        if (role == Role.ENTREPRISE || role == Role.SOUS_TRAITANT) {
+            Set<Long> siennes = conventionIdsPourEntreprise(user, u);
+            return conventionRepository.findAllById(siennes).stream()
+                    .filter(c -> statut == null || c.getStatut() == statut)
+                    .collect(Collectors.toList());
+        }
+
         List<Convention> toutes = statut == null
                 ? conventionRepository.findAll()
                 : conventionRepository.findByStatut(statut);
         return toutes;
+    }
+
+    /** Les conventions des dossiers de l'entreprise de l'utilisateur ; vide s'il n'y est rattaché. */
+    private Set<Long> conventionIdsPourEntreprise(AuthenticatedUser user, Utilisateur u) {
+        Long entId = effectiveIdentityService.resolveEntrepriseId(user, u);
+        return entId == null ? Set.of() : new HashSet<>(conventionRepository.findIdsPourEntreprise(entId));
     }
 
     @Transactional(readOnly = true)
@@ -152,6 +169,19 @@ public class ConventionService {
                 .sorted(PLUS_RECENT_D_ABORD)
                 .map(this::toDto)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Le nom de la personne qui a validé, ou à défaut son identifiant de connexion. La fiche
+     * affichait « Validée par (user id) 6 » (anomalie A06).
+     */
+    private String nomDuValideur(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        return utilisateurRepository.findById(userId)
+                .map(u -> u.getNomComplet() != null && !u.getNomComplet().isBlank() ? u.getNomComplet() : u.getUsername())
+                .orElse(null);
     }
 
     public boolean canAccessConvention(Long conventionId, AuthenticatedUser user) {
@@ -181,6 +211,9 @@ public class ConventionService {
             }
             // Toute autorité reliée à la convention, et celle qui l'a créée.
             return convention.concerne(acId);
+        }
+        if (roleEffectif == Role.ENTREPRISE || roleEffectif == Role.SOUS_TRAITANT) {
+            return conventionIdsPourEntreprise(user, u).contains(conventionId);
         }
         return true;
     }
@@ -606,6 +639,7 @@ public class ConventionService {
                         .map(b -> new EntiteLieeDto(b.getId(), b.getNom())).collect(Collectors.toList()))
                 .dateCreation(convention.getDateCreation())
                 .valideParUserId(convention.getValideParUserId())
+                .valideParNom(nomDuValideur(convention.getValideParUserId()))
                 .dateValidation(convention.getDateValidation())
                 .actif(ConventionDisponibilitePolicy.estActive(convention))
                 .motifRejet(convention.getMotifRejet())

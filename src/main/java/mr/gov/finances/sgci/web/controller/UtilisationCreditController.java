@@ -36,7 +36,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/utilisations-credit")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class UtilisationCreditController {
 
     private final UtilisationCreditService service;
@@ -257,9 +256,10 @@ public class UtilisationCreditController {
     /**
      * Étape Président : émission du certificat d'utilisation, pour les deux branches.
      * <p>
-     * Attribue le numéro {@code CU-nnn/AAAA} et fait passer la demande en CERTIFICAT_EMIS. Le calcul
-     * de la DGTCP doit être acquis : LIQUIDEE en douane, APUREE en TVA intérieure. Idempotent — un
-     * second appel renvoie le même numéro sans erreur.
+     * Fait passer la demande en CERTIFICAT_EMIS, une fois le certificat signé déposé (409 sinon) ;
+     * le numéro est réservé par {@code POST /{id}/certificat-utilisation/numero}. Le dépôt du
+     * certificat signé par le Président déclenche déjà l'émission : cette route reste pour les
+     * clients qui l'appellent après le dépôt. Idempotent.
      */
     @PostMapping("/{id}/certificat-utilisation")
     @PreAuthorize("hasAuthority('utilisation.president.certificat.emettre')")
@@ -268,6 +268,19 @@ public class UtilisationCreditController {
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return service.emettreCertificatUtilisation(id, user);
+    }
+
+    /**
+     * Réserve le numéro du certificat d'utilisation pour composer le modèle à signer. Ne change pas
+     * le statut : télécharger le modèle ne doit rien émettre (anomalie A34).
+     */
+    @PostMapping("/{id}/certificat-utilisation/numero")
+    @PreAuthorize("hasAuthority('utilisation.president.certificat.emettre')")
+    public UtilisationCreditDto reserverNumeroCertificatUtilisation(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.reserverNumeroCertificatUtilisation(id, user);
     }
 
     /**
@@ -380,7 +393,13 @@ public class UtilisationCreditController {
     ) throws IOException {
         String resolved = mr.gov.finances.sgci.web.support.DocumentUploadParamResolver
                 .resolveCodeDocument(codeDocument, typeDocument, type);
-        return documentService.upload(id, resolved, message, file, modeApposition, user);
+        DocumentUtilisationCreditDto depose = documentService.upload(id, resolved, message, file, modeApposition, user);
+        // Le dépôt du certificat signé par le Président vaut émission (anomalie A34).
+        if (mr.gov.finances.sgci.domain.enums.TypeDocument.CERTIFICAT_UTILISATION.name().equals(resolved)
+                && user != null && user.getRole() == mr.gov.finances.sgci.domain.enums.Role.PRESIDENT) {
+            service.emettreApresDepotCertificatSigne(id, user);
+        }
+        return depose;
     }
 
     /** Correction administrateur d'informations, à tout moment (ADMIN_SI, motif obligatoire). */
@@ -389,7 +408,7 @@ public class UtilisationCreditController {
     public UtilisationCreditDto adminCorrectInfo(
             @PathVariable Long id,
             @RequestParam String motif,
-            @RequestBody AdminCorrectionUtilisationRequest request,
+            @Valid @RequestBody AdminCorrectionUtilisationRequest request,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return service.adminCorrectInfo(id, request, motif, user);

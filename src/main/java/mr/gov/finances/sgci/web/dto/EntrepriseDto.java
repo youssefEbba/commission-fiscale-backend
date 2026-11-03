@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import mr.gov.finances.sgci.domain.enums.CategorieEntreprise;
 
 @Data
 @NoArgsConstructor
@@ -13,7 +14,7 @@ import lombok.NoArgsConstructor;
 public class EntrepriseDto {
 
     private Long id;
-    @NotBlank(message = "La raison sociale est obligatoire")
+    @NotBlank(message = "Le nom de l'entreprise est obligatoire")
     private String raisonSociale;
     private String nomCommercial;
     private String activite;
@@ -26,4 +27,10 @@ public class EntrepriseDto {
     private boolean entrepriseEtrangere;
     /** Registre de commerce étranger (obligatoire si {@link #entrepriseEtrangere}). */
     private String registreCommerceEtranger;
+
+    /** PME, GRANDE_ENTREPRISE ou NON_RENSEIGNEE (défaut). */
+    private CategorieEntreprise categorie;
+    private Long secteurId;
+    /** Libellé du secteur, en lecture. */
+    private String secteurLibelle;
 }

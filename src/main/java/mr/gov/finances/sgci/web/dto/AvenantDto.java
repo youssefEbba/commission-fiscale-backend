@@ -26,6 +26,10 @@ public class AvenantDto {
     private Long certificatCreditId;
     private String certificatNumero;
     private String certificatReference;
+    /** Marché du crédit (par sa demande de correction d'origine), que l'avenant modifie. */
+    private Long marcheId;
+    private String marcheNumero;
+    private String marcheIntitule;
     private Long entrepriseId;
     private String entrepriseNom;
     private Long autoriteContractanteId;

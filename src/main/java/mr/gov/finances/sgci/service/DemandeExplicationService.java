@@ -157,7 +157,10 @@ public class DemandeExplicationService {
                 .createdAt(Instant.now())
                 .build();
         thread.getMessages().add(msg);
-        explicationRepository.save(thread);
+        // Depuis Hibernate 6.6 (Spring Boot 3.5), enregistrer le fil fusionne une copie du nouveau
+        // message : c'est elle, dernière de la liste, qui porte l'identifiant, pas l'objet construit.
+        DemandeExplication enregistre = explicationRepository.saveAndFlush(thread);
+        msg = enregistre.getMessages().get(enregistre.getMessages().size() - 1);
 
         auditService.log(AuditAction.UPDATE, "DemandeExplication", String.valueOf(thread.getId()),
                 Map.of("action", "reply", "messageId", msg.getId()));

@@ -76,6 +76,28 @@ public final class DocumentDepotPolicy {
             "QUITTANCE_TRESOR",
             "QUITTANCE_DGI");
 
+    /** Avenant : apportées par l'entreprise ou l'autorité contractante à l'appui de son avenant. */
+    public static final Set<String> AVENANT_CODES_DEPOSES = Set.of(
+            "NOTE_SERVICE",
+            "JUSTIFICATIONS_LEGALES",
+            "LETTRES_MOTIVEES",
+            "AVENANT_CONTRAT",
+            "LETTRES_AUTORITE_CONTRACTANTE",
+            "DETAIL_CORRECTIONS_NECESSAIRES",
+            "DOCUMENTS_OFFICIELS");
+
+    /** Avenant : produite par la Commission, jointe par le Président une fois l'avenant examiné. */
+    public static final Set<String> AVENANT_CODES_DE_LA_COMMISSION = Set.of(
+            "DECISION_COMMISSION");
+
+    /**
+     * Mise en place : le certificat de crédit d'impôt signé est la pièce que le Président (ou
+     * l'administrateur qui le supplée) dépose avant sa validation. Proposé au déposant, il laissait
+     * un fichier quelconque de l'autorité contractante remplir cette condition (anomalie A43).
+     */
+    public static final Set<String> MISE_EN_PLACE_CODES_DE_LA_PRESIDENCE = Set.of(
+            "CERTIFICAT_CREDIT_IMPOTS");
+
     private DocumentDepotPolicy() {
     }
 
@@ -100,6 +122,8 @@ public final class DocumentDepotPolicy {
             case CORRECTION_OFFRE_FISCALE -> CODES_PRODUITS_PAR_LA_COMMISSION;
             case UTILISATION_CI, UTILISATION_CI_DOUANE, UTILISATION_CI_TVA_INTERIEURE,
                  UTILISATION_CI_EXTERIEUR, UTILISATION_CI_INTERIEUR -> UTILISATION_CODES_DU_CIRCUIT;
+            case MODIFICATION_CI -> AVENANT_CODES_DE_LA_COMMISSION;
+            case MISE_EN_PLACE_CI -> MISE_EN_PLACE_CODES_DE_LA_PRESIDENCE;
             default -> Set.of();
         };
     }
@@ -113,6 +137,7 @@ public final class DocumentDepotPolicy {
             case CORRECTION_OFFRE_FISCALE -> CODES_DEPOSES_PAR_LE_DEMANDEUR;
             case UTILISATION_CI, UTILISATION_CI_DOUANE, UTILISATION_CI_TVA_INTERIEURE,
                  UTILISATION_CI_EXTERIEUR, UTILISATION_CI_INTERIEUR -> UTILISATION_CODES_DEPOSES;
+            case MODIFICATION_CI -> AVENANT_CODES_DEPOSES;
             default -> Set.of();
         };
     }

@@ -1,6 +1,5 @@
 package mr.gov.finances.sgci.web.dto;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -33,10 +32,12 @@ public class MarcheDto {
     /** Libellé / objet du marché (recherche & affichage). */
     private String intitule;
     private LocalDate dateSignature;
-    /** Montant HT (nom JSON canonique ; l’ancien nom {@code montantContratTtc} est encore accepté en entrée). */
     @JsonProperty("montantContratHt")
-    @JsonAlias("montantContratTtc")
     private BigDecimal montantContratHt;
+    /** Montant TTC, facultatif ; distinct du HT (anomalie A41). */
+    private BigDecimal montantContratTtc;
+    /** Durée d'exécution en texte libre (« 07 MOIS »), facultative. */
+    private String dureeExecution;
     private StatutMarche statut;
 
     /** Fourniture, prestation ou travaux. {@code null} sur les marchés antérieurs. */

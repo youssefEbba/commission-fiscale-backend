@@ -112,23 +112,20 @@ class CertificatVerificationIT {
 
     @Test
     void verify_certificatCloture_retourneCloture() {
-        String presidentToken = loginToken("president");
         String dgdToken = loginToken("dgd");
         CertificatCredit cert = certificatCreditRepository.findByNumero("CI-DEMO-SCEN-F")
                 .orElseThrow(() -> new AssertionError("Seed CI-DEMO-SCEN-F absent"));
 
-        assertThat(restTemplate.exchange(
-                baseUrl() + "/api/certificats-credit/" + cert.getId() + "/statut?statut=CLOTURE",
-                HttpMethod.PATCH,
-                bearer(presidentToken),
-                Map.class
-        ).getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        ResponseEntity<Map> resp = verify(dgdToken, "CI-DEMO-SCEN-F");
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(resp.getBody().get("etatVerification")).isEqualTo("CLOTURE");
-        assertThat(resp.getBody().get("severiteUi")).isEqualTo("muted");
-        assertThat(resp.getBody().get("utilisableDouane")).isEqualTo(false);
+        var statutAvant = forcerStatut(cert.getId(), mr.gov.finances.sgci.domain.enums.StatutCertificat.CLOTURE);
+        try {
+            ResponseEntity<Map> resp = verify(dgdToken, "CI-DEMO-SCEN-F");
+            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(resp.getBody().get("etatVerification")).isEqualTo("CLOTURE");
+            assertThat(resp.getBody().get("severiteUi")).isEqualTo("muted");
+            assertThat(resp.getBody().get("utilisableDouane")).isEqualTo(false);
+        } finally {
+            forcerStatut(cert.getId(), statutAvant);
+        }
     }
 
     @Test
@@ -180,5 +177,19 @@ class CertificatVerificationIT {
                 Map.class
         );
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    /**
+     * Place le certificat dans ce statut directement en base, et rend le statut d'avant. La clôture
+     * et la modification ne se font plus par PATCH /statut : elles ont leur circuit (proposition et
+     * approbation, application d'un avenant). Ce test porte sur ce qui suit, pas sur ce circuit.
+     */
+    private mr.gov.finances.sgci.domain.enums.StatutCertificat forcerStatut(Long certificatId,
+                                                                          mr.gov.finances.sgci.domain.enums.StatutCertificat statut) {
+        CertificatCredit c = certificatCreditRepository.findById(certificatId).orElseThrow();
+        mr.gov.finances.sgci.domain.enums.StatutCertificat avant = c.getStatut();
+        c.setStatut(statut);
+        certificatCreditRepository.saveAndFlush(c);
+        return avant;
     }
 }

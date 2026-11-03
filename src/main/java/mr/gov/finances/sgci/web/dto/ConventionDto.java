@@ -41,6 +41,8 @@ public class ConventionDto {
     private List<EntiteLieeDto> bailleurs;
     private Instant dateCreation;
     private Long valideParUserId;
+    /** Nom de la personne qui a validé (à défaut son identifiant de connexion). */
+    private String valideParNom;
     private Instant dateValidation;
     /** Fermée aux nouveaux rattachements et masquée aux autorités contractantes quand faux. */
     private Boolean actif;

@@ -8,9 +8,9 @@ import mr.gov.finances.sgci.domain.entity.Avenant;
 import mr.gov.finances.sgci.domain.entity.DocumentAvenant;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.repository.AvenantRepository;
 import mr.gov.finances.sgci.repository.DocumentAvenantRepository;
+import mr.gov.finances.sgci.service.document.DocumentUploadSupport;
 import mr.gov.finances.sgci.web.dto.DocumentAvenantDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,39 +27,30 @@ public class DocumentAvenantService {
 
     private final DocumentAvenantRepository repository;
     private final AvenantRepository avenantRepository;
-    private final MinioService minioService;
     private final AuditService auditService;
-    private final DocumentRequirementValidator requirementValidator;
+    private final DocumentUploadSupport documentUploadSupport;
 
     @Transactional
     public DocumentAvenantDto upload(Long avenantId, String codeDocument, MultipartFile file) throws IOException {
-        if (file == null || file.isEmpty()) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
-        }
-
-        requirementValidator.validateUpload(ProcessusDocument.MODIFICATION_CI, codeDocument, file);
-
         Avenant avenant = avenantRepository.findById(avenantId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Avenant non trouvé: " + avenantId));
 
-        int nextVersion = 1;
         DocumentAvenant previous = repository.findByAvenantIdAndCodeDocumentAndActifTrue(avenantId, codeDocument)
                 .orElse(null);
         if (previous != null) {
             previous.setActif(false);
-            nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
         }
-
-        String originalFilename = file.getOriginalFilename();
-        String fileUrl = minioService.uploadFile(file);
+        DocumentUploadSupport.StoredUpload stored = documentUploadSupport.validerEtStocker(
+                ProcessusDocument.MODIFICATION_CI, codeDocument, file,
+                previous == null ? null : previous.getVersion());
 
         DocumentAvenant doc = DocumentAvenant.builder()
                 .codeDocument(codeDocument)
-                .nomFichier(originalFilename != null ? originalFilename : file.getName())
-                .chemin(fileUrl)
+                .nomFichier(stored.nomFichier())
+                .chemin(stored.fileUrl())
                 .dateUpload(Instant.now())
-                .taille(file.getSize())
-                .version(nextVersion)
+                .taille(stored.taille())
+                .version(stored.version())
                 .actif(true)
                 .avenant(avenant)
                 .build();

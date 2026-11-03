@@ -17,6 +17,7 @@ import mr.gov.finances.sgci.domain.entity.UtilisationTVAInterieure;
 import mr.gov.finances.sgci.domain.enums.AffectationTaxe;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
+import mr.gov.finances.sgci.domain.enums.StatutMarche;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.TypeLigneTaxe;
@@ -42,9 +43,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -88,10 +93,9 @@ public class ImportArchiveCreditService {
     public ReleveArchiveDto previsualiser(MultipartFile fichier) {
         ReleveArchiveDto releve = parser.parse(fichier);
 
-        rapprocherEntreprise(releve);
-        rapprocherMarcheEtAutorite(releve);
+        rapprocher(releve, contexteRapprochement());
 
-        certificatRepository.findByNumero(numeroCertificat(releve)).ifPresent(existant -> {
+        certificatExistant(releve).ifPresent(existant -> {
             releve.setCertificatDejaImporteId(existant.getId());
             releve.setCertificatDejaImporteReference(
                     existant.getReference() != null ? existant.getReference() : existant.getNumero());
@@ -105,15 +109,47 @@ public class ImportArchiveCreditService {
     }
 
     /**
+     * Tables de référence chargées une fois pour rapprocher un ou plusieurs relevés : un export de
+     * période en contient jusqu'à une centaine, qu'il serait coûteux de rapprocher table par table.
+     */
+    public record ContexteRapprochement(List<Entreprise> entreprises, List<Marche> marches,
+                                        List<AutoriteContractante> autorites, List<Convention> conventions) {
+    }
+
+    @Transactional(readOnly = true)
+    public ContexteRapprochement contexteRapprochement() {
+        return new ContexteRapprochement(entrepriseRepository.findAll(), marcheRepository.findAll(),
+                autoriteRepository.findAll(), conventionRepository.findAll());
+    }
+
+    /**
+     * Pré-sélections tirées du relevé : l'entreprise par le NIF, le marché par sa référence, l'autorité
+     * par le marché retrouvé ou, à défaut, par le code qui figure dans la référence du marché.
+     * Rien n'est écrit : l'opérateur valide ou corrige chaque choix.
+     */
+    public void rapprocher(ReleveArchiveDto releve, ContexteRapprochement contexte) {
+        rapprocherEntreprise(releve, contexte);
+        rapprocherMarcheEtAutorite(releve, contexte);
+        if (releve.getAutoriteRapprocheeId() == null) {
+            proposerAutoriteParCode(releve, contexte);
+        }
+    }
+
+    /** Certificat déjà repris pour ce relevé (même numéro « ARCHIVE-… »), s'il existe. */
+    public Optional<CertificatCredit> certificatExistant(ReleveArchiveDto releve) {
+        return certificatRepository.findByNumero(numeroCertificat(releve));
+    }
+
+    /**
      * Rapproche l'entreprise par le NIF. Le relevé et la base ne cadrent pas les zéros de tête de la
      * même façon ({@code 90600034} contre {@code 0090600034}) : la comparaison les ignore.
      */
-    private void rapprocherEntreprise(ReleveArchiveDto releve) {
+    private void rapprocherEntreprise(ReleveArchiveDto releve, ContexteRapprochement contexte) {
         String nifReleve = normaliserNif(releve.getNif());
         if (nifReleve == null) {
             return;
         }
-        entrepriseRepository.findAll().stream()
+        contexte.entreprises().stream()
                 .filter(e -> nifReleve.equals(normaliserNif(e.getNif())))
                 .findFirst()
                 .ifPresent(e -> {
@@ -123,7 +159,7 @@ public class ImportArchiveCreditService {
                 });
     }
 
-    private String normaliserNif(String nif) {
+    public static String normaliserNif(String nif) {
         if (nif == null || nif.isBlank()) {
             return null;
         }
@@ -135,12 +171,13 @@ public class ImportArchiveCreditService {
      * Rapproche le marché sur sa référence, puis en déduit l'autorité contractante en remontant
      * la convention rattachée. Le relevé ne nomme pas l'autorité : c'est le marché qui la désigne.
      */
-    private void rapprocherMarcheEtAutorite(ReleveArchiveDto releve) {
-        String reference = normaliserReference(releve.getReferenceMarche());
+    private void rapprocherMarcheEtAutorite(ReleveArchiveDto releve, ContexteRapprochement contexte) {
+        String reference = normaliserReference(releve.getNumeroMarche() != null
+                ? releve.getNumeroMarche() : releve.getReferenceMarche());
         if (reference == null) {
             return;
         }
-        marcheRepository.findAll().stream()
+        contexte.marches().stream()
                 .filter(m -> correspond(reference, m.getNumeroMarche()) || correspond(reference, m.getReference()))
                 .findFirst()
                 .ifPresent(m -> {
@@ -151,8 +188,51 @@ public class ImportArchiveCreditService {
                         AutoriteContractante ac = m.autoriteEffective();
                         releve.setAutoriteRapprocheeId(ac.getId());
                         releve.setAutoriteRapprocheeNom(ac.getNom());
+                        releve.setAutoriteRapprocheeSource("MARCHE");
                     }
                 });
+    }
+
+    /**
+     * Les références de marché portent le sigle de l'acheteur : « 2220/T/046/CPMP/MHA/UGPRD/2025 »
+     * désigne l'UGPRD, rattachée au MHA. Le segment le plus à droite qui égale le code d'une
+     * autorité l'emporte ; à défaut, le code de son ministère de tutelle.
+     */
+    private void proposerAutoriteParCode(ReleveArchiveDto releve, ContexteRapprochement contexte) {
+        String reference = releve.getNumeroMarche() != null ? releve.getNumeroMarche() : releve.getReferenceMarche();
+        if (reference == null) {
+            return;
+        }
+        List<String> segments = Arrays.stream(reference.toUpperCase().split("[/\\s]+"))
+                .map(String::trim)
+                .filter(seg -> seg.length() >= 2 && !seg.chars().allMatch(Character::isDigit))
+                .toList();
+        for (Function<AutoriteContractante, String> code : List.<Function<AutoriteContractante, String>>of(
+                AutoriteContractante::getCode, AutoriteContractante::getMinistereTutelleCode)) {
+            for (int i = segments.size() - 1; i >= 0; i--) {
+                String segment = segments.get(i);
+                List<AutoriteContractante> trouvees = contexte.autorites().stream()
+                        .filter(ac -> code.apply(ac) != null && segment.equalsIgnoreCase(code.apply(ac).trim()))
+                        .toList();
+                if (trouvees.size() == 1) {
+                    releve.setAutoriteRapprocheeId(trouvees.get(0).getId());
+                    releve.setAutoriteRapprocheeNom(trouvees.get(0).getNom());
+                    releve.setAutoriteRapprocheeSource("CODE_AC");
+                    return;
+                }
+            }
+        }
+    }
+
+    /** La convention s'impose quand l'autorité n'en a qu'une ; sinon l'opérateur choisit. */
+    public Long conventionUnique(Long autoriteId, ContexteRapprochement contexte) {
+        if (autoriteId == null) {
+            return null;
+        }
+        List<Convention> conventions = contexte.conventions().stream()
+                .filter(c -> c.autoritesLiees().stream().anyMatch(ac -> autoriteId.equals(ac.getId())))
+                .toList();
+        return conventions.size() == 1 ? conventions.get(0).getId() : null;
     }
 
     /** Rapprochement souple : la référence du relevé est souvent un fragment de celle du marché. */
@@ -193,6 +273,18 @@ public class ImportArchiveCreditService {
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
                         "Marché non trouvé : " + marcheId));
 
+        return importerReleve(releve, entreprise, autorite, convention, marche, confirmerMalgreAnomalies, user);
+    }
+
+    /**
+     * Cœur de la reprise, partagé par l'import d'un relevé à un crédit et par celui d'un export de
+     * période : le relevé est déjà lu, l'entreprise, l'autorité et la convention sont choisies.
+     */
+    @Transactional
+    public ImportArchiveResultatDto importerReleve(ReleveArchiveDto releve, Entreprise entreprise,
+                                                   AutoriteContractante autorite, Convention convention,
+                                                   Marche marche, boolean confirmerMalgreAnomalies,
+                                                   AuthenticatedUser user) {
         String numero = numeroCertificat(releve);
         // Un crédit déjà repris n'est pas un doublon : le relevé peut être reversé complété de
         // nouvelles utilisations. On complète alors l'existant au lieu de refuser.
@@ -365,7 +457,7 @@ public class ImportArchiveCreditService {
     /**
      * Réaligne les montants et les soldes du crédit sur le relevé le plus récent.
      *
-     * <p>Le relevé fait foi : ses soldes sont déjà nets des utilisations qu'il contient. Mais si le
+     * <p>Le relevé fait foi : ses soldes en sont recalculés, nets des utilisations qu'il contient. Mais si le
      * crédit a depuis été consommé dans l'application, réécrire ces soldes effacerait ces
      * consommations. Dans ce cas les soldes sont laissés intacts et une anomalie est signalée :
      * mieux vaut un écart visible qu'un solde faussement rétabli.
@@ -387,11 +479,11 @@ public class ImportArchiveCreditService {
 
         if (consommeHorsArchive) {
             releve.getAnomalies().add("Le crédit a déjà été utilisé dans l'application : les soldes "
-                    + "déclarés dans le relevé n'ont pas été réappliqués, pour ne pas effacer ces "
+                    + "recalculés depuis le relevé n'ont pas été réappliqués, pour ne pas effacer ces "
                     + "utilisations. Vérifiez la concordance des soldes.");
         } else {
-            certificat.setSoldeCordon(valeurOuZero(releve.getSoldeDouanierDeclare()));
-            certificat.setSoldeTVA(valeurOuZero(releve.getSoldeInterieurDeclare()));
+            certificat.setSoldeCordon(soldeRetenu(releve.getSoldeDouanierCalcule()));
+            certificat.setSoldeTVA(soldeRetenu(releve.getSoldeInterieurCalcule()));
         }
 
         BigDecimal soldeCordon = valeurOuZero(certificat.getSoldeCordon());
@@ -400,6 +492,34 @@ public class ImportArchiveCreditService {
                 ? StatutCertificat.OUVERT
                 : StatutCertificat.CLOTURE);
         certificatRepository.save(certificat);
+    }
+
+    /**
+     * Marché tiré du relevé, quand l'application n'en connaît aucun qui corresponde : numéro, date,
+     * montant et durée viennent du relevé, l'autorité et la convention du choix de l'opérateur.
+     * Le statut suit le crédit : encore pourvu, le marché est en cours ; épuisé, il est clos.
+     */
+    @Transactional
+    public Marche creerMarcheDepuisReleve(ReleveArchiveDto releve, AutoriteContractante autorite,
+                                          Convention convention) {
+        boolean creditPourvu = soldeRetenu(releve.getSoldeDouanierCalcule()).signum() > 0
+                || soldeRetenu(releve.getSoldeInterieurCalcule()).signum() > 0;
+        String numero = releve.getNumeroMarche() != null ? releve.getNumeroMarche() : releve.getReferenceMarche();
+        Marche marche = Marche.builder()
+                .numeroMarche(numero != null ? numero : "Marché du crédit " + releve.getNumeroCredit())
+                .intitule(releve.getReferenceMarche())
+                .dateSignature(releve.getDateMarche() != null
+                        ? LocalDate.ofInstant(releve.getDateMarche(), ZoneOffset.UTC) : null)
+                .montantContratHt(valeurOuZero(releve.getMontantMarche()))
+                .dureeExecution(releve.getDureeMarche())
+                .statut(creditPourvu ? StatutMarche.EN_COURS : StatutMarche.CLOTURE)
+                .autoriteContractante(autorite)
+                .convention(convention)
+                .build();
+        if (convention != null) {
+            marche.getConventions().add(convention);
+        }
+        return marcheRepository.save(marche);
     }
 
     /** Relie le marché choisi à la demande d'archive, en refusant d'en détourner un déjà rattaché. */
@@ -417,15 +537,16 @@ public class ImportArchiveCreditService {
     }
 
     /**
-     * Crée le certificat à partir des soldes <b>déclarés</b> dans le relevé, sans recalcul.
+     * Crée le certificat avec les soldes <b>recalculés</b> depuis le relevé (crédit − utilisations ±
+     * transfert) ; les soldes affichés par l'ancienne application ne servent que de contrôle.
      *
-     * <p>C'est délibéré : l'archive est reprise en l'état. Un solde douanier nul y est normal —
+     * <p>Un solde douanier nul est normal après un transfert —
      * seule la composante TVA du crédit douanier est transférable vers le crédit intérieur, le
      * reliquat de droits (DD, RS, PC, PSC, TCO) étant mis à zéro à la clôture du crédit.
      */
     private CertificatCredit creerCertificat(ReleveArchiveDto releve, Entreprise entreprise, String numero) {
-        BigDecimal soldeCordon = valeurOuZero(releve.getSoldeDouanierDeclare());
-        BigDecimal soldeTva = valeurOuZero(releve.getSoldeInterieurDeclare());
+        BigDecimal soldeCordon = soldeRetenu(releve.getSoldeDouanierCalcule());
+        BigDecimal soldeTva = soldeRetenu(releve.getSoldeInterieurCalcule());
 
         CertificatCredit certificat = new CertificatCredit();
         certificat.setNumero(numero);
@@ -458,6 +579,8 @@ public class ImportArchiveCreditService {
         d.setDateLiquidation(u.getDate());
         d.setNumeroDeclaration(u.getLibelle());
         d.setOrigineArchiveLibelle(u.getLibelle());
+        // Reprise d'un dossier clos sur papier : aucune émission de certificat n'est attendue (A20).
+        d.setEmissionCertificatRequise(Boolean.FALSE);
         d.setNumeroBulletin(u.getNumeroQuittance());
         d.setTotalPrisEnCharge(u.getTotalPrisEnCharge());
         d.setTotalAPayer(u.getTotalAPayer());
@@ -492,6 +615,7 @@ public class ImportArchiveCreditService {
         i.setDateLiquidation(u.getDate());
         i.setNumeroFacture(u.getLibelle());
         i.setOrigineArchiveLibelle(u.getLibelle());
+        i.setEmissionCertificatRequise(Boolean.FALSE);
         i.setCreditInterieurUtilise(u.getMontant());
         return i;
     }
@@ -544,12 +668,17 @@ public class ImportArchiveCreditService {
                 .orElse(null);
     }
 
+    /** Un solde calculé négatif (signalé en anomalie à la lecture) est ramené à zéro. */
+    private BigDecimal soldeRetenu(BigDecimal calcule) {
+        return calcule == null || calcule.signum() < 0 ? BigDecimal.ZERO : calcule;
+    }
+
     private BigDecimal valeurOuZero(BigDecimal valeur) {
         return valeur != null ? valeur : BigDecimal.ZERO;
     }
 
     /** Numéro déduit du relevé, qui sert aussi de garde contre le double import. */
-    private String numeroCertificat(ReleveArchiveDto releve) {
+    public String numeroCertificat(ReleveArchiveDto releve) {
         String base = releve.getNumeroCredit() != null && !releve.getNumeroCredit().isBlank()
                 ? releve.getNumeroCredit().trim()
                 : releve.getNomFichier();

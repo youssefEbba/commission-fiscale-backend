@@ -4,9 +4,11 @@ import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.DecisionCorrectionType;
 import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.StatutAvenant;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutDemandeRattachement;
 import mr.gov.finances.sgci.domain.enums.StatutDemandeResetPassword;
+import mr.gov.finances.sgci.domain.enums.StatutTransfert;
 import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
 import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
@@ -81,16 +83,34 @@ public class MainCouranteService {
             "Votre compte n'est rattaché à aucune entité : aucune tâche ne peut vous être attribuée "
                     + "tant que ce rattachement n'est pas fait. Signalez-le à l'administrateur du système.";
 
-    /** Les directions qui visent une demande de correction, et la colonne qui porte leur visa. */
+    /**
+     * Les directions qui visent une demande de correction, et le drapeau que la validation
+     * parallèle lève encore pour leur visa.
+     */
     private static final Map<Role, String> COLONNE_VISA_CORRECTION = Map.of(
             Role.DGD, "validationDgd",
             Role.DGTCP, "validationDgtcp",
             Role.DGI, "validationDgi",
             Role.DGB, "validationDgb");
 
-    /** Les statuts d'une demande où un visa de direction est encore attendu. */
+    /** Les directions qui visent une mise en place : la DGB n'en fait pas partie (anomalie A28). */
+    private static final Set<Role> VISA_CERTIFICAT = Set.of(Role.DGI, Role.DGD, Role.DGTCP);
+
+    /**
+     * Les statuts d'une demande où un visa de direction est encore attendu. EN_VALIDATION n'en est
+     * pas : la demande y arrive précisément quand tous les visas sont posés, et la proposer encore
+     * aux directions leur demandait un visa déjà donné (anomalie A17).
+     */
     private static final Set<StatutDemande> DEMANDE_EN_INSTRUCTION =
-            Set.of(StatutDemande.EN_EVALUATION, StatutDemande.EN_VALIDATION);
+            Set.of(StatutDemande.RECUE, StatutDemande.RECEVABLE, StatutDemande.EN_EVALUATION);
+
+    /** Les statuts d'une mise en place où les visas des directions sont attendus. */
+    private static final Set<StatutCertificat> CERTIFICAT_EN_CONTROLE =
+            Set.of(StatutCertificat.EN_CONTROLE, StatutCertificat.A_RECONTROLER);
+
+    /** Les statuts d'un transfert terminé : plus aucun visa n'y est attendu (anomalie A17). */
+    private static final Set<StatutTransfert> TRANSFERT_TERMINE =
+            Set.of(StatutTransfert.TRANSFERE, StatutTransfert.REJETE, StatutTransfert.ANNULEE);
 
     private final ReportingScopeFactory scopeFactory;
     private final ReportingPredicates predicates;
@@ -121,18 +141,28 @@ public class MainCouranteService {
 
         if (COLONNE_VISA_CORRECTION.containsKey(role)) {
             lignes.addAll(demandesAViser(scope, role, maintenant));
-            lignes.addAll(certificatsAViser(scope, role, maintenant));
             couverts.add("CORRECTION");
+        }
+        if (VISA_CERTIFICAT.contains(role)) {
+            lignes.addAll(certificatsAViser(scope, role, maintenant));
             couverts.add("MISE_EN_PLACE");
         }
         if (role == Role.PRESIDENT) {
             lignes.addAll(demandesAAdopter(scope, maintenant));
             lignes.addAll(certificatsAValider(scope, maintenant));
+            lignes.addAll(avenantsAuStatut(scope, maintenant, StatutAvenant.EN_COURS_TRAITEMENT, true,
+                    "Valider ou rejeter l'avenant"));
             couverts.add("CORRECTION");
             couverts.add("MISE_EN_PLACE");
+            couverts.add("AVENANT");
         }
         if (role == Role.DGTCP) {
             lignes.addAll(certificatsAOuvrir(scope, maintenant));
+            lignes.addAll(avenantsAuStatut(scope, maintenant, StatutAvenant.DEPOSE, false,
+                    "Prendre en charge l'avenant"));
+            lignes.addAll(avenantsAuStatut(scope, maintenant, StatutAvenant.ADOPTE, false,
+                    "Appliquer l'avenant au crédit"));
+            couverts.add("AVENANT");
         }
         if (role != null && DecisionTransfertCreditService.ORDRE_VISAS.contains(role)) {
             lignes.addAll(transfertsAViser(scope, role, maintenant));
@@ -193,15 +223,46 @@ public class MainCouranteService {
 
     // ── les demandes de correction ─────────────────────────────────────────────────────────────
 
-    /** En instruction, et le visa de ma direction n'est pas encore posé. */
+    /**
+     * En instruction, et le visa de ma direction n'est pas encore posé.
+     *
+     * <p>Le visa se lit sur {@code DecisionCorrection}, que le circuit écrit, et aussi sur les
+     * drapeaux {@code validationXxx}, que la validation parallèle tient à jour. Ne lire que les
+     * drapeaux laissait « à viser » une demande visée par le circuit (anomalie A17). Le séquencement de
+     * {@code VisaRequirementResolver.firstVisaRoleForCorrection} est repris : quand la DGD (crédit
+     * extérieur) ou la DGI (crédit intérieur seul) doit viser en premier, les autres directions
+     * n'ont pas encore la main.
+     */
     private List<LigneMainCouranteDto> demandesAViser(ReportingScope scope, Role role, Instant maintenant) {
-        String colonne = COLONNE_VISA_CORRECTION.get(role);
-        String hql = "select d.id, coalesce(d.reference, d.numero), d.statut, ent.raisonSociale, "
-                + "coalesce(d.dateDepot, d.dateCreation) "
-                + "from DemandeCorrection d left join d.entreprise ent "
-                + "where " + predicates.demande("d", scope, false)
-                + "   and d.statut in (:enInstruction) and d." + colonne + " = false";
-        return lignes(hql, scope, Map.of("enInstruction", DEMANDE_EN_INSTRUCTION), maintenant,
+        StringBuilder hql = new StringBuilder()
+                .append("select d.id, coalesce(d.reference, d.numero), d.statut, ent.raisonSociale, ")
+                .append("coalesce(d.dateDepot, d.dateCreation) ")
+                .append("from DemandeCorrection d left join d.entreprise ent ")
+                .append("where ").append(predicates.demande("d", scope, false))
+                .append("   and d.statut in (:enInstruction)")
+                .append("   and d.").append(COLONNE_VISA_CORRECTION.get(role)).append(" = false")
+                .append("   and not exists (select 1 from DecisionCorrection dec")
+                .append("                     where dec.demandeCorrection = d and dec.role = :role")
+                .append("                       and dec.decision = :visa)");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("enInstruction", DEMANDE_EN_INSTRUCTION);
+        params.put("role", role);
+        params.put("visa", DecisionCorrectionType.VISA);
+        if (role != Role.DGD) {
+            hql.append("   and (coalesce(d.creditExterieur, 0) <= 0")
+                    .append("        or exists (select 1 from DecisionCorrection dgd")
+                    .append("                    where dgd.demandeCorrection = d and dgd.role = :dgd")
+                    .append("                      and dgd.decision = :visa))");
+            params.put("dgd", Role.DGD);
+        }
+        if (role != Role.DGI) {
+            hql.append("   and (coalesce(d.creditExterieur, 0) > 0 or coalesce(d.creditInterieur, 0) <= 0")
+                    .append("        or exists (select 1 from DecisionCorrection dgi")
+                    .append("                    where dgi.demandeCorrection = d and dgi.role = :dgi")
+                    .append("                      and dgi.decision = :visa))");
+            params.put("dgi", Role.DGI);
+        }
+        return lignes(hql.toString(), scope, params, maintenant,
                 "CORRECTION", "DemandeCorrection", "Poser le visa " + role.name());
     }
 
@@ -222,18 +283,28 @@ public class MainCouranteService {
      *
      * <p>L'absence de visa se lit sur {@code DecisionCertificatCredit} et non sur un drapeau : c'est
      * cette table qui porte la décision, avec son auteur et son horodatage.
+     *
+     * <p>Les directions requises suivent {@code VisaRequirementResolver.requiredRolesForCertificat} :
+     * la DGI n'intervient que s'il y a un crédit intérieur, la DGD que s'il y a un crédit extérieur
+     * (sans crédit renseigné, les deux).
      */
     private List<LigneMainCouranteDto> certificatsAViser(ReportingScope scope, Role role, Instant maintenant) {
+        String requis = switch (role) {
+            case DGI -> "   and (coalesce(dc.creditInterieur, 0) > 0 or coalesce(dc.creditExterieur, 0) <= 0)";
+            case DGD -> "   and (coalesce(dc.creditExterieur, 0) > 0 or coalesce(dc.creditInterieur, 0) <= 0)";
+            default -> "";
+        };
         String hql = "select c.id, coalesce(c.reference, c.numero), c.statut, ent.raisonSociale, "
                 + "c.dateEmission "
-                + "from CertificatCredit c left join c.entreprise ent "
+                + "from CertificatCredit c left join c.entreprise ent left join c.demandeCorrection dc "
                 + "where " + predicates.certificat("c", scope, false)
-                + "   and c.statut = :statut"
+                + "   and c.statut in (:statuts)"
+                + requis
                 + "   and not exists (select 1 from DecisionCertificatCredit dec"
                 + "                     where dec.certificatCredit = c and dec.role = :role"
                 + "                       and dec.decision = :visa)";
         return lignes(hql, scope,
-                Map.of("statut", StatutCertificat.EN_CONTROLE, "role", role,
+                Map.of("statuts", CERTIFICAT_EN_CONTROLE, "role", role,
                         "visa", DecisionCorrectionType.VISA),
                 maintenant, "MISE_EN_PLACE", "CertificatCredit", "Poser le visa " + role.name());
     }
@@ -259,6 +330,25 @@ public class MainCouranteService {
                 "MISE_EN_PLACE", "CertificatCredit", action);
     }
 
+    // ── les avenants ───────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Les avenants qui attendent ce rôle (anomalie A22) : la DGTCP les prend en charge (DEPOSE) puis
+     * les applique (ADOPTE) ; le Président valide ceux qui ne passent pas par une demande de
+     * correction (EN_COURS_TRAITEMENT, sans demande liée). Les avenants financiers suivent le
+     * circuit de leur demande, déjà présent dans la main courante.
+     */
+    private List<LigneMainCouranteDto> avenantsAuStatut(ReportingScope scope, Instant maintenant,
+                                                        StatutAvenant statut, boolean sansDemande,
+                                                        String action) {
+        String hql = "select a.id, a.numero, a.statut, ent.raisonSociale, coalesce(a.dateDepot, a.dateSignature) "
+                + "from Avenant a join a.certificatCredit c left join c.entreprise ent "
+                + "where " + predicates.certificat("c", scope, false)
+                + "   and a.statut = :statut"
+                + (sansDemande ? "   and a.demandeCorrection is null" : "");
+        return lignes(hql, scope, Map.of("statut", statut), maintenant, "AVENANT", "Avenant", action);
+    }
+
     // ── les transferts ─────────────────────────────────────────────────────────────────────────
 
     /**
@@ -274,15 +364,23 @@ public class MainCouranteService {
         List<Role> precedents = ordre.subList(0, rang);
 
         StringBuilder hql = new StringBuilder()
-                .append("select t.id, cast(t.id as string), t.statut, ent.raisonSociale, t.dateDemande ")
-                .append("from TransfertCredit t left join t.certificatCredit.entreprise ent ")
+                .append("select t.id, concat(coalesce(cert.reference, cert.numero), ' — transfert n° ', cast(t.id as string)), ")
+                .append("t.statut, ent.raisonSociale, t.dateDemande ")
+                .append("from TransfertCredit t left join t.certificatCredit cert left join cert.entreprise ent ")
                 .append("where ").append(predicates.transfert("t", scope, false))
+                .append("   and t.statut not in (:termines)")
+                .append("   and not exists (select 1 from DecisionTransfertCredit rej")
+                .append("                     where rej.transfertCredit = t and rej.decision = :rejetTemp")
+                .append("                       and rej.rejetTempStatus = :ouvert)")
                 .append("   and not exists (select 1 from DecisionTransfertCredit dec")
                 .append("                     where dec.transfertCredit = t and dec.role = :role")
                 .append("                       and dec.decision = :visa)");
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("role", role);
         params.put("visa", DecisionCorrectionType.VISA);
+        params.put("termines", TRANSFERT_TERMINE);
+        params.put("rejetTemp", DecisionCorrectionType.REJET_TEMP);
+        params.put("ouvert", RejetTempStatus.OUVERT);
         for (int i = 0; i < precedents.size(); i++) {
             String p = "precedent" + i;
             hql.append("   and exists (select 1 from DecisionTransfertCredit dec").append(i)
@@ -320,7 +418,9 @@ public class MainCouranteService {
             String action = item.isPropositionEnCours()
                     ? "Examiner la proposition de clôture"
                     : "Proposer la clôture du crédit";
-            if (!item.isPropositionEnCours() && !item.isEligiblePourCloture()) {
+            // Tout crédit sans opération en cours peut être proposé, mais seul celui que plus rien
+            // ne retient est une tâche : sinon chaque crédit ouvert encombrerait la main courante.
+            if (!item.isPropositionEnCours() && !item.isDetecteAutomatiquement()) {
                 continue;
             }
             out.add(LigneMainCouranteDto.builder()
@@ -404,7 +504,7 @@ public class MainCouranteService {
             if (attendus.isEmpty()) {
                 continue;
             }
-            String hql = "select u.id, coalesce(u.numeroCertificatUtilisation, cast(u.id as string)), "
+            String hql = "select u.id, coalesce(u.reference, concat('#', cast(u.id as string))), "
                     + "u.statut, ent.raisonSociale, u.dateDemande "
                     + "from UtilisationCredit u left join u.entreprise ent "
                     + "where " + predicates.utilisation("u", scope, false)

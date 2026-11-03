@@ -11,6 +11,9 @@ import mr.gov.finances.sgci.web.dto.reporting.DelaiDirectionDto;
 import mr.gov.finances.sgci.web.dto.reporting.DossierImmobileDto;
 import mr.gov.finances.sgci.web.dto.reporting.EngagementEtatDto;
 import mr.gov.finances.sgci.web.dto.reporting.EngagementLigneDto;
+import mr.gov.finances.sgci.web.dto.reporting.IndicateursImpactDto;
+import mr.gov.finances.sgci.web.dto.reporting.BeneficiairesDto;
+import mr.gov.finances.sgci.web.dto.feedback.FeedbackDtos;
 import mr.gov.finances.sgci.web.dto.reporting.LigneAFermerDto;
 import mr.gov.finances.sgci.web.dto.reporting.ProductionPeriodeDto;
 import mr.gov.finances.sgci.web.dto.reporting.ProductionPointDto;
@@ -71,6 +74,9 @@ public class ReportingDossierService {
     private final BlocagesService blocagesService;
     private final AFermerService aFermerService;
     private final ProductionPeriodeService productionPeriodeService;
+    private final IndicateursImpactService indicateursImpactService;
+    private final BeneficiairesService beneficiairesService;
+    private final mr.gov.finances.sgci.service.FeedbackService feedbackService;
 
     public ReportingDossier assembler(AuthenticatedUser auth, Instant from, Instant to,
                                       Long autoriteContractanteId, Long entrepriseId,
@@ -95,6 +101,22 @@ public class ReportingDossierService {
         if (retenus.contains(BlocReporting.PRODUCTION)) {
             sections.add(sectionProduction(productionPeriodeService.production(
                     auth, from, to, autoriteContractanteId, entrepriseId, Granularite.MOIS)));
+        }
+
+        if (retenus.contains(BlocReporting.IMPACT)) {
+            sections.addAll(sectionsImpact(indicateursImpactService.indicateurs(
+                    auth, from, to, autoriteContractanteId, entrepriseId)));
+        }
+
+        if (retenus.contains(BlocReporting.BENEFICIAIRES)) {
+            sections.addAll(sectionsBeneficiaires(beneficiairesService.beneficiaires(
+                    auth, from, to, autoriteContractanteId, entrepriseId)));
+        }
+
+        // La satisfaction n'est pas une donnée du périmètre métier : elle ne s'exporte que pour qui
+        // lit son tableau de bord.
+        if (retenus.contains(BlocReporting.SATISFACTION) && aLAutorite("feedback.dashboard.view")) {
+            sections.addAll(sectionsSatisfaction(feedbackService.tableauDeBord(from, to)));
         }
 
         String perimetre = perimetre(autoriteContractanteId, entrepriseId);
@@ -314,6 +336,150 @@ public class ReportingDossierService {
                 List.of("Période", "Demandes", "Certificats", "Utilisations",
                         "Masse accordée", "Consommé sur mouvements"),
                 lignes, null, note);
+    }
+
+    // ── l'impact de la digitalisation ──────────────────────────────────────────────────────────
+
+    private List<ReportingDossier.Section> sectionsImpact(IndicateursImpactDto dto) {
+        List<ReportingDossier.Section> out = new ArrayList<>();
+
+        List<List<String>> processus = new ArrayList<>();
+        for (IndicateursImpactDto.Processus p : dto.getProcessus()) {
+            processus.add(Arrays.asList(texte(p.getLibelle()), String.valueOf(p.getDeposes()),
+                    String.valueOf(p.getTraites()), String.valueOf(p.getValides()), String.valueOf(p.getRejetes()),
+                    pourcentage(p.getTauxValidationPct()), pourcentage(p.getTauxRejetPct()),
+                    pourcentage(p.getTauxComplementsPct()), decimal(p.getDelaiReponseComplementsJours())));
+        }
+        out.add(new ReportingDossier.Section("Impact : demandes traitées et taux de décision",
+                List.of("Processus", "Déposés", "Traités", "Validés", "Rejetés", "Taux de validation",
+                        "Taux de rejet", "Taux de compléments", "Réponse aux compléments (jours)"),
+                processus, null, String.join(" ", dto.getDefinitions().subList(0, 3))));
+
+        List<List<String>> phases = new ArrayList<>();
+        for (IndicateursImpactDto.Phase p : dto.getPhases()) {
+            phases.add(Arrays.asList(texte(p.getProcessus()), texte(p.getPhase()),
+                    String.valueOf(p.getNbDossiers()), decimal(p.getMoyenneJours()), decimal(p.getMedianeJours())));
+        }
+        out.add(new ReportingDossier.Section("Impact : délais moyens de traitement par phase",
+                List.of("Processus", "Phase", "Dossiers", "Moyenne (jours)", "Médiane (jours)"),
+                phases, null, dto.getDefinitions().get(3)));
+
+        IndicateursImpactDto.Montants m = dto.getMontants();
+        IndicateursImpactDto.TauxUtilisation t = dto.getTauxUtilisation();
+        List<List<String>> montants = new ArrayList<>();
+        montants.add(Arrays.asList("Crédits demandés", montant(m.getDemandes())));
+        montants.add(Arrays.asList("Crédits retenus par la Commission", montant(m.getRetenus())));
+        montants.add(Arrays.asList("Crédits validés (ouverts)", montant(m.getValides())));
+        montants.add(Arrays.asList("Crédits consommés", montant(m.getConsommes())));
+        montants.add(Arrays.asList("Crédits ajustés (avenants)", montant(m.getAjustes())));
+        montants.add(Arrays.asList("Crédits annulés", montant(m.getAnnules())));
+        montants.add(Arrays.asList("Soldes à la clôture", montant(m.getClotures())));
+        montants.add(Arrays.asList("Taux d'utilisation TVA intérieure", pourcentage(t.getTvaInterieurePct())));
+        montants.add(Arrays.asList("Taux d'utilisation Douanes", pourcentage(t.getDouanePct())));
+        montants.add(Arrays.asList("Taux d'utilisation global", pourcentage(t.getGlobalPct())));
+        out.add(new ReportingDossier.Section("Impact : montants et utilisation effective des crédits",
+                List.of("Indicateur", "Valeur"), montants, null,
+                dto.getDefinitions().get(4) + " " + dto.getDefinitions().get(5) + " " + dto.getDefinitions().get(6)));
+
+        List<List<String>> comparaisons = new ArrayList<>();
+        for (IndicateursImpactDto.Comparaison c : dto.getAvantApres()) {
+            comparaisons.add(Arrays.asList(texte(c.getLibelle()), texte(c.getUnite()), montant(c.getAvant()),
+                    montant(c.getApres()), pourcentage(c.getVariationPct()), texte(c.getSourceAvant()),
+                    texte(c.getPeriodeAvant())));
+        }
+        out.add(new ReportingDossier.Section("Impact : avant et après la digitalisation",
+                List.of("Indicateur", "Unité", "Avant", "Après", "Variation", "Source de l'avant", "Période de l'avant"),
+                comparaisons, null, dto.getDefinitions().get(7)
+                        + (dto.getDateBascule() != null ? " Date de bascule : " + dto.getDateBascule() + "." : "")));
+        return out;
+    }
+
+    // ── les bénéficiaires ──────────────────────────────────────────────────────────────────────
+
+    private List<ReportingDossier.Section> sectionsBeneficiaires(BeneficiairesDto dto) {
+        List<List<String>> ventilations = new ArrayList<>();
+        ventilations.add(Arrays.asList("Total", "Tous les bénéficiaires", String.valueOf(dto.getTotalBeneficiaires()),
+                String.valueOf(dto.getTotalCredits()), montant(dto.getMontantAccorde()), montant(dto.getMontantConsomme())));
+        ajouterVentilations(ventilations, "Nature", dto.getParNature());
+        ajouterVentilations(ventilations, "Catégorie", dto.getParCategorie());
+        ajouterVentilations(ventilations, "Secteur", dto.getParSecteur());
+        ajouterVentilations(ventilations, "Financement", dto.getParFinancement());
+
+        List<List<String>> annees = new ArrayList<>();
+        for (BeneficiairesDto.Annee a : dto.getParAnnee()) {
+            annees.add(Arrays.asList(String.valueOf(a.getAnnee()), String.valueOf(a.getNouveauxBeneficiaires()),
+                    String.valueOf(a.getBeneficiaires()), String.valueOf(a.getNbCredits()),
+                    montant(a.getMontantAccorde()), montant(a.getMontantConsomme())));
+        }
+        return List.of(
+                new ReportingDossier.Section("Bénéficiaires par nature, catégorie, secteur et financement",
+                        List.of("Axe", "Valeur", "Bénéficiaires", "Crédits", "Montant accordé", "Montant consommé"),
+                        ventilations, null, String.join(" ", dto.getDefinitions())),
+                new ReportingDossier.Section("Bénéficiaires par année fiscale",
+                        List.of("Année", "Nouveaux bénéficiaires", "Bénéficiaires", "Crédits",
+                                "Montant accordé", "Montant consommé"),
+                        annees, null, dto.getDefinitions().get(1)));
+    }
+
+    private static void ajouterVentilations(List<List<String>> lignes, String axe,
+                                            List<BeneficiairesDto.Ventilation> ventilations) {
+        for (BeneficiairesDto.Ventilation v : ventilations) {
+            lignes.add(Arrays.asList(axe, texte(v.getLibelle()), String.valueOf(v.getNbBeneficiaires()),
+                    String.valueOf(v.getNbCredits()), montant(v.getMontantAccorde()), montant(v.getMontantConsomme())));
+        }
+    }
+
+    // ── la satisfaction des usagers ────────────────────────────────────────────────────────────
+
+    private List<ReportingDossier.Section> sectionsSatisfaction(FeedbackDtos.TableauDeBord t) {
+        List<List<String>> agregats = new ArrayList<>();
+        agregats.add(Arrays.asList("Ensemble", "Tous les avis", String.valueOf(t.getNbAvis()),
+                montant(t.getNoteMoyenne()), pourcentage(t.getSatisfaitsPct())));
+        ajouterAgregats(agregats, "Profil", t.getParProfil());
+        ajouterAgregats(agregats, "Sujet", t.getParCategorie());
+        ajouterAgregats(agregats, "Processus", t.getParProcessus());
+
+        List<List<String>> enquetes = new ArrayList<>();
+        for (FeedbackDtos.ResultatEnquete e : t.getEnquetes()) {
+            enquetes.add(Arrays.asList(texte(e.getTitre()), e.getDateDebut() + " – " + e.getDateFin(),
+                    String.valueOf(e.getNbReponses()), String.valueOf(e.getNbCibles()),
+                    pourcentage(e.getTauxReponsePct()), montant(e.getNoteMoyenne())));
+        }
+
+        List<List<String>> commentaires = new ArrayList<>();
+        for (FeedbackDtos.Commentaire c : t.getCommentaires()) {
+            commentaires.add(Arrays.asList(date(c.getDate()), c.getProfil() != null ? c.getProfil().name() : ABSENT,
+                    c.getCategorie() != null ? c.getCategorie().name() : ABSENT,
+                    c.getNote() != null ? String.valueOf(c.getNote()) : ABSENT, texte(c.getSource()), texte(c.getTexte())));
+        }
+
+        String forts = t.getPointsForts().stream().map(FeedbackDtos.Agregat::getLibelle).reduce((a, b) -> a + ", " + b).orElse("aucun");
+        String difficiles = t.getDifficultes().stream().map(FeedbackDtos.Agregat::getLibelle).reduce((a, b) -> a + ", " + b).orElse("aucune");
+        return List.of(
+                new ReportingDossier.Section("Satisfaction des usagers",
+                        List.of("Axe", "Valeur", "Notes", "Note moyenne (sur 5)", "Satisfaits (4 ou 5)"),
+                        agregats, null, "Points forts : " + forts + ". Difficultés : " + difficiles
+                        + ". Avis spontanés et réponses aux enquêtes, notes de 1 à 5."),
+                new ReportingDossier.Section("Enquêtes de satisfaction",
+                        List.of("Enquête", "Période", "Réponses", "Usagers ciblés", "Taux de réponse", "Note moyenne"),
+                        enquetes, null, null),
+                new ReportingDossier.Section("Commentaires des usagers",
+                        List.of("Date", "Profil", "Sujet", "Note", "Source", "Commentaire"),
+                        commentaires, null, "Les commentaires sont présentés avec le profil de leur auteur, sans son nom."));
+    }
+
+    private static void ajouterAgregats(List<List<String>> lignes, String axe, List<FeedbackDtos.Agregat> agregats) {
+        for (FeedbackDtos.Agregat a : agregats) {
+            lignes.add(Arrays.asList(axe, texte(a.getLibelle()), String.valueOf(a.getNbNotes()),
+                    montant(a.getNoteMoyenne()), pourcentage(a.getSatisfaitsPct())));
+        }
+    }
+
+    private static boolean aLAutorite(String autorite) {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities() != null
+                && auth.getAuthorities().stream().anyMatch(a -> autorite.equals(a.getAuthority()));
     }
 
     // ── mise en forme, une seule fois pour les trois formats ───────────────────────────────────

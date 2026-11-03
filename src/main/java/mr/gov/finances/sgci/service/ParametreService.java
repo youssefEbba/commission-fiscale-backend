@@ -39,6 +39,12 @@ public class ParametreService {
     public static final String CONTACT_TELEPHONE = "contact.telephone";
 
     /**
+     * Date de mise en service de la plateforme (AAAA-MM-JJ) : la frontière entre l'« avant » et
+     * l'« après » des indicateurs d'impact. Vide tant que l'administrateur ne l'a pas saisie.
+     */
+    public static final String DIGITALISATION_DATE_BASCULE = "digitalisation.date_bascule";
+
+    /**
      * Les seules clés lisibles sans authentification.
      *
      * <p>Des coordonnées de contact sont publiques par nature — elles figurent déjà sur les
@@ -48,7 +54,8 @@ public class ParametreService {
             Set.of(CONTACT_ADRESSE, CONTACT_EMAIL, CONTACT_TELEPHONE);
 
     /** Le référentiel fermé : seules ces clés existent, et aucune autre ne peut être écrite. */
-    private static final Set<String> CLES_CONNUES = CLES_PUBLIQUES;
+    private static final Set<String> CLES_CONNUES =
+            Set.of(CONTACT_ADRESSE, CONTACT_EMAIL, CONTACT_TELEPHONE, DIGITALISATION_DATE_BASCULE);
 
     private final ParametreApplicationRepository repository;
     private final AuditService auditService;
@@ -62,6 +69,11 @@ public class ParametreService {
             }
         }
         return out;
+    }
+
+    /** La valeur d'un réglage, {@code null} s'il n'est pas initialisé. */
+    public String lire(String cle) {
+        return repository.findByCle(cle).map(ParametreApplication::getValeur).orElse(null);
     }
 
     public List<ParametreDto> lireToutes() {
@@ -78,6 +90,14 @@ public class ParametreService {
         ParametreApplication entity = repository.findByCle(cle)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
                         "Réglage non initialisé : " + cle));
+        if (DIGITALISATION_DATE_BASCULE.equals(cle) && valeur != null && !valeur.isBlank()) {
+            try {
+                java.time.LocalDate.parse(valeur.trim());
+            } catch (java.time.format.DateTimeParseException e) {
+                throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
+                        "Date de bascule invalide : format attendu AAAA-MM-JJ");
+            }
+        }
         entity.setValeur(valeur);
         entity = repository.save(entity);
 

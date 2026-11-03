@@ -10,6 +10,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.servlet.NoHandlerFoundException;
@@ -35,6 +36,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApi(ApiException ex) {
+        // Une erreur serveur (stockage indisponible, par exemple) doit laisser une trace : le reçu
+        // de dépôt manquait sans que rien n'en dise la cause (anomalie A08).
+        if (ex.getStatus() >= 500) {
+            log.error("Erreur {} {} : {}", ex.getStatus(), ex.getCode(), ex.getMessage(), ex.getCause() != null ? ex.getCause() : ex);
+        }
         return body(ErrorResponse.of(ex.getStatus(), ex.getCode(), ex.getMessage(), ex.getDetails()));
     }
 
@@ -79,16 +85,18 @@ public class GlobalExceptionHandler {
         return body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(),
                 ApiErrorCode.VALIDATION_FAILED,
-                "Valeur invalide pour le paramètre '" + ex.getName() + "': " + ex.getValue(),
+                "Valeur invalide pour le paramètre '" + ex.getName() + "'",
                 null));
     }
 
     @ExceptionHandler(MultipartException.class)
     public ResponseEntity<ErrorResponse> handleMultipart(MultipartException ex) {
+        // Le message de l'exception porte des chemins du serveur : il va au journal, pas à l'écran.
+        log.warn("Téléversement illisible", ex);
         return body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(),
                 ApiErrorCode.VALIDATION_FAILED,
-                "Erreur de traitement du fichier uploadé: " + ex.getMessage(),
+                "Le fichier n'a pas pu être lu : vérifiez qu'il n'est pas vide ni endommagé, puis réessayez.",
                 null));
     }
 
@@ -210,10 +218,18 @@ public class GlobalExceptionHandler {
                             + "par le journal du serveur.",
                     null));
         }
+        if (ex instanceof IllegalStateException || ex instanceof IllegalArgumentException) {
+            return body(ErrorResponse.of(
+                    HttpStatus.BAD_REQUEST.value(),
+                    ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    ex.getMessage() != null ? ex.getMessage() : ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    null));
+        }
+        log.error("RuntimeException inattendue", ex);
         return body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(),
                 ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                ex.getMessage() != null ? ex.getMessage() : ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                "Opération refusée",
                 null));
     }
 
@@ -267,8 +283,32 @@ public class GlobalExceptionHandler {
                 null));
     }
 
+    /**
+     * Une route appelée avec la mauvaise méthode rend 405, et non 500.
+     *
+     * <p>Constaté en recette : le front envoyait POST sur une route PATCH, et l'écran ne recevait
+     * qu'une « Erreur interne ». Le message donne les méthodes acceptées, pour que l'appel se
+     * corrige du premier coup.
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodeNonAutorisee(HttpRequestMethodNotSupportedException ex) {
+        String acceptees = ex.getSupportedHttpMethods() == null ? ""
+                : ex.getSupportedHttpMethods().stream().map(Object::toString).sorted().collect(Collectors.joining(", "));
+        ResponseEntity.BodyBuilder reponse = ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED);
+        if (ex.getSupportedHttpMethods() != null) {
+            reponse.allow(ex.getSupportedHttpMethods().toArray(new org.springframework.http.HttpMethod[0]));
+        }
+        return reponse.body(ErrorResponse.of(
+                HttpStatus.METHOD_NOT_ALLOWED.value(),
+                ApiErrorCode.METHOD_NOT_ALLOWED,
+                "Méthode " + ex.getMethod() + " non acceptée sur cette route"
+                        + (acceptees.isEmpty() ? "" : " (acceptées : " + acceptees + ")"),
+                null));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleAny(Exception ex) {
+        log.error("Erreur interne non traitée", ex);
         return body(ErrorResponse.of(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
                 ApiErrorCode.INTERNAL_ERROR,

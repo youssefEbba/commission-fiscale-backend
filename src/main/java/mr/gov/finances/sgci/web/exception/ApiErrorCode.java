@@ -20,11 +20,15 @@ public final class ApiErrorCode {
     public static final String INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
     public static final String FILE_TOO_LARGE = "FILE_TOO_LARGE";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
+    /** Route appelée avec une méthode HTTP qu'elle n'accepte pas (HTTP 405). */
+    public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
     public static final String STORAGE_UPLOAD_FAILED = "STORAGE_UPLOAD_FAILED";
     /** MinIO / S3 indisponible ou mal configuré (HTTP 503). */
     public static final String OBJECT_STORAGE_UNAVAILABLE = "OBJECT_STORAGE_UNAVAILABLE";
     /** API de change (open.er-api, exchangerate.host, etc.) injoignable ou en erreur (HTTP 503). */
     public static final String EXTERNAL_EXCHANGE_SERVICE_UNAVAILABLE = "EXTERNAL_EXCHANGE_SERVICE_UNAVAILABLE";
+    /** Service « Vérifier NIF » de la DGI injoignable ou en erreur (HTTP 503). */
+    public static final String DGI_SERVICE_UNAVAILABLE = "DGI_SERVICE_UNAVAILABLE";
     /** Fonctionnalité désactivée par configuration (HTTP 503). */
     public static final String FEATURE_DISABLED = "FEATURE_DISABLED";
 

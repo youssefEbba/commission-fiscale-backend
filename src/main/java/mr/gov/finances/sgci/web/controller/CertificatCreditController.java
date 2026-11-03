@@ -37,7 +37,6 @@ import java.io.IOException;
 @RestController
 @RequestMapping("/api/certificats-credit")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class CertificatCreditController {
 
     private final CertificatCreditService service;
@@ -197,7 +196,9 @@ public class CertificatCreditController {
         return service.updateStatut(id, statut, user);
     }
 
-    @PatchMapping("/{id}/montants")
+    // POST est accepté en plus de PATCH : le front publié envoie POST. Avec PATCH seul, la DGTCP
+    // recevait une erreur et ne pouvait plus poser son visa sur aucune mise en place.
+    @RequestMapping(value = "/{id}/montants", method = {RequestMethod.PATCH, RequestMethod.POST})
     @PreAuthorize("hasAnyAuthority('mise_en_place.dgtcp.open_credit', 'mise_en_place.dgtcp.validate')")
     public CertificatCreditDto updateMontants(
             @PathVariable Long id,
@@ -246,7 +247,7 @@ public class CertificatCreditController {
     public CertificatCreditDto adminCorrectInfo(
             @PathVariable Long id,
             @RequestParam String motif,
-            @RequestBody AdminCorrectionCertificatRequest request,
+            @Valid @RequestBody AdminCorrectionCertificatRequest request,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return service.adminCorrectInfo(id, request, motif, user);

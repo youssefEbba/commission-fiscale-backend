@@ -10,6 +10,7 @@ import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.repository.ClotureCreditRepository;
 import mr.gov.finances.sgci.repository.DocumentClotureCreditRepository;
+import mr.gov.finances.sgci.service.document.DocumentUploadSupport;
 import mr.gov.finances.sgci.web.dto.DocumentClotureCreditDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,39 +27,30 @@ public class DocumentClotureCreditService {
 
     private final DocumentClotureCreditRepository repository;
     private final ClotureCreditRepository clotureCreditRepository;
-    private final MinioService minioService;
     private final AuditService auditService;
-    private final DocumentRequirementValidator requirementValidator;
+    private final DocumentUploadSupport documentUploadSupport;
 
     @Transactional
     public DocumentClotureCreditDto upload(Long clotureCreditId, String codeDocument, MultipartFile file) throws IOException {
-        if (file == null || file.isEmpty()) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
-        }
-
-        requirementValidator.validateUpload(ProcessusDocument.CLOTURE_CI, codeDocument, file);
-
         ClotureCredit cloture = clotureCreditRepository.findById(clotureCreditId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Clôture crédit non trouvée: " + clotureCreditId));
 
-        int nextVersion = 1;
         DocumentClotureCredit previous = repository.findByClotureCreditIdAndCodeDocumentAndActifTrue(clotureCreditId, codeDocument)
                 .orElse(null);
         if (previous != null) {
             previous.setActif(false);
-            nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
         }
-
-        String originalFilename = file.getOriginalFilename();
-        String fileUrl = minioService.uploadFile(file);
+        DocumentUploadSupport.StoredUpload stored = documentUploadSupport.validerEtStocker(
+                ProcessusDocument.CLOTURE_CI, codeDocument, file,
+                previous == null ? null : previous.getVersion());
 
         DocumentClotureCredit doc = DocumentClotureCredit.builder()
                 .codeDocument(codeDocument)
-                .nomFichier(originalFilename != null ? originalFilename : file.getName())
-                .chemin(fileUrl)
+                .nomFichier(stored.nomFichier())
+                .chemin(stored.fileUrl())
                 .dateUpload(Instant.now())
-                .taille(file.getSize())
-                .version(nextVersion)
+                .taille(stored.taille())
+                .version(stored.version())
                 .actif(true)
                 .clotureCredit(cloture)
                 .build();

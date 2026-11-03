@@ -1,5 +1,7 @@
 package mr.gov.finances.sgci.web.dto;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,8 +20,12 @@ import java.math.BigDecimal;
 @Builder
 public class AdminCorrectionDemandeCorrectionRequest {
 
+    @DecimalMin("0")
     private BigDecimal creditInterieur;
+    @DecimalMin("0")
     private BigDecimal creditExterieur;
+    @Size(max = 500)
     private String intituleMarche;
+    @Size(max = 120)
     private String referenceAppelOffre;
 }

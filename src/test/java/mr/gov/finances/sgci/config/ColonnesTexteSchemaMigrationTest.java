@@ -33,15 +33,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ColonnesTexteSchemaMigrationTest {
 
     /** Où vit, dans le modèle, la colonne inscrite au registre. */
-    private static final Map<String, FieldRef> ORIGINE = Map.of(
-            "notification.type", new FieldRef(Notification.class, "type"),
-            "notification.entity_type", new FieldRef(Notification.class, "entityType"),
-            "utilisation_credit.statut", new FieldRef(UtilisationCredit.class, "statut"),
-            "document_requirement.processus", new FieldRef(DocumentRequirement.class, "processus"),
-            "demande_rattachement.statut", new FieldRef(DemandeRattachement.class, "statut"),
-            "marche.type_marche", new FieldRef(Marche.class, "typeMarche"),
-            "document_requirement.sens", new FieldRef(DocumentRequirement.class, "sens"),
-            "avenant.statut", new FieldRef(mr.gov.finances.sgci.domain.entity.Avenant.class, "statut"));
+    private static final Map<String, FieldRef> ORIGINE = Map.ofEntries(
+            Map.entry("notification.type", new FieldRef(Notification.class, "type")),
+            Map.entry("notification.entity_type", new FieldRef(Notification.class, "entityType")),
+            Map.entry("utilisation_credit.statut", new FieldRef(UtilisationCredit.class, "statut")),
+            Map.entry("document_requirement.processus", new FieldRef(DocumentRequirement.class, "processus")),
+            Map.entry("demande_rattachement.statut", new FieldRef(DemandeRattachement.class, "statut")),
+            Map.entry("marche.type_marche", new FieldRef(Marche.class, "typeMarche")),
+            Map.entry("document_requirement.sens", new FieldRef(DocumentRequirement.class, "sens")),
+            Map.entry("avenant.statut", new FieldRef(mr.gov.finances.sgci.domain.entity.Avenant.class, "statut")),
+            Map.entry("valeur_reference_digitalisation.code", new FieldRef(
+                    mr.gov.finances.sgci.domain.entity.ValeurReferenceDigitalisation.class, "code")),
+            Map.entry("entreprise.categorie", new FieldRef(mr.gov.finances.sgci.domain.entity.Entreprise.class, "categorie")),
+            Map.entry("bailleur.categorie", new FieldRef(mr.gov.finances.sgci.domain.entity.Bailleur.class, "categorie")),
+            Map.entry("retour_utilisateur.role", new FieldRef(mr.gov.finances.sgci.domain.entity.RetourUtilisateur.class, "role")),
+            Map.entry("retour_utilisateur.profil", new FieldRef(mr.gov.finances.sgci.domain.entity.RetourUtilisateur.class, "profil")),
+            Map.entry("retour_utilisateur.categorie", new FieldRef(mr.gov.finances.sgci.domain.entity.RetourUtilisateur.class, "categorie")),
+            Map.entry("enquete_satisfaction.statut", new FieldRef(mr.gov.finances.sgci.domain.entity.EnqueteSatisfaction.class, "statut")),
+            Map.entry("question_enquete.type", new FieldRef(mr.gov.finances.sgci.domain.entity.QuestionEnquete.class, "type")),
+            Map.entry("question_enquete.categorie", new FieldRef(mr.gov.finances.sgci.domain.entity.QuestionEnquete.class, "categorie")),
+            Map.entry("reponse_enquete.profil", new FieldRef(mr.gov.finances.sgci.domain.entity.ReponseEnquete.class, "profil")),
+            Map.entry("lot_import_archive_credit.statut", new FieldRef(mr.gov.finances.sgci.domain.entity.LotImportArchiveCredit.class, "statut")));
 
     private record FieldRef(Class<?> entite, String champ) {
     }

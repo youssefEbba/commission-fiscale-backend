@@ -13,7 +13,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/dossiers")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class DossierGedController {
 
     private final DossierGedService service;

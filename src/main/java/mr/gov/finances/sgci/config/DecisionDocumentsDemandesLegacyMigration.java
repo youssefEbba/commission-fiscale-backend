@@ -65,7 +65,7 @@ public class DecisionDocumentsDemandesLegacyMigration implements ApplicationRunn
                 return;
             }
             if (heritee) {
-                int reprises = jdbcTemplate.update("UPDATE " + t.table() + " SET " + COLONNE_CODE + " = " + COLONNE_HERITEE
+                int reprises = jdbcTemplate.update("UPDATE " + IdentifiantSql.sur(t.table()) + " SET " + COLONNE_CODE + " = " + COLONNE_HERITEE
                         + " WHERE (" + COLONNE_CODE + " IS NULL OR " + COLONNE_CODE + " = '') AND " + COLONNE_HERITEE + " IS NOT NULL");
                 log.info("{}: {} pièce(s) reprise(s) de {}", t.table(), reprises, COLONNE_HERITEE);
             }

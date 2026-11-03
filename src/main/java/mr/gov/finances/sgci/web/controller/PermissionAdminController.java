@@ -15,7 +15,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/admin/permissions")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 @PreAuthorize("hasAuthority('permissions.manage')")
 public class PermissionAdminController {
 

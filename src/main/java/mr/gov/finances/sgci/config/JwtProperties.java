@@ -7,8 +7,9 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "app.jwt")
 public class JwtProperties {
 
-    private String secret = "X7mD!r8KpE6@Z5YVQ#s1A4dFJ0Uo$B9%2H^tWCLN*eG";
-    private long expirationMs = 86400000; // 24 heures
+    /** Aucune valeur dans le code : APP_JWT_SECRET, ou une clé de session hors production (SecuriteAuDemarrage). */
+    private String secret;
+    private long expirationMs = 28800000; // 8 heures : une journée de travail
     /** Durée des JWT d’impersonation commission relais (défaut 4 h). */
     private long relaisExpirationMs = 14400000L;
 

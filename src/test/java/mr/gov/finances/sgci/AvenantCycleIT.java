@@ -146,6 +146,26 @@ class AvenantCycleIT {
 
     @Test
     @Transactional
+    void lAvenantPorteLeMarcheDeSonCreditEtLeMarcheChoisiDoitConcorder() {
+        preparerCertificat();
+        var marche = certificat.getDemandeCorrection().getMarche();
+        assertThat(marche).as("le crédit de démonstration est rattaché à un marché").isNotNull();
+
+        CreateAvenantRequest r = depot(TypeAvenant.JURIDIQUE);
+        r.setMarcheId(marche.getId());
+        AvenantDto a = service.deposer(r, entreprise);
+        assertThat(a.getMarcheId()).isEqualTo(marche.getId());
+        assertThat(a.getMarcheNumero()).isEqualTo(marche.getNumeroMarche());
+
+        CreateAvenantRequest autreMarche = depot(TypeAvenant.JURIDIQUE);
+        autreMarche.setMarcheId(marche.getId() + 100_000);
+        assertThatThrownBy(() -> service.deposer(autreMarche, entreprise))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("n'appartient pas au marché sélectionné");
+    }
+
+    @Test
+    @Transactional
     void chaqueEtapeAppartientASonActeur() {
         preparerCertificat();
         AvenantDto a = service.deposer(depot(TypeAvenant.JURIDIQUE), entreprise);

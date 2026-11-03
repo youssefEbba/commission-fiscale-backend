@@ -22,6 +22,8 @@ public class CertificatClotureQueueItemDto {
 
     private Long certificatCreditId;
     private String numero;
+    /** Référence lisible du crédit (CR-…), celle de « Mes crédits ». */
+    private String reference;
     private StatutCertificat statut;
     private Instant dateEmission;
     private Instant dateValidite;
@@ -36,8 +38,23 @@ public class CertificatClotureQueueItemDto {
     private boolean propositionEnCours;
     private Long clotureCreditId;
 
-    /** true si le DGTCP peut proposer une clôture maintenant (règles métier). */
+    /**
+     * true si le DGTCP peut proposer une clôture maintenant : aucune opération en cours. Le motif
+     * choisi peut ensuite exiger davantage (solde à zéro, validité dépassée).
+     */
     private boolean eligiblePourCloture;
+
+    /** true si plus rien ne retient le crédit : soldes épuisés ou validité dépassée. */
+    private boolean detecteAutomatiquement;
+
+    /** true si tous les soldes (cordon, TVA intérieure, TVA importation, stock déductible) sont nuls. */
+    private boolean soldesEpuises;
+
+    /** true si la date de validité du crédit est dépassée. */
+    private boolean validiteDepassee;
+
+    /** Les soldes encore disponibles, en français ; vide si {@link #soldesEpuises}. */
+    private List<String> soldesRestants;
 
     /**
      * Vrai si la demande de correction d'origine déclarait des équipements sous régime (plaques TT).

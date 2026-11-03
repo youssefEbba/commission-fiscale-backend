@@ -10,7 +10,6 @@ import mr.gov.finances.sgci.web.dto.RejectPasswordResetRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,7 +23,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/utilisateurs/password-reset-requests")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class PasswordResetAdminController {
 
     private final PasswordResetService passwordResetService;

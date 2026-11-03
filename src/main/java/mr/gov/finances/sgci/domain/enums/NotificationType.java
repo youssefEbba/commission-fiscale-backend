@@ -21,5 +21,7 @@ public enum NotificationType {
     /** La décision est prise sur une demande de rattachement. */
     RATTACHEMENT_TRAITEE,
     /** Un avenant (modification du crédit) change de statut. Nom attendu par le front. */
-    MODIFICATION_STATUT_CHANGE
+    MODIFICATION_STATUT_CHANGE,
+    /** Une enquête de satisfaction est ouverte au profil de l'usager. */
+    ENQUETE_SATISFACTION
 }

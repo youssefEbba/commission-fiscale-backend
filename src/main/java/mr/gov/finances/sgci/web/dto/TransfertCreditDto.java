@@ -17,6 +17,8 @@ public class TransfertCreditDto {
     private Instant dateDemande;
     private Long certificatCreditId;
     private String certificatNumero;
+    /** Référence du crédit (CR-…), celle de « Mes crédits » ; le numéro technique reste en {@code certificatNumero} (A14). */
+    private String certificatReference;
     private Long entrepriseSourceId;
     private BigDecimal montant;
     private Boolean operationsDouaneCloturees;

@@ -13,6 +13,7 @@ import mr.gov.finances.sgci.repository.AutoriteContractanteRepository;
 import mr.gov.finances.sgci.repository.EntrepriseRepository;
 import mr.gov.finances.sgci.repository.UtilisateurRepository;
 import mr.gov.finances.sgci.security.JwtService;
+import mr.gov.finances.sgci.security.TentativesConnexion;
 import mr.gov.finances.sgci.web.dto.LoginRequest;
 import mr.gov.finances.sgci.web.dto.LoginResponse;
 
@@ -36,16 +37,38 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuditService auditService;
     private final PermissionService permissionService;
+    private final TentativesConnexion tentativesConnexion;
+
+    /** Ferme toutes les sessions du compte : les jetons déjà émis sont refusés. */
+    @Transactional
+    public void deconnecter(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        utilisateurRepository.findById(userId).ifPresent(u -> {
+            u.revoquerSessions();
+            utilisateurRepository.save(u);
+        });
+    }
 
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
-        Utilisateur u = utilisateurRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new BadCredentialsException("Identifiants incorrects"));
+        long blocage = tentativesConnexion.minutesDeBlocage(request.getUsername());
+        if (blocage > 0) {
+            throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS.value(), ApiErrorCode.TROP_DE_REQUETES,
+                    "Trop de tentatives de connexion : réessayez dans " + blocage + " minute(s)");
+        }
+        // Le mot de passe d'abord : tout autre message (compte en attente…) dirait à n'importe qui
+        // que l'identifiant existe.
+        Utilisateur u = utilisateurRepository.findByUsername(request.getUsername()).orElse(null);
+        if (u == null || u.getPasswordHash() == null
+                || !passwordEncoder.matches(request.getPassword(), u.getPasswordHash())) {
+            tentativesConnexion.echec(request.getUsername());
+            throw new BadCredentialsException("Identifiants incorrects");
+        }
+        tentativesConnexion.succes(request.getUsername());
         if (Boolean.FALSE.equals(u.getActif())) {
             throw new BadCredentialsException("Compte en attente de validation par un administrateur");
-        }
-        if (!passwordEncoder.matches(request.getPassword(), u.getPasswordHash())) {
-            throw new BadCredentialsException("Identifiants incorrects");
         }
         var permissions = permissionService.findPermissionCodesByRole(u.getRole()).stream().toList();
         String token = jwtService.generateToken(

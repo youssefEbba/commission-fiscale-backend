@@ -25,7 +25,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/sous-traitances")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class SousTraitanceController {
 
     private final SousTraitanceService service;

@@ -27,6 +27,7 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final org.springframework.core.env.Environment environment;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -34,9 +35,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/auth/**").permitAll()
+                .authorizeHttpRequests(auth -> {
+                    auth.requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/password-reset/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
                         // Vérification d'un document par QR code : ouverte à dessein, pour que
                         // le Trésor, la DGI ou la douane contrôlent une pièce au guichet sans
@@ -50,12 +51,13 @@ public class SecurityConfig {
                         // cles de la liste blanche de ParametreService, jamais la table.
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/public/parametres").permitAll()
                         .requestMatchers("/api/local-files/**").authenticated()
-                        .requestMatchers("/h2-console/**").permitAll()
-                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
-                        .requestMatchers("/ws/**").permitAll()
-                        .requestMatchers("/api/**").authenticated()
-                        .anyRequest().authenticated()
-                )
+                        .requestMatchers("/ws/**").permitAll();
+                    if (!ExigencesProduction.estProduction(environment)) {
+                        auth.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll();
+                    }
+                    auth.requestMatchers("/api/**").authenticated()
+                        .anyRequest().authenticated();
+                })
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(unauthorizedEntryPoint())
                         .accessDeniedHandler((request, response, accessDeniedException) -> {
@@ -64,7 +66,16 @@ public class SecurityConfig {
                             response.getWriter().write("{\"status\":403,\"error\":\"Accès refusé\"}");
                         })
                 )
-                .headers(headers -> headers.frameOptions(f -> f.sameOrigin()))
+                // HSTS : le navigateur reste en HTTPS un an (posé seulement sur les réponses HTTPS).
+                // L'API ne s'affiche jamais dans un cadre : DENY plutôt que SAMEORIGIN, qui ne
+                // servait qu'à la console H2.
+                .headers(headers -> headers
+                        .httpStrictTransportSecurity(h -> h.includeSubDomains(true).maxAgeInSeconds(31_536_000))
+                        .contentTypeOptions(org.springframework.security.config.Customizer.withDefaults())
+                        .frameOptions(f -> f.deny())
+                        .referrerPolicy(r -> r.policy(
+                                org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy
+                                        .STRICT_ORIGIN_WHEN_CROSS_ORIGIN)))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
@@ -86,7 +97,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(CorsAllowedOrigins.FRONTEND);
+        config.setAllowedOrigins(CorsAllowedOrigins.pour(environment));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

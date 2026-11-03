@@ -26,7 +26,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/certificats-credit")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class DecisionCertificatCreditController {
 
     private final DecisionCertificatCreditService service;

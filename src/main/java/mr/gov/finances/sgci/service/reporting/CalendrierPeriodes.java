@@ -49,6 +49,9 @@ public final class CalendrierPeriodes {
     }
 
     public static String cle(int annee, int mois, Granularite granularite) {
+        if (granularite == Granularite.ANNEE) {
+            return String.format("%04d", annee);
+        }
         return granularite == Granularite.TRIMESTRE ? cleTrimestre(annee, mois) : cleMois(annee, mois);
     }
 

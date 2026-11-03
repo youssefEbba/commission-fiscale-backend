@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -20,6 +21,7 @@ import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.NotificationType;
 import mr.gov.finances.sgci.domain.enums.StatutConvention;
+import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutReferentielProjet;
 import mr.gov.finances.sgci.domain.enums.TypeDocumentProjet;
 import mr.gov.finances.sgci.repository.AutoriteContractanteRepository;
@@ -52,26 +54,44 @@ public class ReferentielProjetService {
     private final EffectiveIdentityService effectiveIdentityService;
 
     @Transactional(readOnly = true)
-    public List<ReferentielProjetDto> findAll() {
-        return referentielRepository.findAll().stream().map(this::toDto).collect(Collectors.toList());
+    public List<ReferentielProjetDto> findAll(AuthenticatedUser user) {
+        return dansLePerimetre(referentielRepository.findAll(), user);
     }
 
     @Transactional(readOnly = true)
-    public ReferentielProjetDto findById(Long id) {
-        return referentielRepository.findById(id).map(this::toDto)
+    public ReferentielProjetDto findById(Long id, AuthenticatedUser user) {
+        ReferentielProjet projet = referentielRepository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Référentiel projet non trouvé: " + id));
+        if (dansLePerimetre(List.of(projet), user).isEmpty()) {
+            throw ApiException.forbidden(ApiErrorCode.ACCESS_DENIED, "Accès refusé : projet hors périmètre");
+        }
+        return toDto(projet);
     }
 
     @Transactional(readOnly = true)
-    public List<ReferentielProjetDto> findByAutoriteContractante(Long autoriteId) {
-        return referentielRepository.findByAutoriteContractanteId(autoriteId).stream()
-                .map(this::toDto)
-                .collect(Collectors.toList());
+    public List<ReferentielProjetDto> findByAutoriteContractante(Long autoriteId, AuthenticatedUser user) {
+        return dansLePerimetre(referentielRepository.findByAutoriteContractanteId(autoriteId), user);
     }
 
     @Transactional(readOnly = true)
-    public List<ReferentielProjetDto> findByStatut(StatutReferentielProjet statut) {
-        return referentielRepository.findByStatut(statut).stream()
+    public List<ReferentielProjetDto> findByStatut(StatutReferentielProjet statut, AuthenticatedUser user) {
+        return dansLePerimetre(referentielRepository.findByStatut(statut), user);
+    }
+
+    /**
+     * Une entreprise ne voit que les projets des conventions de ses propres dossiers (anomalie
+     * A30) ; les autres rôles gardent la lecture du référentiel.
+     */
+    private List<ReferentielProjetDto> dansLePerimetre(List<ReferentielProjet> projets, AuthenticatedUser user) {
+        Role role = user != null ? effectiveIdentityService.effectiveRole(user) : null;
+        if (role != Role.ENTREPRISE && role != Role.SOUS_TRAITANT) {
+            return projets.stream().map(this::toDto).collect(Collectors.toList());
+        }
+        Utilisateur u = utilisateurRepository.findById(user.getUserId()).orElse(null);
+        Long entId = u != null ? effectiveIdentityService.resolveEntrepriseId(user, u) : null;
+        Set<Long> conventions = entId == null ? Set.of() : Set.copyOf(conventionRepository.findIdsPourEntreprise(entId));
+        return projets.stream()
+                .filter(p -> p.getConvention() != null && conventions.contains(p.getConvention().getId()))
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }

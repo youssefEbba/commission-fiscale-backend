@@ -7,6 +7,7 @@ import mr.gov.finances.sgci.web.dto.AuditLogDto;
 
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -14,7 +15,6 @@ import java.time.Instant;
 @RestController
 @RequestMapping("/api/audit-logs")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class AuditLogController {
 
     private final AuditLogQueryService queryService;
@@ -24,6 +24,7 @@ public class AuditLogController {
      * Filtres optionnels : username, entityType, action, dateFrom, dateTo.
      */
     @GetMapping
+    @PreAuthorize("hasAuthority('security.audit.view')")
     public ResponseEntity<org.springframework.data.domain.Page<AuditLogDto>> getAll(
             @RequestParam(required = false) String username,
             @RequestParam(required = false) String entityType,

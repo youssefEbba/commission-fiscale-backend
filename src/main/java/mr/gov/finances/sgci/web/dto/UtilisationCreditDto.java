@@ -95,6 +95,11 @@ public class UtilisationCreditDto {
 
     /** Numéro du certificat d'utilisation, attribué à son émission par le Président ({@code CU-001/2026}). */
     private String numeroCertificatUtilisation;
+    /**
+     * Vrai pour une utilisation reprise de l'archive papier : son certificat n'a pas été numérisé,
+     * et l'écran doit le dire au lieu d'afficher « Pas encore émis » (anomalie A20).
+     */
+    private boolean repriseArchive;
     private Instant dateCertificatUtilisation;
 
     /**

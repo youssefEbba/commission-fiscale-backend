@@ -21,10 +21,11 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompJwtChannelInterceptor stompJwtChannelInterceptor;
+    private final org.springframework.core.env.Environment environment;
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        String[] origins = CorsAllowedOrigins.FRONTEND.toArray(String[]::new);
+        String[] origins = CorsAllowedOrigins.pour(environment).toArray(String[]::new);
         registry.addEndpoint("/ws").setAllowedOrigins(origins);
         registry.addEndpoint("/ws").setAllowedOrigins(origins).withSockJS();
     }

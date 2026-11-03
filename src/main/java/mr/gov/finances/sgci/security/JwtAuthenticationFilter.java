@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Set;
 
 @Component
@@ -53,7 +52,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String username = jwtService.extractUsername(token);
             Role role = jwtService.extractRole(token);
             Long userId = jwtService.extractUserId(token);
-            List<String> permissions = jwtService.extractPermissions(token);
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 if (userId != null) {
                     Utilisateur account = utilisateurRepository.findById(userId).orElse(null);
@@ -63,20 +61,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         response.getWriter().write("{\"status\":403,\"error\":\"Compte désactivé ou introuvable\"}");
                         return;
                     }
+                    // Session fermée depuis l'émission du jeton : déconnexion, changement de mot de passe.
+                    if (jwtService.extractVersionSessions(token) != account.versionSessionsCourante()) {
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        response.setContentType("application/json;charset=UTF-8");
+                        response.getWriter().write("{\"status\":401,\"error\":\"Session expirée : reconnectez-vous\"}");
+                        return;
+                    }
                 }
+                boolean impersonating = jwtService.extractImpersonating(token);
                 Collection<SimpleGrantedAuthority> authorities = new ArrayList<>();
-                authorities.add(new SimpleGrantedAuthority("ROLE_" + role.name()));
+                if (role != null) {
+                    authorities.add(new SimpleGrantedAuthority("ROLE_" + role.name()));
+                }
 
                 Set<String> mergedPermissions = new LinkedHashSet<>();
-                if (permissions != null) {
-                    mergedPermissions.addAll(permissions);
+                if (impersonating && role == Role.AUTORITE_CONTRACTANTE) {
+                    mergedPermissions.addAll(
+                            permissionService.findPermissionCodesUnionAutoriteContractanteProfiles());
+                } else if (role != null) {
+                    mergedPermissions.addAll(permissionService.findPermissionCodesByRole(role));
                 }
-                mergedPermissions.addAll(permissionService.findPermissionCodesByRole(role));
 
                 for (String permission : mergedPermissions) {
                     authorities.add(new SimpleGrantedAuthority(permission));
                 }
-                boolean impersonating = jwtService.extractImpersonating(token);
                 Long actingEnt = jwtService.extractActingEntrepriseId(token);
                 Long actingAc = jwtService.extractActingAutoriteContractanteId(token);
                 UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(

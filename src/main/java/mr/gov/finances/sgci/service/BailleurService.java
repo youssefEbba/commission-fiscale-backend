@@ -1,5 +1,7 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.domain.enums.CategorieBailleur;
+
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 
@@ -37,6 +39,7 @@ public class BailleurService {
         Bailleur entity = Bailleur.builder()
                 .nom(dto.getNom())
                 .details(dto.getDetails())
+                .categorie(dto.getCategorie() != null ? dto.getCategorie() : CategorieBailleur.NON_RENSEIGNE)
                 .build();
         entity = repository.save(entity);
 
@@ -58,6 +61,9 @@ public class BailleurService {
         }
         entity.setNom(nom);
         entity.setDetails(dto.getDetails());
+        if (dto.getCategorie() != null) {
+            entity.setCategorie(dto.getCategorie());
+        }
         entity = repository.save(entity);
         BailleurDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "Bailleur", String.valueOf(id), result);
@@ -69,6 +75,7 @@ public class BailleurService {
                 .id(b.getId())
                 .nom(b.getNom())
                 .details(b.getDetails())
+                .categorie(b.getCategorie() != null ? b.getCategorie() : CategorieBailleur.NON_RENSEIGNE)
                 .build();
     }
 }

@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.domain.document.DocumentDepotPolicy;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 
@@ -63,6 +64,7 @@ public class DocumentCertificatCreditService {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
         }
         requirementValidator.validateUpload(ProcessusDocument.MISE_EN_PLACE_CI, codeDocument, file);
+        assertDeposableParLActeur(codeDocument, user);
 
         CertificatCredit certificat = certificatRepository.findById(certificatCreditId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé: " + certificatCreditId));
@@ -216,6 +218,22 @@ public class DocumentCertificatCreditService {
                 .map(DocumentCertificatCredit::getCodeDocument)
                 .distinct()
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Le certificat de crédit d'impôt signé n'est déposé que par le Président ou l'administrateur qui
+     * le supplée. Les autres pièces hors dépôt du processus suivent la même règle : aucune n'est
+     * apportée par le demandeur ni par les directions.
+     */
+    private static void assertDeposableParLActeur(String codeDocument, AuthenticatedUser user) {
+        if (user == null || user.getRole() == null
+                || DocumentDepotPolicy.deposableParLeDemandeur(ProcessusDocument.MISE_EN_PLACE_CI, codeDocument)) {
+            return;
+        }
+        if (user.getRole() != Role.PRESIDENT && user.getRole() != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "Le certificat de crédit d'impôt signé est déposé par le Président");
+        }
     }
 
     @Transactional(readOnly = true)

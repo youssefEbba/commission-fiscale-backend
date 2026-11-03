@@ -25,6 +25,10 @@ public class JwtService {
     private static final String CLAIM_ACTING_AC_ID = "actingAutoriteContractanteId";
 
     private final JwtProperties jwtProperties;
+    private final mr.gov.finances.sgci.repository.UtilisateurRepository utilisateurRepository;
+
+    /** Numéro de session du compte à la création du jeton (voir Utilisateur#versionSessions). */
+    static final String CLAIM_VERSION_SESSIONS = "sv";
 
     private SecretKey getSigningKey() {
         byte[] keyBytes = jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8);
@@ -49,6 +53,9 @@ public class JwtService {
                 .claim("userId", userId)
                 .claim("permissions", permissions != null ? List.copyOf(permissions) : List.of())
                 .claim(CLAIM_IMPERSONATING, impersonating)
+                .claim(CLAIM_VERSION_SESSIONS, userId == null ? 0
+                        : utilisateurRepository.findById(userId)
+                                .map(mr.gov.finances.sgci.domain.entity.Utilisateur::versionSessionsCourante).orElse(0))
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(getSigningKey());
@@ -103,6 +110,12 @@ public class JwtService {
             return permissions;
         }
         return List.of();
+    }
+
+    /** 0 pour un jeton émis avant l'introduction du numéro de session. */
+    public int extractVersionSessions(String token) {
+        Number v = getClaims(token).get(CLAIM_VERSION_SESSIONS, Number.class);
+        return v == null ? 0 : v.intValue();
     }
 
     public boolean isTokenValid(String token) {

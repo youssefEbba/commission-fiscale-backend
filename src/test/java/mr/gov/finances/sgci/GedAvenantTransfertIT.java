@@ -59,6 +59,8 @@ class GedAvenantTransfertIT {
     @Autowired private UtilisateurRepository utilisateurRepository;
     @Autowired private DataInitializer dataInitializer;
     @Autowired private DocumentRequirementService requirementService;
+    @Autowired private mr.gov.finances.sgci.web.controller.AvenantController avenantController;
+    @Autowired private mr.gov.finances.sgci.service.PermissionService permissionService;
 
     // ── l'avenant ──────────────────────────────────────────────────────────────────────────────
 
@@ -121,6 +123,12 @@ class GedAvenantTransfertIT {
         assertThatThrownBy(() -> avenantService.verifierDepotPiece(a.getId(), "DECISION_COMMISSION", compte("entreprise")))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("Commission");
+        // Et l'inverse : les pièces du dépôt appartiennent au déposant, pas aux directions.
+        for (String direction : new String[] {"president", "admin", "dgtcp"}) {
+            assertThatThrownBy(() -> avenantService.verifierDepotPiece(a.getId(), "AVENANT_CONTRAT", compte(direction)))
+                    .as(direction)
+                    .isInstanceOf(ApiException.class);
+        }
     }
 
     @Test
@@ -155,6 +163,27 @@ class GedAvenantTransfertIT {
         joindre(a.getId(), "DECISION_COMMISSION");
         assertThat(avenantService.valider(a.getId(), null, compte("president")).getStatut())
                 .isEqualTo(StatutAvenant.ADOPTE);
+    }
+
+    /**
+     * Par la route elle-même : l'administrateur supplée le Président, mais n'a pas la permission de
+     * dépôt du déposant ({@code modification.document.upload}) ; la route doit l'accepter au titre de
+     * {@code modification.admin_override}.
+     */
+    @Test
+    @Transactional
+    void lePresidentEtLAdministrateurJoignentLaDecisionParLaRoute() throws Exception {
+        AvenantDto a = avenantService.deposer(depot(), compte("entreprise"));
+        avenantService.prendreEnCharge(a.getId(), null, compte("dgtcp"));
+
+        for (String username : new String[] {"president", "admin"}) {
+            AuthenticatedUser user = authentifier(username);
+            assertThat(avenantController.uploadDocument(a.getId(), "DECISION_COMMISSION", null, null,
+                    new org.springframework.mock.web.MockMultipartFile("file", "decision.pdf", "application/pdf",
+                            "%PDF-1.4 decision".getBytes()), user).getCodeDocument())
+                    .as(username)
+                    .isEqualTo("DECISION_COMMISSION");
+        }
     }
 
     // ── le transfert ───────────────────────────────────────────────────────────────────────────
@@ -217,5 +246,22 @@ class GedAvenantTransfertIT {
     private AuthenticatedUser compte(String username) {
         Utilisateur u = utilisateurRepository.findByUsername(username).orElseThrow();
         return new AuthenticatedUser(u.getId(), u.getUsername(), u.getRole());
+    }
+
+    /** Pose dans le contexte de sécurité une authentification identique à celle du filtre JWT. */
+    private AuthenticatedUser authentifier(String username) {
+        AuthenticatedUser principal = compte(username);
+        java.util.List<org.springframework.security.core.authority.SimpleGrantedAuthority> authorities = new java.util.ArrayList<>();
+        authorities.add(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + principal.getRole().name()));
+        permissionService.findPermissionCodesByRole(principal.getRole())
+                .forEach(p -> authorities.add(new org.springframework.security.core.authority.SimpleGrantedAuthority(p)));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal, null, authorities));
+        return principal;
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void viderLeContexteDeSecurite() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
     }
 }

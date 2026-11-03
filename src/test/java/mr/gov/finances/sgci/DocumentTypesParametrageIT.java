@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,6 +34,21 @@ class DocumentTypesParametrageIT {
     @Autowired
     private TestRestTemplate restTemplate;
 
+    @Autowired
+    private mr.gov.finances.sgci.repository.DocumentRequirementRepository requirementRepository;
+
+    /** Code créé par le test : retiré ensuite, sinon les tests de couverture du dépôt le trouvent non classé. */
+    private String codeCree;
+
+    @AfterEach
+    void retirerLaPieceCreee() {
+        if (codeCree != null) {
+            requirementRepository.findByProcessusAndCodeDocument(
+                            mr.gov.finances.sgci.domain.enums.ProcessusDocument.UTILISATION_CI_DOUANE, codeCree)
+                    .ifPresent(requirementRepository::delete);
+        }
+    }
+
     private String baseUrl() {
         return "http://localhost:" + port;
     }
@@ -63,6 +79,7 @@ class DocumentTypesParametrageIT {
     void admin_peut_creer_type_et_exigence_pour_processus_utilisation_douane() {
         String token = loginAdmin();
         String code = ("NOUVEAU_DOC_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8)).toUpperCase();
+        codeCree = code;
 
         ResponseEntity<Map> createType = restTemplate.postForEntity(
                 baseUrl() + "/api/referentiel/types-document",

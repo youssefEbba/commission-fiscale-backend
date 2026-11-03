@@ -14,7 +14,6 @@ import mr.gov.finances.sgci.web.exception.ApiException;
 import mr.gov.finances.sgci.web.support.VerificationPubliqueRateLimiter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,7 +40,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/public/rattachement")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class RattachementPublicController {
 
     private final DemandeRattachementService service;

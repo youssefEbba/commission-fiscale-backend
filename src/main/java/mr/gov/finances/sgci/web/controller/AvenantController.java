@@ -22,7 +22,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/avenants")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class AvenantController {
 
     private final DocumentAvenantService documentService;
@@ -100,7 +99,9 @@ public class AvenantController {
 
     @PostMapping(value = "/{id}/documents", consumes = "multipart/form-data")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAuthority('modification.document.upload')")
+    // admin_override : l'administrateur supplée le Président pour la décision de la Commission ;
+    // le service décide qui joint quelle pièce (verifierDepotPiece).
+    @PreAuthorize("hasAnyAuthority('modification.document.upload', 'modification.admin_override')")
     public DocumentAvenantDto uploadDocument(
             @PathVariable Long id,
             @RequestParam(value = "codeDocument", required = false) String codeDocument,
@@ -111,13 +112,9 @@ public class AvenantController {
     ) throws IOException {
         String resolved = mr.gov.finances.sgci.web.support.DocumentUploadParamResolver
                 .resolveCodeDocument(codeDocument, typeDocument, type);
-        // Le périmètre du crédit, et tant que l'avenant est déposé : ses pièces accompagnent le dépôt.
-        var avenant = service.charger(id, user);
-        if (avenant.getStatut() != mr.gov.finances.sgci.domain.enums.StatutAvenant.DEPOSE) {
-            throw mr.gov.finances.sgci.web.exception.ApiException.conflict(
-                    mr.gov.finances.sgci.web.exception.ApiErrorCode.CONFLICT,
-                    "Les pièces se déposent tant que l'avenant n'est pas pris en charge");
-        }
+        // Le périmètre du crédit, puis qui joint quoi et quand : le déposant au dépôt, le Président
+        // la décision de la Commission après l'examen.
+        service.verifierDepotPiece(id, resolved, user);
         return documentService.upload(id, resolved, file);
     }
 }

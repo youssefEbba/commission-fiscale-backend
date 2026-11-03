@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.web.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.TypeEmpreinte;
@@ -38,7 +39,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/signatures")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class SignatureController {
 
     private final SignatureService service;
@@ -137,7 +137,7 @@ public class SignatureController {
     @PreAuthorize("hasAuthority('signature.manage')")
     public SignatureDto updateMetadata(
             @PathVariable Long id,
-            @RequestBody UpdateSignatureRequest request,
+            @Valid @RequestBody UpdateSignatureRequest request,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return service.updateMetadata(id, request, user);

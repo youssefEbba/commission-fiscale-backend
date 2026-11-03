@@ -1,5 +1,7 @@
 package mr.gov.finances.sgci.web.dto;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,10 +22,13 @@ import java.time.Instant;
 @Builder
 public class AdminCorrectionUtilisationRequest {
 
+    @DecimalMin("0")
     private BigDecimal montant;
 
     /** Champs propres à {@code UtilisationDouaniere}. */
+    @Size(max = 80)
     private String numeroDeclaration;
+    @Size(max = 80)
     private String numeroBulletin;
     private Instant dateDeclaration;
 }

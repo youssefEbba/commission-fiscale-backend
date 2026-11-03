@@ -45,6 +45,9 @@ class ZAllWorkflowsIT {
     @Autowired
     private TestRestTemplate restTemplate;
 
+    @Autowired
+    private org.springframework.context.ApplicationContext context;
+
     private String baseUrl() {
         return "http://localhost:" + port;
     }
@@ -88,6 +91,23 @@ class ZAllWorkflowsIT {
         return new HttpEntity<>(body, h);
     }
 
+    /** Le bulletin de liquidation se saisit ligne par ligne : droits de douane et TVA à l'import. */
+    private static List<Map<String, Object>> douaneLignes(BigDecimal droits, BigDecimal tva) {
+        Map<String, Object> ligneDd = new LinkedHashMap<>();
+        ligneDd.put("codeTaxe", "DD");
+        ligneDd.put("denominationTaxe", "Droits de douane");
+        ligneDd.put("typeLigne", "ARTICLE");
+        ligneDd.put("valeurTaxe", droits);
+        ligneDd.put("affectation", "AU_CI");
+        Map<String, Object> ligneTva = new LinkedHashMap<>();
+        ligneTva.put("codeTaxe", "TVA");
+        ligneTva.put("denominationTaxe", "TVA importation");
+        ligneTva.put("typeLigne", "ARTICLE");
+        ligneTva.put("valeurTaxe", tva);
+        ligneTva.put("affectation", "AU_CI");
+        return List.of(ligneDd, ligneTva);
+    }
+
     private static Long findCertificatIdByNumero(List<Map<String, Object>> certs, String numero) {
         for (Object o : certs) {
             if (o instanceof Map m && numero.equals(String.valueOf(m.get("numero")))) {
@@ -97,14 +117,6 @@ class ZAllWorkflowsIT {
         throw new AssertionError("Certificat introuvable: " + numero);
     }
 
-    private static Map<String, Object> findDemandeAdoptee(List<Map<String, Object>> demandes) {
-        for (Object o : demandes) {
-            if (o instanceof Map m && "ADOPTEE".equals(String.valueOf(m.get("statut")))) {
-                return m;
-            }
-        }
-        throw new AssertionError("Aucune demande ADOPTEE dans la liste");
-    }
 
     @Test
     void chaine_mise_en_place_demande_utilisation() {
@@ -117,29 +129,13 @@ class ZAllWorkflowsIT {
         );
         assertThat(certsList.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(certsList.getBody()).isNotNull();
-        Long seedCertId = findCertificatIdByNumero(certsList.getBody(), "CI-TEST-OUVERT");
-        // Libère la demande ADOPTEE seed (TestWorkflowDataSeed : un seul certificat non annulé par demande).
-        ResponseEntity<Map> annule = restTemplate.exchange(
-                baseUrl() + "/api/certificats-credit/" + seedCertId + "/statut?statut=ANNULE",
-                HttpMethod.PATCH,
-                bearer(president.token()),
-                Map.class
-        );
-        assertThat(annule.getStatusCode()).isEqualTo(HttpStatus.OK);
-
+        // Une demande adoptée neuve, sans certificat : celles de la démonstration ont toutes le leur
+        // (un seul actif par demande), et annuler CI-TEST-OUVERT cassait les tests suivants.
+        DemandeAdopteeDeTest.Ids neuve = DemandeAdopteeDeTest.creer(context);
         LoginResult ac = login("ac", "123456");
         assertThat(ac.autoriteContractanteId()).isNotNull();
-        ResponseEntity<List> demandesAc = restTemplate.exchange(
-                baseUrl() + "/api/demandes-correction/by-autorite/" + ac.autoriteContractanteId(),
-                HttpMethod.GET,
-                bearer(ac.token()),
-                List.class
-        );
-        assertThat(demandesAc.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(demandesAc.getBody()).isNotNull();
-        Map<String, Object> demande = findDemandeAdoptee(demandesAc.getBody());
-        Long demandeId = ((Number) demande.get("id")).longValue();
-        Long entrepriseId = ((Number) demande.get("entrepriseId")).longValue();
+        Long demandeId = neuve.demandeId();
+        Long entrepriseId = neuve.entrepriseId();
 
         Map<String, Object> createCertBody = new LinkedHashMap<>();
         createCertBody.put("entrepriseId", entrepriseId);
@@ -164,7 +160,12 @@ class ZAllWorkflowsIT {
 
         LoginResult dgtcp = login("dgtcp", "123456");
         Map<String, Object> montants = new LinkedHashMap<>();
+        // Récapitulatif ventilé : cordon = b + c + d, TVA intérieure = g − d.
         montants.put("montantCordon", new BigDecimal("4000000"));
+        montants.put("droitsEtTaxesDouaneHorsTva", new BigDecimal("2500000"));
+        montants.put("taxesConsommation", new BigDecimal("500000"));
+        montants.put("tvaImportationDouane", new BigDecimal("1000000"));
+        montants.put("tvaCollecteeTravaux", new BigDecimal("3000000"));
         montants.put("montantTVAInterieure", new BigDecimal("2000000"));
         ResponseEntity<Map> patchMontants = restTemplate.exchange(
                 baseUrl() + "/api/certificats-credit/" + newCertId + "/montants",
@@ -220,8 +221,7 @@ class ZAllWorkflowsIT {
         utilBody.put("entrepriseId", entrepriseId);
         utilBody.put("numeroDeclaration", "DEC-IT-" + System.currentTimeMillis());
         utilBody.put("numeroBulletin", "BUL-IT-001");
-        utilBody.put("montantDroits", new BigDecimal("10000"));
-        utilBody.put("montantTVA", new BigDecimal("5000"));
+        utilBody.put("lignes", douaneLignes(new BigDecimal("10000"), new BigDecimal("5000")));
         utilBody.put("enregistreeSYDONIA", true);
         ResponseEntity<Map> util = restTemplate.postForEntity(
                 baseUrl() + "/api/utilisations-credit",

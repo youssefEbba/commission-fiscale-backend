@@ -24,7 +24,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/transferts-credit")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class TransfertCreditController {
 
     private final TransfertCreditService service;

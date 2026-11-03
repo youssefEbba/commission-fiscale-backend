@@ -15,6 +15,12 @@ import java.io.IOException;
  */
 public class WsPathCorsFilter extends OncePerRequestFilter {
 
+    private final java.util.List<String> origines;
+
+    public WsPathCorsFilter(java.util.List<String> origines) {
+        this.origines = origines;
+    }
+
     @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
@@ -23,7 +29,7 @@ public class WsPathCorsFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         String originHeader = request.getHeader("Origin");
         String origin = originHeader != null ? originHeader.trim() : null;
-        boolean allowed = origin != null && CorsAllowedOrigins.matchesFrontendOrigin(origin);
+        boolean allowed = origin != null && origines.contains(origin);
 
         if (allowed) {
             response.setHeader("Access-Control-Allow-Origin", origin);
