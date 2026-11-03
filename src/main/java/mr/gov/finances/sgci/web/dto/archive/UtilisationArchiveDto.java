@@ -28,4 +28,17 @@ public class UtilisationArchiveDto {
 
     /** Ventilation fiscale ; vide pour une utilisation de TVA intérieure. */
     private List<LigneTaxeArchiveDto> lignesTaxe = new ArrayList<>();
+
+    /*
+     * TVA intérieure rejouée selon les règles de l'application (montant = TVA collectée) : le stock de
+     * TVA déductible est déduit en entier, le net est imputé sur le solde TVA, le dépassement est payé
+     * par l'entreprise, un net négatif devient un report à nouveau.
+     */
+    private BigDecimal tvaDeductibleUtilisee;
+    private BigDecimal tvaNette;
+    private BigDecimal creditInterieurUtilise;
+    private BigDecimal paiementEntreprise;
+    private BigDecimal reportANouveau;
+    private BigDecimal soldeTvaAvant;
+    private BigDecimal soldeTvaApres;
 }

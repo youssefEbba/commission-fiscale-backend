@@ -90,6 +90,18 @@ public class ImportArchiveLotController {
         return service.importer(id, request != null ? request.getCreditIds() : null, user);
     }
 
+    /**
+     * Réapplique aux crédits déjà importés les montants recalculés (composantes du crédit douanier,
+     * soldes, format des utilisations). Pour un lot importé avant le 03/11/2026, déposer d'abord à
+     * nouveau le même fichier, qui est alors relu.
+     */
+    @PostMapping("/{id}/recalculer")
+    @PreAuthorize("hasAuthority('archive.import')")
+    @Operation(summary = "Recalculer les crédits déjà importés du lot")
+    public ImportResultatDto recalculer(@PathVariable Long id, @AuthenticationPrincipal AuthenticatedUser user) {
+        return service.recalculer(id, user);
+    }
+
     /** Retire le lot ; les crédits déjà importés restent. */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('archive.import')")

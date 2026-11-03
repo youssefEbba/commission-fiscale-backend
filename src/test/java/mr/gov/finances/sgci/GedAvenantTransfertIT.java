@@ -1,6 +1,6 @@
 package mr.gov.finances.sgci;
 
-import mr.gov.finances.sgci.config.DataInitializer;
+import mr.gov.finances.sgci.config.seed.SeedDocumentRequirements;
 import mr.gov.finances.sgci.domain.document.DocumentDepotPolicy;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.DocumentAvenant;
@@ -28,7 +28,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -57,7 +56,7 @@ class GedAvenantTransfertIT {
     @Autowired private CertificatCreditRepository certificatRepository;
     @Autowired private UtilisationCreditRepository utilisationRepository;
     @Autowired private UtilisateurRepository utilisateurRepository;
-    @Autowired private DataInitializer dataInitializer;
+    @Autowired private SeedDocumentRequirements seedDocumentRequirements;
     @Autowired private DocumentRequirementService requirementService;
     @Autowired private mr.gov.finances.sgci.web.controller.AvenantController avenantController;
     @Autowired private mr.gov.finances.sgci.service.PermissionService permissionService;
@@ -194,7 +193,7 @@ class GedAvenantTransfertIT {
         rendreObligatoire(ProcessusDocument.TRANSFERT_CREDIT, "JUSTIFICATIFS_CLOTURE_DOUANE", false);
 
         // Le seed des pièces, rejoué exactement comme au démarrage du serveur.
-        ReflectionTestUtils.invokeMethod(dataInitializer, "seedDocumentRequirements");
+        seedDocumentRequirements.seed();   // comme au redémarrage
 
         assertThat(requirementRepository
                 .findByProcessusAndCodeDocument(ProcessusDocument.TRANSFERT_CREDIT, "JUSTIFICATIFS_CLOTURE_DOUANE")

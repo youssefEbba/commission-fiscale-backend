@@ -7,6 +7,8 @@ import mr.gov.finances.sgci.domain.entity.Entreprise;
 import mr.gov.finances.sgci.domain.entity.Marche;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutMarche;
+import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
+import mr.gov.finances.sgci.domain.entity.UtilisationTVAInterieure;
 import mr.gov.finances.sgci.repository.AutoriteContractanteRepository;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.ConventionRepository;
@@ -61,6 +63,7 @@ class ImportArchiveLotIT {
     @Autowired private CertificatCreditRepository certificatRepository;
     @Autowired private UtilisationCreditRepository utilisationRepository;
     @Autowired private MarcheRepository marcheRepository;
+    @Autowired private mr.gov.finances.sgci.repository.TvaDeductibleStockRepository stockRepository;
 
     @MockitoSpyBean private ImportArchiveCreditService importService;
     @MockitoBean private DgiNifClient dgi;
@@ -171,7 +174,80 @@ class ImportArchiveLotIT {
         assertThat(reprise.getImportes()).isEqualTo(1);
         CertificatCredit certificatDouanier = certificatRepository.findById(
                 reprise.getCredits().get(0).getCertificatId()).orElseThrow();
-        assertThat(certificatDouanier.getSoldeCordon()).isEqualByComparingTo("1999332.09");
+        // Le solde douanier (1 999 332,09) se répartit entre droits (cordon) et TVA d'importation restante (d′).
+        assertThat(certificatDouanier.getSoldeCordon()).isEqualByComparingTo("1070479.15");
+        assertThat(certificatDouanier.getTvaImportationDouane()).isEqualByComparingTo("928852.94");
+        // Récapitulatif fiscal : b, c, d accordée, et g = h + d.
+        assertThat(certificatDouanier.getDroitsEtTaxesDouaneHorsTva()).isEqualByComparingTo("1366690.15");
+        assertThat(certificatDouanier.getTaxesConsommation()).isEqualByComparingTo("87000");
+        assertThat(certificatDouanier.getTvaImportationDouaneAccordee()).isEqualByComparingTo("1262672.30");
+        assertThat(certificatDouanier.getTvaCollecteeTravaux()).isEqualByComparingTo("2392590.42");
+        // Utilisations : la douane est liquidée, la TVA intérieure porte son montant de TVA.
+        assertThat(utilisationRepository.findByCertificatCreditId(certificatDouanier.getId()))
+                .allSatisfy(u -> assertThat(u.getStatut()).isEqualTo(StatutUtilisation.LIQUIDEE));
+        // Stock de TVA déductible : la TVA de l'importation, rattachée à son utilisation douanière.
+        assertThat(stockRepository.findByCertificatCreditIdOrderByDateCreationAsc(certificatDouanier.getId()))
+                .singleElement().satisfies(st -> {
+                    assertThat(st.getSource()).isEqualTo(mr.gov.finances.sgci.domain.enums.TvaDeductibleStockSource.UTILISATION_DOUANE);
+                    assertThat(st.getUtilisationDouane()).isNotNull();
+                    assertThat(st.getMontantRestant()).isEqualByComparingTo("333819.36");
+                });
+        // Le crédit avec transfert : la TVA transférée est entrée au stock puis déduite par la 1re utilisation.
+        assertThat(stockRepository.findByCertificatCreditIdOrderByDateCreationAsc(certificat.getId()))
+                .singleElement().satisfies(st -> {
+                    assertThat(st.getSource()).isEqualTo(mr.gov.finances.sgci.domain.enums.TvaDeductibleStockSource.TRANSFERT_CREDIT);
+                    assertThat(st.getMontantInitial()).isEqualByComparingTo("1024880");
+                    assertThat(st.getMontantRestant()).isEqualByComparingTo("0");
+                });
+        assertThat(utilisationRepository.findByCertificatCreditId(certificat.getId()))
+                .allSatisfy(u -> {
+                    assertThat(u).isInstanceOf(UtilisationTVAInterieure.class);
+                    assertThat(((UtilisationTVAInterieure) u).getMontantTVA()).isEqualByComparingTo(u.getMontant());
+                });
+    }
+
+    @Test
+    void unCreditImporteAvantLaVentilationSeRecalculeEnRedeposantLeFichier() {
+        MockMultipartFile fichier = new ExportPeriodeFixture()
+                .bloc(new ExportPeriodeFixture.Bloc(n, "2030/T/" + n + "/CPMP/AC" + n + "/2025 DU 06/10/2025", "07 MOIS",
+                        "08/01/2026", "R" + n + "/2026", "13.500.000,00", "3.846.280,57", "0,00", "2.716.362,45",
+                        "1.129.918,12", "1999332.09", "1.129.918,12",
+                        ExportPeriodeFixture.douanier(n, "x", "y").ligneTransfert(),
+                        ExportPeriodeFixture.douanier(n, "x", "y").utilisations(),
+                        ExportPeriodeFixture.douanier(n, "x", "y").totaux()))
+                .fichier("recalcul_" + n + ".xls");
+        LotDto lot = service.analyser(fichier, ADMIN);
+        service.importer(lot.getId(), null, ADMIN);
+        Long certificatId = credit(service.detail(lot.getId()), lot.getCredits().get(0).getId()).getCertificatId();
+
+        // État d'un crédit repris avant la ventilation : tout le solde en droits, rien en TVA,
+        // douane « apurée », TVA intérieure sans montant de TVA.
+        CertificatCredit ancien = certificatRepository.findById(certificatId).orElseThrow();
+        ancien.setSoldeCordon(new java.math.BigDecimal("1999332.09"));
+        ancien.setTvaImportationDouane(null);
+        ancien.setTvaImportationDouaneAccordee(null);
+        ancien.setDroitsEtTaxesDouaneHorsTva(null);
+        certificatRepository.saveAndFlush(ancien);
+        utilisationRepository.findByCertificatCreditId(certificatId).forEach(u -> {
+            u.setStatut(StatutUtilisation.APUREE);
+            utilisationRepository.saveAndFlush(u);
+        });
+
+        LotDto relu = service.analyser(fichier, ADMIN);
+        assertThat(relu.isDejaAnalyse()).isTrue();
+        ImportResultatDto r = service.recalculer(lot.getId(), ADMIN);
+        service.recalculer(lot.getId(), ADMIN);   // un second recalcul ne double rien
+
+        assertThat(r.getImportes()).isEqualTo(1);
+        CertificatCredit corrige = certificatRepository.findById(certificatId).orElseThrow();
+        assertThat(corrige.getSoldeCordon()).isEqualByComparingTo("1070479.15");
+        assertThat(corrige.getTvaImportationDouane()).isEqualByComparingTo("928852.94");
+        assertThat(corrige.getDroitsEtTaxesDouaneHorsTva()).isEqualByComparingTo("1366690.15");
+        assertThat(utilisationRepository.findByCertificatCreditId(certificatId))
+                .hasSize(1)
+                .allSatisfy(u -> assertThat(u.getStatut()).isEqualTo(StatutUtilisation.LIQUIDEE));
+        assertThat(stockRepository.findByCertificatCreditIdOrderByDateCreationAsc(certificatId))
+                .singleElement().satisfies(st -> assertThat(st.getMontantRestant()).isEqualByComparingTo("333819.36"));
     }
 
     @Test
@@ -210,7 +286,7 @@ class ImportArchiveLotIT {
         ExportPeriodeFixture.Bloc sansNumero = new ExportPeriodeFixture.Bloc(modele.nif(), modele.referenceMarche(),
                 modele.duree(), "00/00/0000", null, modele.montantMarche(), modele.montantCredit(), modele.transfert(),
                 modele.creditDouanier(), modele.creditInterieur(), modele.soldeDouanier(), "400.000,00",
-                modele.ligneTransfert(), modele.utilisations());
+                modele.ligneTransfert(), modele.utilisations(), modele.totaux());
 
         LotDto lot = service.interrogerDgi(service.analyser(new ExportPeriodeFixture().bloc(sansNumero)
                 .fichier("dgi.xls"), ADMIN).getId());
@@ -280,8 +356,18 @@ class ImportArchiveLotIT {
             System.out.printf("%s : %d bloc(s) répétant un N° de crédit déjà lu%n", p.getFileName(), repetes);
             for (CreditDto c : dernierParCertificat.values()) {
                 CertificatCredit cert = certificatRepository.findById(c.getCertificatId()).orElseThrow();
-                assertThat(cert.getSoldeCordon()).as(c.getNumeroCredit())
-                        .isEqualByComparingTo(c.getSoldeDouanierCalcule().max(java.math.BigDecimal.ZERO));
+                var releve = service.credit(lot.getId(), c.getId()).getReleve();
+                java.math.BigDecimal droits = releve.getSoldeDroitsCalcule() != null ? releve.getSoldeDroitsCalcule() : c.getSoldeDouanierCalcule();
+                java.math.BigDecimal tvaImport = releve.getSoldeTvaImportationCalcule() != null ? releve.getSoldeTvaImportationCalcule() : java.math.BigDecimal.ZERO;
+                // Le solde douanier se répartit entre droits (cordon) et TVA d'importation restante (d′).
+                assertThat(cert.getSoldeCordon()).as(c.getNumeroCredit()).isEqualByComparingTo(droits.max(java.math.BigDecimal.ZERO));
+                assertThat(cert.getTvaImportationDouane()).as(c.getNumeroCredit()).isEqualByComparingTo(tvaImport.max(java.math.BigDecimal.ZERO));
+                // Invariant du rejeu : solde TVA + stock restant = h + entrées au stock − utilisations intérieures + paiements.
+                java.math.BigDecimal stockRestant = stockRepository.findByCertificatCreditIdOrderByDateCreationAsc(cert.getId()).stream()
+                        .map(st -> st.getMontantRestant()).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                assertThat(cert.getSoldeTVA().add(stockRestant)).as(c.getNumeroCredit() + " (TVA)")
+                        .isEqualByComparingTo(releve.getCreditInterieur().add(releve.getStockTvaEntrees())
+                                .subtract(releve.getTotalUtilisationsInterieur()).add(releve.getPaiementEntrepriseTotal()));
                 assertThat(cert.getSoldeTVA()).as(c.getNumeroCredit())
                         .isEqualByComparingTo(c.getSoldeInterieurCalcule().max(java.math.BigDecimal.ZERO));
             }

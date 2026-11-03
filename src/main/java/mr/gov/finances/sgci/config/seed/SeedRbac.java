@@ -650,6 +650,9 @@ public class SeedRbac {
         assign(Role.COMMISSION_RELAIS,
                 "commission.relais.list.entreprises",
                 "commission.relais.list.autorites",
+                // L'entité à représenter peut ne pas encore exister : la commission relais la crée.
+                "entreprise.create",
+                "autorite.create",
                 "commission.relais.impersonate.entreprise",
                 "commission.relais.impersonate.autorite",
                 "commission.relais.release",

@@ -2,6 +2,7 @@ package mr.gov.finances.sgci.service.archive;
 
 import mr.gov.finances.sgci.web.dto.archive.LigneTaxeArchiveDto;
 import mr.gov.finances.sgci.web.dto.archive.ReleveArchiveDto;
+import mr.gov.finances.sgci.web.dto.archive.StockTvaArchiveDto;
 import mr.gov.finances.sgci.web.dto.archive.UtilisationArchiveDto;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
@@ -163,7 +164,8 @@ public class ReleveArchiveParser {
         dto.setCreditInterieur(montantApresLibelle(sheet, "Crédit intérieur :", 0));
         dto.setMontantCreditImpot(montantApresLibelle(sheet, "Montant du crédit d'impot :", 0));
         dto.setTransfertCredit(montantApresLibelle(sheet, "Transfert de crédit :", 0));
-        dto.setTotalTransfertSortant(lireTotalTransfertSortant(sheet));
+        dto.setTotalTransfertSortant(lireTotalTransfertSortant(sheet, dto));
+        lireTaxesParType(sheet, dto);
 
         // « Solde après utilisation » réutilise les mêmes libellés que les crédits initiaux :
         // on repart de la ligne du bloc pour ne pas retomber sur la première occurrence.
@@ -315,14 +317,176 @@ public class ReleveArchiveParser {
                 : dto.getTransfertCredit();
         dto.setSoldeDouanierCalcule(soustraire(dto.getCreditDouanier(), totalDouane, sortie));
 
-        // Côté intérieur, seule la part transférable vient abonder le crédit.
-        dto.setSoldeInterieurCalcule(
+        // Règle de l'ancienne application : seule la part transférable vient abonder le crédit. Elle
+        // sert au contrôle du solde affiché ; le solde importé est rejoué plus bas.
+        dto.setSoldeInterieurRegleFichier(
                 additionner(dto.getCreditInterieur(), dto.getTransfertCredit(), totalInterieur.negate()));
 
         signalerEcart(dto, "douanier", dto.getSoldeDouanierDeclare(), dto.getSoldeDouanierCalcule());
-        signalerEcart(dto, "intérieur", dto.getSoldeInterieurDeclare(), dto.getSoldeInterieurCalcule());
+        signalerEcart(dto, "intérieur", dto.getSoldeInterieurDeclare(), dto.getSoldeInterieurRegleFichier());
         signalerNegatif(dto, "douanier", dto.getSoldeDouanierCalcule());
-        signalerNegatif(dto, "intérieur", dto.getSoldeInterieurCalcule());
+        signalerNegatif(dto, "intérieur", dto.getSoldeInterieurRegleFichier());
+        ventilerCreditDouanier(dto, sortie);
+        rejouerTvaInterieure(dto);
+    }
+
+    /**
+     * Rejeu du relevé selon les règles de l'application (stock de TVA déductible).
+     *
+     * <p>Par date, à date égale dans l'ordre du fichier : la TVA de chaque importation entre dans le
+     * stock ; le transfert — non daté par l'export — y verse la TVA d'importation transférée juste
+     * après la dernière importation ; chaque utilisation intérieure (montant = TVA collectée) déduit
+     * tout le stock disponible en FIFO, impute le net sur le solde TVA (le dépassement est payé par
+     * l'entreprise) ou, s'il est négatif, le reporte à nouveau sur ce solde. Le solde TVA part du
+     * crédit intérieur h, sans le transfert, qui passe par le stock.
+     */
+    private void rejouerTvaInterieure(ReleveArchiveDto dto) {
+        List<UtilisationArchiveDto> utils = dto.getUtilisations();
+        List<Integer> ordre = new ArrayList<>();
+        for (int i = 0; i < utils.size(); i++) {
+            ordre.add(i);
+        }
+        ordre.sort(java.util.Comparator.comparing((Integer i) -> utils.get(i).getDate(),
+                java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())));
+
+        BigDecimal tvaTransferee = dto.getTransfertSortantTva() != null ? dto.getTransfertSortantTva()
+                : (dto.getTransfertCredit() != null ? dto.getTransfertCredit() : BigDecimal.ZERO);
+        int derniereImportation = -1;
+        for (int k = 0; k < ordre.size(); k++) {
+            if (utils.get(ordre.get(k)).isDouaniere()) {
+                derniereImportation = k;
+            }
+        }
+
+        List<StockTvaArchiveDto> stock = new ArrayList<>();
+        BigDecimal solde = dto.getCreditInterieur() != null ? dto.getCreditInterieur() : BigDecimal.ZERO;
+        BigDecimal entrees = BigDecimal.ZERO;
+        BigDecimal deduit = BigDecimal.ZERO;
+        BigDecimal paiements = BigDecimal.ZERO;
+        BigDecimal reports = BigDecimal.ZERO;
+
+        if (derniereImportation < 0 && tvaTransferee.signum() > 0) {
+            stock.add(new StockTvaArchiveDto("TRANSFERT_CREDIT", null, null, tvaTransferee, tvaTransferee));
+            entrees = entrees.add(tvaTransferee);
+        }
+        for (int k = 0; k < ordre.size(); k++) {
+            int i = ordre.get(k);
+            UtilisationArchiveDto u = utils.get(i);
+            if (u.isDouaniere()) {
+                BigDecimal tva = u.getLignesTaxe().stream()
+                        .filter(l -> "TVA".equals(l.getCodeTaxe()) && "AU_CI".equals(l.getAffectation()))
+                        .map(LigneTaxeArchiveDto::getValeur)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                if (tva.signum() > 0) {
+                    stock.add(new StockTvaArchiveDto("UTILISATION_DOUANE", i, u.getDate(), tva, tva));
+                    entrees = entrees.add(tva);
+                }
+                if (k == derniereImportation && tvaTransferee.signum() > 0) {
+                    stock.add(new StockTvaArchiveDto("TRANSFERT_CREDIT", null, u.getDate(), tvaTransferee, tvaTransferee));
+                    entrees = entrees.add(tvaTransferee);
+                }
+                continue;
+            }
+            BigDecimal collectee = u.getMontant() != null ? u.getMontant() : BigDecimal.ZERO;
+            BigDecimal deduction = BigDecimal.ZERO;
+            for (StockTvaArchiveDto s : stock) {   // FIFO : tout le stock disponible est déduit
+                deduction = deduction.add(s.getMontantRestant());
+                s.setMontantRestant(BigDecimal.ZERO);
+            }
+            BigDecimal net = collectee.subtract(deduction);
+            BigDecimal creditUtilise = BigDecimal.ZERO;
+            BigDecimal paiement = BigDecimal.ZERO;
+            BigDecimal report = BigDecimal.ZERO;
+            BigDecimal avant = solde;
+            if (net.signum() > 0) {
+                creditUtilise = net.min(solde);
+                paiement = net.subtract(creditUtilise);
+                solde = solde.subtract(creditUtilise);
+            } else if (net.signum() < 0) {
+                report = net.negate();
+                solde = solde.add(report);
+            }
+            u.setTvaDeductibleUtilisee(deduction);
+            u.setTvaNette(net);
+            u.setCreditInterieurUtilise(creditUtilise);
+            u.setPaiementEntreprise(paiement);
+            u.setReportANouveau(report);
+            u.setSoldeTvaAvant(avant);
+            u.setSoldeTvaApres(solde);
+            deduit = deduit.add(deduction);
+            paiements = paiements.add(paiement);
+            reports = reports.add(report);
+        }
+
+        dto.setStockTva(stock);
+        dto.setStockTvaEntrees(entrees);
+        dto.setStockTvaDeduit(deduit);
+        dto.setStockTvaRestant(entrees.subtract(deduit));
+        dto.setPaiementEntrepriseTotal(paiements);
+        dto.setReportsTotal(reports);
+        dto.setSoldeInterieurCalcule(solde);
+    }
+
+    /**
+     * Composantes du crédit douanier telles que l'application les tient (récapitulatif fiscal) :
+     * b = DD + RS + PC + PSC + TT, c = TCO, d = TVADD ; puis, en recalculant comme pour le total,
+     * la TVA d'importation restante (d′ = d − TVA imputée en douane − TVA transférée) et le solde des
+     * droits (b + c − le reste des utilisations douanières − le reste sorti au transfert). Leur somme
+     * redonne le solde douanier calculé. Sans la ligne « Totaux », tout le solde reste en droits.
+     */
+    private void ventilerCreditDouanier(ReleveArchiveDto dto, BigDecimal sortieTotale) {
+        Map<String, BigDecimal> t = dto.getTaxesInitiales();
+        if (t == null || !t.containsKey("TVADD")) {
+            dto.setSoldeDroitsCalcule(dto.getSoldeDouanierCalcule());
+            return;
+        }
+        BigDecimal b = somme(t, "DD", "RS", "PC", "PSC", "TT");
+        BigDecimal c = t.getOrDefault("TCO", BigDecimal.ZERO);
+        BigDecimal d = t.get("TVADD");
+        dto.setDroitsEtTaxesHorsTva(b);
+        dto.setTaxesConsommation(c);
+        dto.setTvaImportation(d);
+
+        BigDecimal ventile = b.add(c).add(d);
+        if (dto.getCreditDouanier() != null && ventile.compareTo(dto.getCreditDouanier()) != 0) {
+            dto.getAnomalies().add("Les totaux par taxe (" + ventile.toPlainString() + ") ne font pas le crédit douanier ("
+                    + dto.getCreditDouanier().toPlainString() + ").");
+        }
+
+        BigDecimal tvaDouane = BigDecimal.ZERO;
+        BigDecimal autresDouane = BigDecimal.ZERO;
+        for (UtilisationArchiveDto u : dto.getUtilisations()) {
+            if (!u.isDouaniere()) {
+                continue;
+            }
+            for (LigneTaxeArchiveDto l : u.getLignesTaxe()) {
+                if (!"AU_CI".equals(l.getAffectation())) {
+                    continue;
+                }
+                if ("TVA".equals(l.getCodeTaxe())) {
+                    tvaDouane = tvaDouane.add(l.getValeur());
+                } else {
+                    autresDouane = autresDouane.add(l.getValeur());
+                }
+            }
+        }
+        BigDecimal tvaTransferee = dto.getTransfertSortantTva() != null ? dto.getTransfertSortantTva()
+                : (dto.getTransfertCredit() != null ? dto.getTransfertCredit() : BigDecimal.ZERO);
+        BigDecimal autresTransferes = sortieTotale != null ? sortieTotale.subtract(tvaTransferee).max(BigDecimal.ZERO)
+                : BigDecimal.ZERO;
+
+        dto.setSoldeTvaImportationCalcule(d.subtract(tvaDouane).subtract(tvaTransferee));
+        dto.setSoldeDroitsCalcule(b.add(c).subtract(autresDouane).subtract(autresTransferes));
+        signalerNegatif(dto, "de TVA d'importation (d′)", dto.getSoldeTvaImportationCalcule());
+        signalerNegatif(dto, "des droits (cordon)", dto.getSoldeDroitsCalcule());
+    }
+
+    private static BigDecimal somme(Map<String, BigDecimal> m, String... codes) {
+        BigDecimal r = BigDecimal.ZERO;
+        for (String code : codes) {
+            r = r.add(m.getOrDefault(code, BigDecimal.ZERO));
+        }
+        return r;
     }
 
     private void signalerNegatif(ReleveArchiveDto dto, String libelle, BigDecimal calcule) {
@@ -338,7 +502,7 @@ public class ReleveArchiveParser {
         }
         dto.getAnomalies().add("Solde " + libelle + " : le relevé indique " + declare.toPlainString()
                 + " alors que le calcul (crédit − utilisations ± transfert) donne " + calcule.toPlainString()
-                + ". Le montant retenu à l'import est celui du calcul.");
+                + ". Le solde importé est recalculé (règles de l'application), pas repris du relevé.");
     }
 
     private BigDecimal soustraire(BigDecimal base, BigDecimal... aRetirer) {
@@ -433,7 +597,7 @@ public class ReleveArchiveParser {
      * ne pas compter deux fois la part transférable. Le total ainsi obtenu couvre à la fois la part
      * versée au crédit intérieur et les droits soldés sans transfert.
      */
-    private BigDecimal lireTotalTransfertSortant(Zone sheet) {
+    private BigDecimal lireTotalTransfertSortant(Zone sheet, ReleveArchiveDto dto) {
         // Ancrage sur le titre du bloc, pas sur « TVADD » : ce libellé figure aussi dans l'en-tête
         // « Totaux » situé plus haut, dont les lignes « Initiaux » et « Solde » seraient sommées à tort.
         int ligneTitre = trouverLigneTransfert(sheet);
@@ -446,6 +610,7 @@ public class ReleveArchiveParser {
         }
         Map<String, Integer> colonnes = indexerEntete(sheet.ligne(ligneEntete));
         BigDecimal total = BigDecimal.ZERO;
+        BigDecimal tva = BigDecimal.ZERO;
         boolean auMoinsUneValeur = false;
 
         for (int i = ligneEntete + 1; i <= sheet.fin(); i++) {
@@ -464,6 +629,9 @@ public class ReleveArchiveParser {
                 if (valeur != null) {
                     ligne = ligne.add(valeur);
                     renseignee = true;
+                    if ("TVA".equals(code)) {
+                        tva = tva.add(valeur);
+                    }
                 }
             }
             if (!renseignee) {
@@ -472,7 +640,52 @@ public class ReleveArchiveParser {
             total = total.add(ligne);
             auMoinsUneValeur = true;
         }
+        dto.setTransfertSortantTva(auMoinsUneValeur ? tva : null);
         return auMoinsUneValeur ? total : null;
+    }
+
+    /** Taxes qui composent le crédit douanier, dans l'ordre de la ligne « Totaux » de l'export. */
+    static final List<String> TAXES_DU_CREDIT = List.of("DD", "TVADD", "RS", "PC", "PSC", "TCO", "TT");
+
+    /**
+     * Ventilation du crédit douanier par taxe : la ligne « Totaux: DD / TVADD / RS / PC / PSC / TCO / TT »
+     * porte les montants initiaux, la ligne « Solde = » qui suit les soldes affichés. C'est elle qui
+     * permet de retrouver les composantes de l'application : droits et taxes hors TVA (b), taxes de
+     * consommation (c), TVA d'importation (d).
+     */
+    private void lireTaxesParType(Zone sheet, ReleveArchiveDto dto) {
+        int ligneTotaux = trouverLigne(sheet, "Totaux");
+        if (ligneTotaux < 0) {
+            return;
+        }
+        Map<String, Integer> colonnes = indexerEntete(sheet.ligne(ligneTotaux));
+        Row initiaux = sheet.ligne(ligneTotaux + 1);
+        Row soldes = null;
+        for (int i = ligneTotaux + 1; i <= Math.min(sheet.fin(), ligneTotaux + 3); i++) {
+            Row r = sheet.ligne(i);
+            if (r != null && contientTexte(r, "Solde") && !contientTexte(r, "utilisation")) {
+                soldes = r;
+                break;
+            }
+        }
+        Map<String, BigDecimal> init = new LinkedHashMap<>();
+        Map<String, BigDecimal> sol = new LinkedHashMap<>();
+        for (String code : TAXES_DU_CREDIT) {
+            Integer col = colonnes.get(code);
+            if (col == null) {
+                continue;
+            }
+            BigDecimal v = initiaux != null ? montant(initiaux.getCell(col)) : null;
+            if (v != null) {
+                init.put(code, v);
+            }
+            BigDecimal s = soldes != null ? montant(soldes.getCell(col)) : null;
+            if (s != null) {
+                sol.put(code, s);
+            }
+        }
+        dto.setTaxesInitiales(init.isEmpty() ? null : init);
+        dto.setTaxesSoldeDeclare(sol.isEmpty() ? null : sol);
     }
 
     /** Texte d'une cellule dont le contenu commence par un préfixe (ex. « NIF 90600034 »). */

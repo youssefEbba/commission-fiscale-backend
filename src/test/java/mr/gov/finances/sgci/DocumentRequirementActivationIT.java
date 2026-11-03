@@ -1,6 +1,6 @@
 package mr.gov.finances.sgci;
 
-import mr.gov.finances.sgci.config.DataInitializer;
+import mr.gov.finances.sgci.config.seed.SeedDocumentRequirements;
 import mr.gov.finances.sgci.domain.entity.DocumentRequirement;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 import mr.gov.finances.sgci.domain.enums.Role;
@@ -18,7 +18,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -50,7 +49,7 @@ class DocumentRequirementActivationIT {
     @Autowired private DocumentRequirementValidator validator;
     @Autowired private DocumentRequirementRepository repository;
     @Autowired private VisibiliteDocumentService visibilite;
-    @Autowired private DataInitializer dataInitializer;
+    @Autowired private SeedDocumentRequirements seedDocumentRequirements;
 
     // ── désactiver ─────────────────────────────────────────────────────────────────────────────
 
@@ -135,7 +134,7 @@ class DocumentRequirementActivationIT {
         service.delete(prevue.getId());
 
         // Le seed des pièces, rejoué exactement comme au démarrage du serveur.
-        ReflectionTestUtils.invokeMethod(dataInitializer, "seedDocumentRequirements");
+        seedDocumentRequirements.seed();   // comme au redémarrage
 
         assertThat(codes(service.findByProcessus(CORRECTION, false)))
                 .as("la pièce supprimée ne doit pas revenir au démarrage suivant")

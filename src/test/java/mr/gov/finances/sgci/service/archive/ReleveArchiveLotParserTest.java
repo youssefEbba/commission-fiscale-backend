@@ -46,12 +46,41 @@ class ReleveArchiveLotParserTest {
         assertThat(transfert.getTotalTransfertSortant()).isEqualByComparingTo("2250380");
         assertThat(transfert.getSoldeDouanierCalcule()).isEqualByComparingTo("0");
         assertThat(transfert.getSoldeInterieurCalcule()).isEqualByComparingTo("2430379.73");
+        // Rejeu : le transfert entre au stock, la 1re utilisation intérieure le déduit en entier
+        // (net négatif → report à nouveau), la 2e s'impute sur le solde. Sans importation, on
+        // retrouve exactement le solde du fichier.
+        assertThat(transfert.getStockTvaEntrees()).isEqualByComparingTo("1024880");
+        assertThat(transfert.getStockTvaRestant()).isEqualByComparingTo("0");
+        assertThat(transfert.getUtilisations().get(0).getTvaDeductibleUtilisee()).isEqualByComparingTo("1024880");
+        assertThat(transfert.getUtilisations().get(0).getReportANouveau()).isEqualByComparingTo("993017.93");
+        assertThat(transfert.getUtilisations().get(1).getTvaDeductibleUtilisee()).isEqualByComparingTo("0");
+        assertThat(transfert.getUtilisations().get(1).getCreditInterieurUtilise()).isEqualByComparingTo("15448.28");
         assertThat(transfert.getUtilisations()).hasSize(2).noneMatch(UtilisationArchiveDto::isDouaniere);
         assertThat(transfert.getAnomalies()).isEmpty();
 
+        // Après le transfert, il ne reste ni droits ni TVA d'importation.
+        assertThat(transfert.getTvaImportation()).isEqualByComparingTo("1024880");
+        assertThat(transfert.getSoldeTvaImportationCalcule()).isEqualByComparingTo("0");
+        assertThat(transfert.getSoldeDroitsCalcule()).isEqualByComparingTo("0");
+
         ReleveArchiveDto douanier = blocs.get(1).releve();
+        // Ventilation par taxe : b = DD + RS + PC + PSC + TT, c = TCO, d = TVADD ; b + c + d = crédit douanier.
+        assertThat(douanier.getDroitsEtTaxesHorsTva()).isEqualByComparingTo("1366690.15");
+        assertThat(douanier.getTaxesConsommation()).isEqualByComparingTo("87000");
+        assertThat(douanier.getTvaImportation()).isEqualByComparingTo("1262672.30");
+        // d′ = d − TVA imputée en douane : c'est aussi le « Solde » TVADD de l'export (928 852,94).
+        assertThat(douanier.getSoldeTvaImportationCalcule()).isEqualByComparingTo("928852.94");
+        assertThat(douanier.getSoldeDroitsCalcule().add(douanier.getSoldeTvaImportationCalcule()))
+                .isEqualByComparingTo(douanier.getSoldeDouanierCalcule());
         assertThat(douanier.getDateMarche()).as("année sur deux chiffres, jour et mois sur un").isEqualTo(Instant.parse("2026-01-06T00:00:00Z"));
         assertThat(douanier.getSoldeDouanierCalcule()).isEqualByComparingTo("1999332.09");
+        // L'importation verse sa TVA au stock ; aucune utilisation intérieure ne la consomme.
+        assertThat(douanier.getStockTva()).singleElement().satisfies(s -> {
+            assertThat(s.getSource()).isEqualTo("UTILISATION_DOUANE");
+            assertThat(s.getIndexUtilisation()).isZero();
+            assertThat(s.getMontantRestant()).isEqualByComparingTo("333819.36");
+        });
+        assertThat(douanier.getSoldeInterieurCalcule()).isEqualByComparingTo("1129918.12");
         assertThat(douanier.getUtilisations()).singleElement().satisfies(u -> {
             assertThat(u.isDouaniere()).isTrue();
             assertThat(u.getTotalPrisEnCharge()).isEqualByComparingTo("717030.36");
@@ -64,7 +93,32 @@ class ReleveArchiveLotParserTest {
         assertThat(ecart.getDateMarche()).isEqualTo(Instant.parse("2026-02-23T00:00:00Z"));
         assertThat(ecart.getSoldeInterieurCalcule()).isEqualByComparingTo("400000");
         assertThat(ecart.getAnomalies()).singleElement().asString()
-                .contains("Solde intérieur").contains("450000").contains("400000").contains("celui du calcul");
+                .contains("Solde intérieur").contains("450000").contains("400000").contains("recalculé");
+    }
+
+    @Test
+    void leStockDeTvaEstDeduitAvantLeCreditInterieurEtLeDepassementEstPayeParLEntreprise() {
+        ExportPeriodeFixture.Bloc modele = ExportPeriodeFixture.douanier("20602865", "01/2026", "2030/T/016/CPMP/X/2025 DU 06/10/2025");
+        java.util.List<ExportPeriodeFixture.Utilisation> utils = new java.util.ArrayList<>(modele.utilisations());
+        utils.add(new ExportPeriodeFixture.Utilisation("10/03/2026", "UT 2 | 2/01/2026", "500000", ""));
+        utils.add(new ExportPeriodeFixture.Utilisation("11/03/2026", "UT 3 | 3/01/2026", "20000", ""));
+        ExportPeriodeFixture.Bloc bloc = new ExportPeriodeFixture.Bloc(modele.nif(), modele.referenceMarche(), modele.duree(),
+                modele.dateCredit(), modele.numeroCredit(), modele.montantMarche(), "2.816.362,45", modele.transfert(),
+                modele.creditDouanier(), "100.000,00", modele.soldeDouanier(), "0", modele.ligneTransfert(), utils, modele.totaux());
+
+        ReleveArchiveDto r = parser.parseLot(new ExportPeriodeFixture().bloc(bloc).fichier("paiement.xls")).get(0).releve();
+
+        // UT 2 : 500 000 − stock 333 819,36 = 166 180,64 ; le solde (100 000) n'en couvre qu'une part.
+        UtilisationArchiveDto ut2 = r.getUtilisations().get(1);
+        assertThat(ut2.getTvaDeductibleUtilisee()).isEqualByComparingTo("333819.36");
+        assertThat(ut2.getTvaNette()).isEqualByComparingTo("166180.64");
+        assertThat(ut2.getCreditInterieurUtilise()).isEqualByComparingTo("100000");
+        assertThat(ut2.getPaiementEntreprise()).isEqualByComparingTo("66180.64");
+        // UT 3 : plus de stock ni de solde, tout est payé par l'entreprise.
+        assertThat(r.getUtilisations().get(2).getPaiementEntreprise()).isEqualByComparingTo("20000");
+        assertThat(r.getSoldeInterieurCalcule()).isEqualByComparingTo("0");
+        assertThat(r.getStockTvaRestant()).isEqualByComparingTo("0");
+        assertThat(r.getPaiementEntrepriseTotal()).isEqualByComparingTo("86180.64");
     }
 
     @Test

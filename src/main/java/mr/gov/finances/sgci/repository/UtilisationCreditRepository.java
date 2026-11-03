@@ -19,6 +19,9 @@ public interface UtilisationCreditRepository extends JpaRepository<UtilisationCr
 
     List<UtilisationCredit> findByCertificatCreditId(Long certificatCreditId);
 
+    /** Utilisations reprises de l'archive de l'ancienne application. */
+    List<UtilisationCredit> findByOrigineArchiveLibelleIsNotNull();
+
     long countByCertificatCreditIdAndStatutNotIn(Long certificatCreditId, Collection<StatutUtilisation> statuts);
 
     List<UtilisationCredit> findByEntrepriseId(Long entrepriseId);

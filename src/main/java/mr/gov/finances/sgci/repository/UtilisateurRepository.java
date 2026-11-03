@@ -13,6 +13,8 @@ import java.util.Optional;
 public interface UtilisateurRepository extends JpaRepository<Utilisateur, Long> {
 
     Optional<Utilisateur> findByUsername(String username);
+
+    List<Utilisateur> findByNomCompletIn(java.util.Collection<String> nomsComplets);
     boolean existsByUsername(String username);
 
     List<Utilisateur> findByEntrepriseId(Long entrepriseId);

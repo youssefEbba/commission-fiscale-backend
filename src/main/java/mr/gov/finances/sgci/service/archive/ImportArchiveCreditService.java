@@ -29,6 +29,10 @@ import mr.gov.finances.sgci.repository.EntrepriseRepository;
 import mr.gov.finances.sgci.repository.MarcheRepository;
 import mr.gov.finances.sgci.repository.ReferentielTaxeRepository;
 import mr.gov.finances.sgci.repository.TransfertCreditRepository;
+import mr.gov.finances.sgci.repository.TvaDeductibleStockRepository;
+import mr.gov.finances.sgci.domain.entity.TvaDeductibleStock;
+import mr.gov.finances.sgci.domain.enums.TvaDeductibleStockSource;
+import mr.gov.finances.sgci.web.dto.archive.StockTvaArchiveDto;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.web.dto.archive.ImportArchiveResultatDto;
@@ -46,6 +50,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -84,6 +90,7 @@ public class ImportArchiveCreditService {
     private final AutoriteContractanteRepository autoriteRepository;
     private final ReferentielTaxeRepository referentielTaxeRepository;
     private final TransfertCreditRepository transfertCreditRepository;
+    private final TvaDeductibleStockRepository tvaStockRepository;
 
     // ------------------------------------------------------------------
     // Aperçu — aucune écriture
@@ -326,11 +333,17 @@ public class ImportArchiveCreditService {
         // Lignes déjà reprises pour ce crédit. Le libellé seul ne suffit pas : un relevé peut
         // répéter le même libellé sur des opérations distinctes (54 lignes pour 51 libellés sur le
         // relevé de référence). La clé associe donc libellé, date et montant.
-        Set<String> dejaImportees = utilisationRepository.findByCertificatCreditId(certificat.getId())
-                .stream()
-                .filter(u -> u.getOrigineArchiveLibelle() != null)
-                .map(u -> cleLigneArchive(u.getOrigineArchiveLibelle(), u.getDateDemande(), u.getMontant()))
-                .collect(Collectors.toCollection(HashSet::new));
+        List<UtilisationCredit> enBase = utilisationRepository.findByCertificatCreditId(certificat.getId());
+        Map<String, UtilisationCredit> dejaImportees = new HashMap<>();
+        for (UtilisationCredit u : enBase) {
+            if (u.getOrigineArchiveLibelle() != null) {
+                dejaImportees.putIfAbsent(cleLigneArchive(u.getOrigineArchiveLibelle(), u.getDateDemande(), u.getMontant()), u);
+            }
+        }
+        // Un crédit utilisé dans l'application garde son historique : le rejeu de la TVA intérieure
+        // et du stock ne s'applique qu'à un crédit dont toutes les opérations viennent de l'archive.
+        boolean rejouable = enBase.stream().allMatch(u -> u.getOrigineArchiveLibelle() != null);
+        Map<Integer, UtilisationCredit> parRang = new HashMap<>();
 
         Map<String, ReferentielTaxe> referentiel = referentielTaxeRepository.findAll().stream()
                 .collect(Collectors.toMap(t -> t.getCodeTaxe().toUpperCase(),
@@ -340,20 +353,42 @@ public class ImportArchiveCreditService {
         int interieures = 0;
         int lignesTaxe = 0;
         int ignorees = 0;
-        for (UtilisationArchiveDto u : releve.getUtilisations()) {
-            if (u.getLibelle() != null
-                    && !dejaImportees.add(cleLigneArchive(u.getLibelle(), u.getDate(), u.getMontant()))) {
+        for (int rang = 0; rang < releve.getUtilisations().size(); rang++) {
+            UtilisationArchiveDto u = releve.getUtilisations().get(rang);
+            String cle = cleLigneArchive(u.getLibelle(), u.getDate(), u.getMontant());
+            UtilisationCredit deja = u.getLibelle() != null ? dejaImportees.get(cle) : null;
+            if (deja != null) {
                 ignorees++;   // ligne déjà reprise lors d'un versement précédent
+                if (rejouable && deja instanceof UtilisationTVAInterieure i && u.getTvaDeductibleUtilisee() != null) {
+                    appliquerRejeu(i, u);
+                    utilisationRepository.save(i);
+                }
+                parRang.put(rang, deja);
                 continue;
             }
+            UtilisationCredit cree;
             if (u.isDouaniere()) {
                 UtilisationDouaniere douaniere = creerUtilisationDouaniere(u, certificat, entreprise, referentiel);
-                utilisationRepository.save(douaniere);   // cascade sur les lignes de bulletin
+                cree = utilisationRepository.save(douaniere);   // cascade sur les lignes de bulletin
                 lignesTaxe += douaniere.getLignes().size();
                 douanieres++;
             } else {
-                utilisationRepository.save(creerUtilisationInterieure(u, certificat, entreprise));
+                cree = utilisationRepository.save(creerUtilisationInterieure(u, certificat, entreprise));
                 interieures++;
+            }
+            if (u.getLibelle() != null) {
+                dejaImportees.put(cle, cree);
+            }
+            parRang.put(rang, cree);
+        }
+
+        if (releve.getStockTva() != null) {
+            if (rejouable && reconstituerStockTva(certificat, releve, parRang)) {
+                log.info("Import archive : stock de TVA déductible du certificat {} reconstitué ({} restant)",
+                        numero, releve.getStockTvaRestant());
+            } else {
+                releve.getAnomalies().add("Le crédit a déjà été utilisé dans l'application : le stock de TVA "
+                        + "déductible n'a pas été reconstitué depuis le relevé.");
             }
         }
 
@@ -481,17 +516,91 @@ public class ImportArchiveCreditService {
             releve.getAnomalies().add("Le crédit a déjà été utilisé dans l'application : les soldes "
                     + "recalculés depuis le relevé n'ont pas été réappliqués, pour ne pas effacer ces "
                     + "utilisations. Vérifiez la concordance des soldes.");
+            appliquerComposantes(releve, certificat, false);
+        } else {
+            appliquerComposantes(releve, certificat, true);
+        }
+        certificat.setStatut(statutSelonSoldes(certificat));
+        certificatRepository.save(certificat);
+        normaliserUtilisationsArchive(certificat.getId());
+    }
+
+    /**
+     * Composantes du crédit telles que les lit l'application (récapitulatif fiscal, solde cordon,
+     * renonciation) : b, c, d accordée et g = h + d, puis — si {@code avecSoldes} — le solde des
+     * droits (cordon) et la TVA d'importation restante (d′), calculés séparément. Sans ventilation
+     * dans le relevé (ligne « Totaux » absente), tout le solde douanier reste en droits.
+     */
+    private void appliquerComposantes(ReleveArchiveDto releve, CertificatCredit certificat, boolean avecSoldes) {
+        if (releve.getTvaImportation() != null) {
+            certificat.setDroitsEtTaxesDouaneHorsTva(releve.getDroitsEtTaxesHorsTva());
+            certificat.setTaxesConsommation(releve.getTaxesConsommation());
+            certificat.setTvaImportationDouaneAccordee(releve.getTvaImportation());
+            // h = g − d : le relevé donne h (crédit intérieur), g s'en déduit.
+            if (releve.getCreditInterieur() != null) {
+                certificat.setTvaCollecteeTravaux(releve.getCreditInterieur().add(releve.getTvaImportation()));
+            }
+        }
+        if (!avecSoldes) {
+            return;
+        }
+        if (releve.getSoldeTvaImportationCalcule() != null) {
+            certificat.setSoldeCordon(soldeRetenu(releve.getSoldeDroitsCalcule()));
+            certificat.setTvaImportationDouane(soldeRetenu(releve.getSoldeTvaImportationCalcule()));
         } else {
             certificat.setSoldeCordon(soldeRetenu(releve.getSoldeDouanierCalcule()));
-            certificat.setSoldeTVA(soldeRetenu(releve.getSoldeInterieurCalcule()));
+            certificat.setTvaImportationDouane(BigDecimal.ZERO);
         }
+        certificat.setSoldeTVA(soldeRetenu(releve.getSoldeInterieurCalcule()));
+    }
 
-        BigDecimal soldeCordon = valeurOuZero(certificat.getSoldeCordon());
-        BigDecimal soldeTva = valeurOuZero(certificat.getSoldeTVA());
-        certificat.setStatut(soldeCordon.signum() > 0 || soldeTva.signum() > 0
+    /** Un crédit encore pourvu — droits, TVA d'importation ou TVA intérieure — reste exploitable. */
+    private StatutCertificat statutSelonSoldes(CertificatCredit c) {
+        return valeurOuZero(c.getSoldeCordon()).signum() > 0
+                || valeurOuZero(c.getSoldeTVA()).signum() > 0
+                || valeurOuZero(c.getTvaImportationDouane()).signum() > 0
                 ? StatutCertificat.OUVERT
-                : StatutCertificat.CLOTURE);
-        certificatRepository.save(certificat);
+                : StatutCertificat.CLOTURE;
+    }
+
+    /**
+     * Utilisations reprises avant le 03/11/2026 : la douane était marquée « apurée » (l'application
+     * dit « liquidée ») et la TVA intérieure n'avait pas son montant de TVA, d'où des compteurs et une
+     * colonne TVA à zéro. Sans effet sur une utilisation déjà conforme.
+     */
+    @Transactional
+    public int normaliserUtilisationsArchive(Long certificatId) {
+        int corrigees = 0;
+        for (UtilisationCredit u : utilisationRepository.findByCertificatCreditId(certificatId)) {
+            if (u.getOrigineArchiveLibelle() != null && completerUtilisationArchive(u)) {
+                utilisationRepository.save(u);
+                corrigees++;
+            }
+        }
+        return corrigees;
+    }
+
+    /** Vrai si l'utilisation d'archive a été modifiée. */
+    public static boolean completerUtilisationArchive(UtilisationCredit u) {
+        boolean modifiee = false;
+        if (u instanceof UtilisationDouaniere d && d.getStatut() == StatutUtilisation.APUREE) {
+            d.setStatut(StatutUtilisation.LIQUIDEE);
+            modifiee = true;
+        }
+        if (u instanceof UtilisationTVAInterieure i && i.getMontantTVA() == null && i.getMontant() != null) {
+            remplirTvaInterieure(i);
+            modifiee = true;
+        }
+        return modifiee;
+    }
+
+    /** Ancienne application : le montant imputé sur le crédit intérieur est la TVA elle-même, sans déduction. */
+    private static void remplirTvaInterieure(UtilisationTVAInterieure i) {
+        i.setMontantTVA(i.getMontant());
+        i.setTvaDeductibleUtilisee(BigDecimal.ZERO);
+        i.setTvaNette(i.getMontant());
+        i.setPaiementEntreprise(BigDecimal.ZERO);
+        i.setReportANouveau(BigDecimal.ZERO);
     }
 
     /**
@@ -545,9 +654,6 @@ public class ImportArchiveCreditService {
      * reliquat de droits (DD, RS, PC, PSC, TCO) étant mis à zéro à la clôture du crédit.
      */
     private CertificatCredit creerCertificat(ReleveArchiveDto releve, Entreprise entreprise, String numero) {
-        BigDecimal soldeCordon = soldeRetenu(releve.getSoldeDouanierCalcule());
-        BigDecimal soldeTva = soldeRetenu(releve.getSoldeInterieurCalcule());
-
         CertificatCredit certificat = new CertificatCredit();
         certificat.setNumero(numero);
         certificat.setReference(null);   // attribuée par ReferenceBackfillMigration au redémarrage
@@ -555,15 +661,12 @@ public class ImportArchiveCreditService {
         certificat.setMontantCordon(releve.getCreditDouanier());
         certificat.setMontantTVAInterieure(releve.getCreditInterieur());
         certificat.setMontantMarcheHt(releve.getMontantMarche());
-        certificat.setSoldeCordon(soldeCordon);
-        certificat.setSoldeTVA(soldeTva);
+        appliquerComposantes(releve, certificat, true);
         certificat.setDateMiseEnPlace(releve.getDateCredit());
         // Dossier repris : la date d'émission est celle du relevé, pas celle de l'import.
         certificat.setDateEmission(releve.getDateCredit());
         // Un crédit encore pourvu reste exploitable ; épuisé, il est clos.
-        certificat.setStatut(soldeCordon.signum() > 0 || soldeTva.signum() > 0
-                ? StatutCertificat.OUVERT
-                : StatutCertificat.CLOTURE);
+        certificat.setStatut(statutSelonSoldes(certificat));
         return certificat;
     }
 
@@ -573,7 +676,7 @@ public class ImportArchiveCreditService {
         UtilisationDouaniere d = new UtilisationDouaniere();
         d.setCertificatCredit(certificat);
         d.setEntreprise(entreprise);
-        d.setStatut(StatutUtilisation.APUREE);   // utilisation historique, déjà consommée
+        d.setStatut(StatutUtilisation.LIQUIDEE);   // utilisation douanière historique, déjà liquidée
         d.setMontant(u.getMontant());
         d.setDateDemande(u.getDate());
         d.setDateLiquidation(u.getDate());
@@ -617,7 +720,58 @@ public class ImportArchiveCreditService {
         i.setOrigineArchiveLibelle(u.getLibelle());
         i.setEmissionCertificatRequise(Boolean.FALSE);
         i.setCreditInterieurUtilise(u.getMontant());
+        if (u.getTvaDeductibleUtilisee() != null) {
+            appliquerRejeu(i, u);
+        } else {
+            remplirTvaInterieure(i);   // relevé lu avant le rejeu (lot ancien non relu)
+        }
         return i;
+    }
+
+    /** Valeurs de l'apurement rejoué selon les règles de l'application (voir le lecteur). */
+    private static void appliquerRejeu(UtilisationTVAInterieure i, UtilisationArchiveDto u) {
+        i.setMontantTVA(u.getMontant());
+        i.setTvaDeductibleUtilisee(u.getTvaDeductibleUtilisee());
+        i.setTvaNette(u.getTvaNette());
+        i.setCreditInterieurUtilise(u.getCreditInterieurUtilise());
+        i.setPaiementEntreprise(u.getPaiementEntreprise());
+        i.setReportANouveau(u.getReportANouveau());
+        i.setSoldeTVAAvant(u.getSoldeTvaAvant());
+        i.setSoldeTVAApres(u.getSoldeTvaApres());
+    }
+
+    /**
+     * Lignes du stock de TVA déductible d'un crédit repris, refaites depuis le rejeu du relevé : une par
+     * importation (rattachée à son utilisation douanière) et une pour le transfert, avec leurs restes.
+     * Les lignes posées par une reprise précédente sont remplacées, jamais doublées. Une ligne de
+     * transfert alors que le relevé n'en porte pas vient d'une renonciation faite dans l'application :
+     * dans ce cas rien n'est touché (faux en retour).
+     */
+    private boolean reconstituerStockTva(CertificatCredit certificat, ReleveArchiveDto releve,
+                                         Map<Integer, UtilisationCredit> parRang) {
+        List<TvaDeductibleStock> existantes = tvaStockRepository.findByCertificatCreditIdOrderByDateCreationAsc(certificat.getId());
+        boolean transfertDansLeReleve = releve.getStockTva().stream().anyMatch(s -> "TRANSFERT_CREDIT".equals(s.getSource()));
+        boolean transfertApplication = existantes.stream()
+                .anyMatch(s -> s.getSource() == TvaDeductibleStockSource.TRANSFERT_CREDIT && !transfertDansLeReleve);
+        if (transfertApplication) {
+            return false;
+        }
+        tvaStockRepository.deleteAll(existantes);
+        tvaStockRepository.flush();
+        Instant parDefaut = releve.getDateCredit() != null ? releve.getDateCredit() : Instant.now();
+        for (StockTvaArchiveDto s : releve.getStockTva()) {
+            UtilisationCredit u = s.getIndexUtilisation() != null ? parRang.get(s.getIndexUtilisation()) : null;
+            tvaStockRepository.save(TvaDeductibleStock.builder()
+                    .certificatCredit(certificat)
+                    .utilisationDouane(u instanceof UtilisationDouaniere d ? d : null)
+                    .source("TRANSFERT_CREDIT".equals(s.getSource())
+                            ? TvaDeductibleStockSource.TRANSFERT_CREDIT : TvaDeductibleStockSource.UTILISATION_DOUANE)
+                    .montantInitial(s.getMontantInitial())
+                    .montantRestant(s.getMontantRestant())
+                    .dateCreation(s.getDate() != null ? s.getDate() : parDefaut)
+                    .build());
+        }
+        return true;
     }
 
     private ImportArchiveResultatDto construireResultat(ReleveArchiveDto releve, CertificatCredit certificat,

@@ -118,6 +118,7 @@ public class ImportArchiveLotService {
         String empreinte = empreinte(fichier);
         LotImportArchive existant = lotRepository.findByEmpreinteSha256(empreinte).orElse(null);
         if (existant != null) {
+            relireReleves(existant, parser.parseLot(fichier));
             LotDto dto = toDto(existant, true);
             dto.setDejaAnalyse(true);
             return dto;
@@ -173,6 +174,79 @@ public class ImportArchiveLotService {
         log.info("Reprise d'archive : lot {} « {} » analysé — {} crédit(s), par {}", lot.getId(),
                 lot.getNomFichier(), lot.getCredits().size(), user != null ? user.getUsername() : "système");
         return toDto(lot, true);
+    }
+
+    /**
+     * Le même fichier, versé à nouveau, est relu : le lecteur a pu progresser depuis la première
+     * analyse (ventilation du crédit douanier par taxe, 03/11/2026). Les choix de l'opérateur restent,
+     * ainsi que le N° et la date qu'il a saisis pour un bloc qui n'en portait pas. Le fichier étant le
+     * même, les blocs se retrouvent par leur rang.
+     */
+    private void relireReleves(LotImportArchive lot, List<BlocReleve> blocs) {
+        for (LotImportArchiveCredit c : lot.getCredits()) {
+            int i = c.getOrdre() - 1;
+            if (i < 0 || i >= blocs.size()) {
+                continue;
+            }
+            ReleveArchiveDto ancien = lire(c);
+            ReleveArchiveDto nouveau = blocs.get(i).releve();
+            if (nouveau.getNumeroCredit() == null) {
+                nouveau.setNumeroCredit(ancien.getNumeroCredit());
+            }
+            if (nouveau.getDateCredit() == null) {
+                nouveau.setDateCredit(ancien.getDateCredit());
+            }
+            for (String a : ancien.getAnomalies()) {
+                if (a.startsWith("Le N° de crédit ") && a.contains("plusieurs fois") && !nouveau.getAnomalies().contains(a)) {
+                    nouveau.getAnomalies().add(a);
+                }
+            }
+            appliquerReleve(c, nouveau);
+            c.setReleveJson(ecrire(nouveau));
+            if (c.getStatut() != StatutCreditLotArchive.IMPORTE && c.getStatut() != StatutCreditLotArchive.IGNORE) {
+                c.setStatut(statutCalcule(c, nouveau));
+            }
+        }
+    }
+
+    /**
+     * Réapplique aux crédits déjà importés les montants et soldes recalculés depuis leur relevé :
+     * composantes du crédit douanier (b, c, d, d′), solde des droits, TVA intérieure, et mise au format
+     * des utilisations reprises. Aucune utilisation n'est ajoutée deux fois. Chaque crédit a sa
+     * transaction ; un crédit utilisé depuis dans l'application garde ses soldes (anomalie signalée).
+     */
+    public ImportResultatDto recalculer(Long lotId, AuthenticatedUser user) {
+        List<Long> ids = transactionParCredit.execute(tx -> lot(lotId).getCredits().stream()
+                .filter(c -> c.getStatut() == StatutCreditLotArchive.IMPORTE)
+                .map(LotImportArchiveCredit::getId)
+                .toList());
+        int faits = 0;
+        int erreurs = 0;
+        for (Long id : ids) {
+            try {
+                transactionParCredit.executeWithoutResult(tx -> {
+                    LotImportArchiveCredit c = creditRepository.findById(id).orElseThrow();
+                    ReleveArchiveDto releve = lire(c);
+                    importService.importerReleve(releve, c.getEntreprise(), c.getAutoriteContractante(),
+                            c.getConvention(), null, true, user);
+                    c.setMessageErreur(releve.getAnomalies().stream()
+                            .filter(a -> a.startsWith("Le crédit a déjà été utilisé"))
+                            .findFirst().orElse(null));
+                });
+                faits++;
+            } catch (RuntimeException e) {
+                erreurs++;
+                log.warn("Reprise d'archive : recalcul du crédit de lot {} en échec : {}", id, e.getMessage());
+            }
+        }
+        int fFaits = faits;
+        int fErreurs = erreurs;
+        return transactionParCredit.execute(tx -> ImportResultatDto.builder()
+                .importes(fFaits)
+                .erreurs(fErreurs)
+                .nonPrets(0)
+                .credits(creditRepository.findAllById(ids).stream().map(c -> toDto(c, lire(c))).toList())
+                .build());
     }
 
     /** Pré-sélections : celles du rapprochement, ou celles du certificat déjà repris. */
@@ -683,6 +757,12 @@ public class ImportArchiveLotService {
                         ? releve.getTotalTransfertSortant() : releve.getTransfertCredit())
                 .soldeDouanierCalcule(c.getSoldeDouanierCalcule())
                 .soldeInterieurCalcule(c.getSoldeInterieurCalcule())
+                .soldeInterieurRegleFichier(releve.getSoldeInterieurRegleFichier())
+                .stockTvaEntrees(releve.getStockTvaEntrees())
+                .stockTvaDeduit(releve.getStockTvaDeduit())
+                .stockTvaRestant(releve.getStockTvaRestant())
+                .paiementEntrepriseTotal(releve.getPaiementEntrepriseTotal())
+                .reportsTotal(releve.getReportsTotal())
                 .soldeDouanierDeclare(c.getSoldeDouanierDeclare())
                 .soldeInterieurDeclare(c.getSoldeInterieurDeclare())
                 .nbUtilisations(c.getNbUtilisations() != null ? c.getNbUtilisations() : 0)
