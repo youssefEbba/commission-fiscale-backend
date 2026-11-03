@@ -1,9 +1,12 @@
 # Variables d'environnement du serveur SGCI en production (profil prod).
-# Copier ce fichier hors du dépôt, renseigner chaque valeur, et le charger dans le conteneur
-# (docker compose : env_file). Ne jamais commiter le fichier renseigné.
+# Copier ce fichier hors du dépôt vers .env (chmod 600), renseigner chaque valeur, et le
+# charger via docker compose env_file (voir docker-compose.prod.example.yml).
+# Ne jamais commiter le fichier renseigné. Ne jamais y mettre RootPassword@2026.
 #
 # Sans les variables marquées [obligatoire], le serveur refuse de démarrer et nomme celles qui manquent.
 # Les anciennes valeurs par défaut (publiées dans l'historique du dépôt) sont refusées.
+#
+# JDBC : fournir SPRING_DATASOURCE_URL avec TLS (useSSL=true). Aucune URL par défaut en prod.
 
 SPRING_PROFILES_ACTIVE=prod
 

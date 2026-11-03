@@ -247,7 +247,7 @@ public class CertificatCreditController {
     public CertificatCreditDto adminCorrectInfo(
             @PathVariable Long id,
             @RequestParam String motif,
-            @RequestBody AdminCorrectionCertificatRequest request,
+            @Valid @RequestBody AdminCorrectionCertificatRequest request,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return service.adminCorrectInfo(id, request, motif, user);

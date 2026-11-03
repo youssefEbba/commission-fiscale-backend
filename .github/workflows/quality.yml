@@ -1,0 +1,32 @@
+name: Quality
+
+on:
+  push:
+    branches: [main, newDev]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Tests
+        run: mvn -B test
+      - name: SonarQube (optionnel)
+        if: ${{ vars.ENABLE_SONAR == 'true' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: mvn -B verify sonar:sonar -Dsonar.projectKey=sgci-backend
+      - name: Snyk (optionnel)
+        if: ${{ vars.ENABLE_SNYK == 'true' }}
+        uses: snyk/actions/maven@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high

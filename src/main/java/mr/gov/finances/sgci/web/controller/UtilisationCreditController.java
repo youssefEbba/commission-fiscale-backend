@@ -408,7 +408,7 @@ public class UtilisationCreditController {
     public UtilisationCreditDto adminCorrectInfo(
             @PathVariable Long id,
             @RequestParam String motif,
-            @RequestBody AdminCorrectionUtilisationRequest request,
+            @Valid @RequestBody AdminCorrectionUtilisationRequest request,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return service.adminCorrectInfo(id, request, motif, user);

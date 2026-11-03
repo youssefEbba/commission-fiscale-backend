@@ -35,9 +35,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/auth/**").permitAll()
+                .authorizeHttpRequests(auth -> {
+                    auth.requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/password-reset/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
                         // Vérification d'un document par QR code : ouverte à dessein, pour que
                         // le Trésor, la DGI ou la douane contrôlent une pièce au guichet sans
@@ -51,11 +51,13 @@ public class SecurityConfig {
                         // cles de la liste blanche de ParametreService, jamais la table.
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/public/parametres").permitAll()
                         .requestMatchers("/api/local-files/**").authenticated()
-                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
-                        .requestMatchers("/ws/**").permitAll()
-                        .requestMatchers("/api/**").authenticated()
-                        .anyRequest().authenticated()
-                )
+                        .requestMatchers("/ws/**").permitAll();
+                    if (!ExigencesProduction.estProduction(environment)) {
+                        auth.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll();
+                    }
+                    auth.requestMatchers("/api/**").authenticated()
+                        .anyRequest().authenticated();
+                })
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(unauthorizedEntryPoint())
                         .accessDeniedHandler((request, response, accessDeniedException) -> {

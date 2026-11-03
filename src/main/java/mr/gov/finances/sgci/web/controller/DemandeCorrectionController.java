@@ -167,7 +167,7 @@ public class DemandeCorrectionController {
     public DemandeCorrectionDto adminCorrectInfo(
             @PathVariable Long id,
             @RequestParam String motif,
-            @RequestBody AdminCorrectionDemandeCorrectionRequest request,
+            @Valid @RequestBody AdminCorrectionDemandeCorrectionRequest request,
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return service.adminCorrectInfo(id, request, motif, user);

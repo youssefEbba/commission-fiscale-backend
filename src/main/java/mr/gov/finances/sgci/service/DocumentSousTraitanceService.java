@@ -8,9 +8,9 @@ import mr.gov.finances.sgci.domain.entity.DocumentSousTraitance;
 import mr.gov.finances.sgci.domain.entity.SousTraitance;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
-import mr.gov.finances.sgci.domain.enums.TypeDocument;
 import mr.gov.finances.sgci.repository.DocumentSousTraitanceRepository;
 import mr.gov.finances.sgci.repository.SousTraitanceRepository;
+import mr.gov.finances.sgci.service.document.DocumentUploadSupport;
 import mr.gov.finances.sgci.web.dto.DocumentSousTraitanceDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,38 +27,30 @@ public class DocumentSousTraitanceService {
 
     private final DocumentSousTraitanceRepository repository;
     private final SousTraitanceRepository sousTraitanceRepository;
-    private final MinioService minioService;
     private final AuditService auditService;
-    private final DocumentRequirementValidator requirementValidator;
+    private final DocumentUploadSupport documentUploadSupport;
 
     @Transactional
     public DocumentSousTraitanceDto upload(Long sousTraitanceId, String codeDocument, MultipartFile file) throws IOException {
-        if (file == null || file.isEmpty()) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
-        }
-        requirementValidator.validateUpload(ProcessusDocument.SOUS_TRAITANCE, codeDocument, file);
-
         SousTraitance st = sousTraitanceRepository.findById(sousTraitanceId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Sous-traitance non trouvée: " + sousTraitanceId));
 
-        int nextVersion = 1;
         DocumentSousTraitance previous = repository.findBySousTraitanceIdAndCodeDocumentAndActifTrue(sousTraitanceId, codeDocument)
                 .orElse(null);
         if (previous != null) {
             previous.setActif(false);
-            nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
         }
-
-        String originalFilename = file.getOriginalFilename();
-        String fileUrl = minioService.uploadFile(file);
+        DocumentUploadSupport.StoredUpload stored = documentUploadSupport.validerEtStocker(
+                ProcessusDocument.SOUS_TRAITANCE, codeDocument, file,
+                previous == null ? null : previous.getVersion());
 
         DocumentSousTraitance doc = DocumentSousTraitance.builder()
                 .codeDocument(codeDocument)
-                .nomFichier(originalFilename != null ? originalFilename : file.getName())
-                .chemin(fileUrl)
+                .nomFichier(stored.nomFichier())
+                .chemin(stored.fileUrl())
                 .dateUpload(Instant.now())
-                .taille(file.getSize())
-                .version(nextVersion)
+                .taille(stored.taille())
+                .version(stored.version())
                 .actif(true)
                 .sousTraitance(st)
                 .build();

@@ -85,7 +85,7 @@ public class GlobalExceptionHandler {
         return body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(),
                 ApiErrorCode.VALIDATION_FAILED,
-                "Valeur invalide pour le paramètre '" + ex.getName() + "': " + ex.getValue(),
+                "Valeur invalide pour le paramètre '" + ex.getName() + "'",
                 null));
     }
 
@@ -218,10 +218,18 @@ public class GlobalExceptionHandler {
                             + "par le journal du serveur.",
                     null));
         }
+        if (ex instanceof IllegalStateException || ex instanceof IllegalArgumentException) {
+            return body(ErrorResponse.of(
+                    HttpStatus.BAD_REQUEST.value(),
+                    ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    ex.getMessage() != null ? ex.getMessage() : ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    null));
+        }
+        log.error("RuntimeException inattendue", ex);
         return body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(),
                 ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                ex.getMessage() != null ? ex.getMessage() : ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                "Opération refusée",
                 null));
     }
 

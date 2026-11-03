@@ -1,0 +1,62 @@
+# Modèle de production à copier sur srvmf (/home/mf/commission-fiscale-deploy).
+# Ne pas coller de secrets ici. Copier variables-environnement.example vers .env (chmod 600)
+# et renseigner JWT, MySQL, MinIO, SMTP. Ne jamais restaurer un application-prod.properties
+# contenant RootPassword@2026.
+#
+# Actions opérateur (hors Git) :
+#   - chmod 600 .env
+#   - nouveaux secrets (JWT 32+ caractères, MySQL, MinIO) distincts des valeurs publiées
+#   - lier le front à 127.0.0.1:8082:80 (nginx local + reverse proxy HTTPS)
+#   - MinIO uniquement sur le réseau interne compose (pas de ports 9000/9001 publics)
+#
+# Usage : docker compose --env-file .env -f docker-compose.prod.example.yml up -d --build
+
+services:
+  backend:
+    build:
+      context: ../commission-fiscale-backend
+    env_file:
+      - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+    expose:
+      - "8080"
+    depends_on:
+      - minio
+    restart: unless-stopped
+    networks:
+      - sgci
+
+  frontend:
+    build:
+      context: ../commission-fiscale-bd18374b
+    ports:
+      - "127.0.0.1:8082:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - sgci
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    env_file:
+      - .env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    expose:
+      - "9000"
+    restart: unless-stopped
+    networks:
+      - sgci
+
+volumes:
+  minio_data:
+
+networks:
+  sgci:
+    driver: bridge

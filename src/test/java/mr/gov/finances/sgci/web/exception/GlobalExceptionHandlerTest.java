@@ -54,6 +54,14 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void unTypeInvalideNeRenvoiePasLaValeurSaisie() {
+        var mismatch = new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException(
+                "secret-payload", Long.class, "id", null, new NumberFormatException("secret-payload"));
+        var reponse = new GlobalExceptionHandler().handleTypeMismatch(mismatch);
+        assertThat(reponse.getBody().message()).contains("id").doesNotContain("secret-payload");
+    }
+
+    @Test
     void uneErreurMetierResteMetier() {
         // Ces messages-là sont écrits pour l'utilisateur : les masquer serait une régression.
         assertThat(GlobalExceptionHandler.estDOrigineTechnique(

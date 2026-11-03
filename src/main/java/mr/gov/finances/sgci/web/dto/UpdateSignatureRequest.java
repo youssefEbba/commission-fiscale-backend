@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.web.dto;
 
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,6 +12,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Builder
 public class UpdateSignatureRequest {
+    @Size(max = 120)
     private String nomAffiche;
     private Boolean active;
 }
