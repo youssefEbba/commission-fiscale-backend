@@ -74,7 +74,20 @@ public final class LotArchiveDtos {
          */
         private BigDecimal sortieTransfert;
         private BigDecimal soldeDouanierCalcule;
+        /**
+         * Solde intérieur rejoué selon les règles de l'application (stock de TVA déductible déduit,
+         * net imputé, reports) : c'est celui importé.
+         */
         private BigDecimal soldeInterieurCalcule;
+        /** Règle de l'ancienne application (crédit + transfert − utilisations), comparée au solde du fichier. */
+        private BigDecimal soldeInterieurRegleFichier;
+        /** Stock de TVA déductible : entrées (importations + transfert), déduit, restant. */
+        private BigDecimal stockTvaEntrees;
+        private BigDecimal stockTvaDeduit;
+        private BigDecimal stockTvaRestant;
+        /** Ce que l'entreprise a dû payer quand le solde TVA ne couvrait pas le net ; reports à nouveau. */
+        private BigDecimal paiementEntrepriseTotal;
+        private BigDecimal reportsTotal;
         private BigDecimal soldeDouanierDeclare;
         private BigDecimal soldeInterieurDeclare;
         private int nbUtilisations;

@@ -28,7 +28,8 @@ final class ExportPeriodeFixture {
     record Bloc(String nif, String referenceMarche, String duree, String dateCredit, String numeroCredit,
                 String montantMarche, String montantCredit, String transfert, String creditDouanier,
                 String creditInterieur, String soldeDouanier, String soldeInterieur,
-                String[] ligneTransfert, List<Utilisation> utilisations) {
+                String[] ligneTransfert, List<Utilisation> utilisations,
+                /* totaux initiaux par taxe : DD, TVADD, RS, PC, PSC, TCO, TT */ String[] totaux) {
     }
 
     private final List<Bloc> blocs = new ArrayList<>();
@@ -65,7 +66,11 @@ final class ExportPeriodeFixture {
             set(s, r, 4 + i, totaux[i]);
         }
         r++;
-        r++;   // ligne des totaux initiaux, sans incidence sur la lecture
+        // Ligne des totaux initiaux par taxe, sous l'en-tête « Totaux: ».
+        for (int i = 0; b.totaux() != null && i < b.totaux().length; i++) {
+            set(s, r, 4 + i, b.totaux()[i]);
+        }
+        r++;
         set(s, r++, 3, "Solde = ");
         r++;
         set(s, r, 3, "Montant du crédit d'impot : "); set(s, r, 4, b.montantCredit());
@@ -130,7 +135,8 @@ final class ExportPeriodeFixture {
                 new String[]{"00/00/0000", "", "1024880", "1.036.000,00", "1.024.880,00", "51.800,00",
                         "25.900,00", "51.800,00", "60.000,00", "0,00"},
                 List.of(new Utilisation("04/04/2023", "UT 1 | 1/" + numeroCredit, "31862.07", ""),
-                        new Utilisation("04/04/2023", "UT 2 | 2/" + numeroCredit, "15448.28", "")));
+                        new Utilisation("04/04/2023", "UT 2 | 2/" + numeroCredit, "15448.28", "")),
+                new String[]{"1.036.000,00", "1.024.880,00", "51.800,00", "25.900,00", "51.800,00", "60.000,00", "0,00"});
     }
 
     /** Crédit consommé en douane, sans transfert ; solde douanier écrit en nombre brut. */
@@ -140,7 +146,8 @@ final class ExportPeriodeFixture {
                 SANS_TRANSFERT,
                 List.of(new Utilisation("04/03/2026", "UT 1 | 1/" + numeroCredit, "", "717030.36",
                         "340.632,00", "333.819,36", "17.031,60", "8.515,80", "17.031,60", "0,00", "0,00",
-                        "11.400,00", "300,00", "41.727,42")));
+                        "11.400,00", "300,00", "41.727,42")),
+                new String[]{"1.205.739,85", "1.262.672,30", "64.380,12", "32.190,06", "64.380,12", "87.000,00", "0,00"});
     }
 
     /** Crédit intérieur dont le solde affiché ne cadre pas avec le calcul (anomalie attendue). */
@@ -148,6 +155,7 @@ final class ExportPeriodeFixture {
         return new Bloc(nif, referenceMarche, "30 JOURS", "11/03/2026", numeroCredit, "9.044.444,00",
                 "500.000,00", "0,00", "0,00", "500.000,00", "0", "450.000,00",
                 SANS_TRANSFERT,
-                List.of(new Utilisation("26/03/2026", "UT 1 | 1/" + numeroCredit, "100000", "")));
+                List.of(new Utilisation("26/03/2026", "UT 1 | 1/" + numeroCredit, "100000", "")),
+                new String[]{"0,00", "0,00", "0,00", "0,00", "0,00", "0,00", "0,00"});
     }
 }

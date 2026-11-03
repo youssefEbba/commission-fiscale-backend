@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Contenu d'un relevé de crédit d'impôt de l'ancienne application, tel que lu dans le fichier.
@@ -49,6 +50,37 @@ public class ReleveArchiveDto {
      * <p>Il entre dans le recalcul du solde douanier ({@link #soldeDouanierCalcule}).
      */
     private BigDecimal totalTransfertSortant;
+
+    /**
+     * Solde intérieur selon la règle de l'ancienne application (crédit + transfert − utilisations) :
+     * c'est lui qui se compare au solde affiché par le fichier. Le solde importé est
+     * {@link #soldeInterieurCalcule}, rejoué selon les règles de l'application.
+     */
+    private BigDecimal soldeInterieurRegleFichier;
+
+    /** Stock de TVA déductible reconstitué : TVA des importations et TVA transférée, avec leurs restes. */
+    private List<StockTvaArchiveDto> stockTva;
+    private BigDecimal stockTvaEntrees;
+    private BigDecimal stockTvaDeduit;
+    private BigDecimal stockTvaRestant;
+    private BigDecimal paiementEntrepriseTotal;
+    private BigDecimal reportsTotal;
+
+    /** Part TVA du bloc « Détailles transfert » : ce qui est passé de la TVA d'importation au crédit intérieur. */
+    private BigDecimal transfertSortantTva;
+
+    /** Ligne « Totaux » : crédit douanier initial par taxe (DD, TVADD, RS, PC, PSC, TCO, TT). */
+    private Map<String, BigDecimal> taxesInitiales;
+    /** Ligne « Solde = » : soldes par taxe affichés par l'ancienne application, pour contrôle. */
+    private Map<String, BigDecimal> taxesSoldeDeclare;
+
+    /** Composantes de l'application : b = DD + RS + PC + PSC + TT, c = TCO, d = TVADD. */
+    private BigDecimal droitsEtTaxesHorsTva;
+    private BigDecimal taxesConsommation;
+    private BigDecimal tvaImportation;
+    /** Recalculés : TVA d'importation restante (d′) et solde des droits (b + c restants). d′ + droits = solde douanier. */
+    private BigDecimal soldeTvaImportationCalcule;
+    private BigDecimal soldeDroitsCalcule;
 
     /** Solde tel qu'affiché dans le relevé, gardé pour contrôle : tout écart avec le calcul est signalé. */
     private BigDecimal soldeDouanierDeclare;
