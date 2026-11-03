@@ -20,6 +20,9 @@ public class CreateAvenantRequest {
     @NotNull(message = "Le crédit d'impôt concerné est obligatoire")
     private Long certificatCreditId;
 
+    /** Marché choisi avant le crédit, facultatif : s'il est donné, le crédit doit lui appartenir. */
+    private Long marcheId;
+
     @NotNull(message = "Le type d'avenant est obligatoire")
     private TypeAvenant type;
 

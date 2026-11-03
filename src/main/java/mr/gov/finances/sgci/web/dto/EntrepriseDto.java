@@ -14,7 +14,7 @@ import mr.gov.finances.sgci.domain.enums.CategorieEntreprise;
 public class EntrepriseDto {
 
     private Long id;
-    @NotBlank(message = "La raison sociale est obligatoire")
+    @NotBlank(message = "Le nom de l'entreprise est obligatoire")
     private String raisonSociale;
     private String nomCommercial;
     private String activite;
