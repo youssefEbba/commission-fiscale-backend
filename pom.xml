@@ -118,7 +118,7 @@
         <dependency>
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
-            <version>8.6.0</version>
+            <version>9.0.4</version>
         </dependency>
         <!-- OkHttp 5 publie ses classes Java dans okhttp-jvm, que Maven ne résout pas seul depuis okhttp. -->
         <dependency>
