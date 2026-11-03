@@ -1084,10 +1084,10 @@ public class DataInitializer implements CommandLineRunner {
                 autoriteContractante);
         createUserIfMissing("admin", Role.ADMIN_SI, "Administrateur SGCI");
         createUserIfMissing("president", Role.PRESIDENT, "Président");
-        createUserIfMissing("dgd", Role.DGD, "Agent DGD");
-        createUserIfMissing("dgtcp", Role.DGTCP, "Agent DGTCP");
-        createUserIfMissing("dgi", Role.DGI, "Agent DGI");
-        createUserIfMissing("dgb", Role.DGB, "Agent DGB");
+        createUserIfMissing("dgd", Role.DGD, "Représentant DGD");
+        createUserIfMissing("dgtcp", Role.DGTCP, "Représentant DGTCP");
+        createUserIfMissing("dgi", Role.DGI, "Représentant DGI");
+        createUserIfMissing("dgb", Role.DGB, "Représentant DGB");
         createUserIfMissing("ac", Role.AUTORITE_CONTRACTANTE, "Autorité Contractante", autoriteContractante);
         createUserIfMissing("entreprise", Role.ENTREPRISE, "Entreprise", entreprise);
         createUserIfMissing("test", Role.ENTREPRISE, "Entreprise test", entreprise2);
