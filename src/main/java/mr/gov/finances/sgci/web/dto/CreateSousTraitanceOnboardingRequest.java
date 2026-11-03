@@ -16,7 +16,7 @@ public class CreateSousTraitanceOnboardingRequest {
     @NotNull(message = "Le certificatCreditId est obligatoire")
     private Long certificatCreditId;
 
-    @NotBlank(message = "La raison sociale de l'entreprise sous-traitante est obligatoire")
+    @NotBlank(message = "Le nom de l'entreprise sous-traitante est obligatoire")
     private String sousTraitantEntrepriseRaisonSociale;
 
     private String sousTraitantEntrepriseNomCommercial;

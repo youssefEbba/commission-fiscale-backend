@@ -52,7 +52,8 @@ class ColonnesTexteSchemaMigrationTest {
             Map.entry("enquete_satisfaction.statut", new FieldRef(mr.gov.finances.sgci.domain.entity.EnqueteSatisfaction.class, "statut")),
             Map.entry("question_enquete.type", new FieldRef(mr.gov.finances.sgci.domain.entity.QuestionEnquete.class, "type")),
             Map.entry("question_enquete.categorie", new FieldRef(mr.gov.finances.sgci.domain.entity.QuestionEnquete.class, "categorie")),
-            Map.entry("reponse_enquete.profil", new FieldRef(mr.gov.finances.sgci.domain.entity.ReponseEnquete.class, "profil")));
+            Map.entry("reponse_enquete.profil", new FieldRef(mr.gov.finances.sgci.domain.entity.ReponseEnquete.class, "profil")),
+            Map.entry("lot_import_archive_credit.statut", new FieldRef(mr.gov.finances.sgci.domain.entity.LotImportArchiveCredit.class, "statut")));
 
     private record FieldRef(Class<?> entite, String champ) {
     }

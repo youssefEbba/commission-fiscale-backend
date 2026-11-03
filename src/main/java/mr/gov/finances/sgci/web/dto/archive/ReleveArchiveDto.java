@@ -22,6 +22,11 @@ public class ReleveArchiveDto {
     private String numeroCredit;
     private Instant dateCredit;
     private BigDecimal montantMarche;
+    /** Numéro du marché : la référence sans sa date (« … DU 06/10/2025 »). */
+    private String numeroMarche;
+    private Instant dateMarche;
+    /** Durée d'exécution telle qu'écrite dans le relevé (« 07 MOIS », « 30 JOURS », « IMMEDIAT »). */
+    private String dureeMarche;
 
     private BigDecimal creditDouanier;
     private BigDecimal creditInterieur;
@@ -41,16 +46,19 @@ public class ReleveArchiveDto {
      * transférables (DD, RS, PC, PSC, TCO) qui sont simplement <b>mis à zéro</b>. La règle métier
      * est bien que seule la TVA se transfère ; le reste est soldé.
      *
-     * <p>La reprise d'archive n'applique aucune correction : les soldes déclarés dans le relevé
-     * sont importés tels quels.
+     * <p>Il entre dans le recalcul du solde douanier ({@link #soldeDouanierCalcule}).
      */
     private BigDecimal totalTransfertSortant;
 
-    /** Solde tel qu'affiché dans le relevé — c'est celui retenu à l'import. */
+    /** Solde tel qu'affiché dans le relevé, gardé pour contrôle : tout écart avec le calcul est signalé. */
     private BigDecimal soldeDouanierDeclare;
     private BigDecimal soldeInterieurDeclare;
 
-    /** Solde recalculé depuis les utilisations, pour contrôle. */
+    /**
+     * Solde recalculé depuis le relevé — c'est celui retenu à l'import :
+     * douanier = crédit douanier − utilisations douanières − sortie par transfert ;
+     * intérieur = crédit intérieur + transfert − utilisations intérieures.
+     */
     private BigDecimal soldeDouanierCalcule;
     private BigDecimal soldeInterieurCalcule;
 
@@ -79,6 +87,8 @@ public class ReleveArchiveDto {
 
     private Long autoriteRapprocheeId;
     private String autoriteRapprocheeNom;
+    /** {@code MARCHE} si l'autorité vient du marché retrouvé, {@code CODE_AC} si du code lu dans sa référence. */
+    private String autoriteRapprocheeSource;
 
     /** Renseigné si un import du même relevé a déjà été effectué. */
     private Long certificatDejaImporteId;

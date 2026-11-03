@@ -7,6 +7,7 @@ import mr.gov.finances.sgci.domain.entity.Avenant;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.Dqe;
+import mr.gov.finances.sgci.domain.entity.Marche;
 import mr.gov.finances.sgci.domain.entity.ModeleFiscal;
 import mr.gov.finances.sgci.domain.entity.Utilisateur;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
@@ -189,6 +190,15 @@ public class AvenantService {
         if (!CREDIT_OUVERT.contains(certificat.getStatut())) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Un avenant ne se dépose que sur un crédit ouvert (statut actuel : " + certificat.getStatut() + ")");
+        }
+        // Le formulaire fait choisir le marché, puis l'un de ses crédits : les deux doivent concorder.
+        if (request.getMarcheId() != null) {
+            Marche marcheDuCredit = certificat.getDemandeCorrection() != null
+                    ? certificat.getDemandeCorrection().getMarche() : null;
+            if (marcheDuCredit == null || !request.getMarcheId().equals(marcheDuCredit.getId())) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Le crédit choisi n'appartient pas au marché sélectionné");
+            }
         }
         if (request.getType() == mr.gov.finances.sgci.domain.enums.TypeAvenant.FINANCIER) {
             BigDecimal ext = request.getCreditExterieurPropose();
@@ -429,6 +439,8 @@ public class AvenantService {
         CertificatCredit c = a.getCertificatCredit();
         DemandeCorrection origine = c != null ? c.getDemandeCorrection() : null;
         DemandeCorrection d = a.getDemandeCorrection();
+        // L'avenant modifie le marché du crédit : celui de la demande de correction d'origine.
+        Marche marche = origine != null ? origine.getMarche() : null;
         return AvenantDto.builder()
                 .id(a.getId())
                 .numero(a.getNumero())
@@ -439,6 +451,9 @@ public class AvenantService {
                 .certificatCreditId(c != null ? c.getId() : null)
                 .certificatNumero(c != null ? c.getNumero() : null)
                 .certificatReference(c != null ? c.getReference() : null)
+                .marcheId(marche != null ? marche.getId() : null)
+                .marcheNumero(marche != null ? marche.getNumeroMarche() : null)
+                .marcheIntitule(marche != null ? marche.getIntitule() : null)
                 .entrepriseId(c != null && c.getEntreprise() != null ? c.getEntreprise().getId() : null)
                 .entrepriseNom(c != null && c.getEntreprise() != null ? c.getEntreprise().getRaisonSociale() : null)
                 .autoriteContractanteId(origine != null && origine.getAutoriteContractante() != null ? origine.getAutoriteContractante().getId() : null)

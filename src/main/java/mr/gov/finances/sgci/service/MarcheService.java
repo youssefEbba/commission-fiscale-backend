@@ -492,6 +492,7 @@ public class MarcheService {
                 .dateSignature(request.getDateSignature())
                 .montantContratHt(request.getMontantContratHt())
                 .montantContratTtc(request.getMontantContratTtc())
+                .dureeExecution(request.getDureeExecution())
                 .statut(request.getStatut())
                 .typeMarche(request.getTypeMarche())
                 .convention(convention)
@@ -546,6 +547,9 @@ public class MarcheService {
         // qui est déjà posé. Une modification partielle ne doit pas vider un champ qu'elle ignore.
         if (request.getTypeMarche() != null) {
             marche.setTypeMarche(request.getTypeMarche());
+        }
+        if (request.getDureeExecution() != null) {
+            marche.setDureeExecution(request.getDureeExecution().isBlank() ? null : request.getDureeExecution().trim());
         }
         if (request.getConventionIds() != null) {
             changerConventions(marche, request.getConventionIds(), user);
@@ -628,6 +632,7 @@ public class MarcheService {
                 .dateSignature(marche.getDateSignature())
                 .montantContratHt(marche.getMontantContratHt())
                 .montantContratTtc(marche.getMontantContratTtc())
+                .dureeExecution(marche.getDureeExecution())
                 .statut(marche.getStatut())
                 .typeMarche(marche.getTypeMarche())
                 .delegueIds(marche.getDelegues() != null

@@ -24,7 +24,7 @@ public class GroupementDto {
 
     private Long id;
 
-    @NotBlank(message = "La raison sociale du groupement est obligatoire")
+    @NotBlank(message = "Le nom du groupement est obligatoire")
     private String raisonSociale;
 
     private String nomCommercial;

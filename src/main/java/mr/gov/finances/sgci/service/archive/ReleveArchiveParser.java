@@ -23,12 +23,16 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.text.Normalizer;
+import java.math.RoundingMode;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Lecture d'un relevé de crédit d'impôt exporté par l'ancienne application (feuille
@@ -53,8 +57,54 @@ public class ReleveArchiveParser {
     private static final List<String> TAXES_A_PAYER = List.of("TTI", "RIF", "IMF");
 
     private static final DateTimeFormatter JJ_MM_AAAA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    /** Jour et mois sur un ou deux chiffres ; année sur quatre chiffres, puis sur deux (siècle 2000). */
+    private static final List<DateTimeFormatter> FORMATS_DATE = List.of(
+            DateTimeFormatter.ofPattern("d/M/uuuu"), DateTimeFormatter.ofPattern("d/M/uu"));
+    private static final Pattern REFERENCE_AVEC_DATE =
+            Pattern.compile("(?iu)^(.*?)\\s+DU\\s*\\D{0,2}(\\d{1,2}/\\d{1,2}/\\d{2,4})\\b.*$");
 
     public ReleveArchiveDto parse(MultipartFile fichier) {
+        return lireClasseur(fichier, sheet -> lireZone(Zone.feuille(sheet), fichier.getOriginalFilename()));
+    }
+
+    /**
+     * Lecture d'un export de période : la feuille enchaîne les relevés de plusieurs crédits, chacun
+     * ouvert par sa ligne « NIF ». Chaque bloc est lu comme un relevé à un crédit ; un bloc illisible
+     * est rendu avec son anomalie plutôt que de faire échouer tout le fichier.
+     */
+    public List<BlocReleve> parseLot(MultipartFile fichier) {
+        return lireClasseur(fichier, sheet -> {
+            List<Integer> debuts = new ArrayList<>();
+            for (Row row : sheet) {
+                if (normaliser(texte(row.getCell(0))).startsWith("NIF ")) {
+                    debuts.add(row.getRowNum());
+                }
+            }
+            if (debuts.isEmpty()) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "Aucun crédit trouvé : le fichier ne contient aucune ligne « NIF ».");
+            }
+            List<BlocReleve> blocs = new ArrayList<>();
+            for (int i = 0; i < debuts.size(); i++) {
+                int debut = debuts.get(i);
+                int fin = i + 1 < debuts.size() ? debuts.get(i + 1) - 1 : sheet.getLastRowNum();
+                ReleveArchiveDto releve;
+                try {
+                    releve = lireZone(new Zone(sheet, debut, fin), fichier.getOriginalFilename());
+                } catch (RuntimeException e) {
+                    releve = new ReleveArchiveDto();
+                    releve.setNomFichier(fichier.getOriginalFilename());
+                    releve.setNif(extraireApresPrefixe(new Zone(sheet, debut, debut), "NIF"));
+                    releve.getAnomalies().add("Bloc illisible (lignes " + (debut + 1) + " à " + (fin + 1)
+                            + ") : " + e.getMessage());
+                }
+                blocs.add(new BlocReleve(debut + 1, fin + 1, releve));
+            }
+            return blocs;
+        });
+    }
+
+    private <T> T lireClasseur(MultipartFile fichier, Function<Sheet, T> lecture) {
         if (fichier == null || fichier.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est obligatoire");
         }
@@ -63,7 +113,7 @@ public class ReleveArchiveParser {
             if (sheet == null) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le classeur ne contient aucune feuille");
             }
-            return lireFeuille(sheet, fichier.getOriginalFilename());
+            return lecture.apply(sheet);
         } catch (ApiException e) {
             throw e;
         } catch (IOException | RuntimeException e) {
@@ -72,7 +122,31 @@ public class ReleveArchiveParser {
         }
     }
 
-    private ReleveArchiveDto lireFeuille(Sheet sheet, String nomFichier) {
+    /** Plage de lignes lue comme un relevé : la feuille entière, ou un bloc d'un export de période. */
+    private record Zone(Sheet sheet, int debut, int fin) {
+
+        static Zone feuille(Sheet sheet) {
+            return new Zone(sheet, 0, sheet.getLastRowNum());
+        }
+
+        Row ligne(int i) {
+            return i < debut || i > fin ? null : sheet.getRow(i);
+        }
+
+        /** Lignes existantes de la zone, dans l'ordre. */
+        List<Row> lignes() {
+            List<Row> rows = new ArrayList<>();
+            for (int i = debut; i <= fin; i++) {
+                Row row = sheet.getRow(i);
+                if (row != null) {
+                    rows.add(row);
+                }
+            }
+            return rows;
+        }
+    }
+
+    private ReleveArchiveDto lireZone(Zone sheet, String nomFichier) {
         ReleveArchiveDto dto = new ReleveArchiveDto();
         dto.setNomFichier(nomFichier);
         dto.setAnomalies(new ArrayList<>());
@@ -82,6 +156,8 @@ public class ReleveArchiveParser {
         dto.setNumeroCredit(valeurSousEntete(sheet, "N° Credit"));
         dto.setDateCredit(dateSousEntete(sheet, "Date", "N° Credit"));
         dto.setMontantMarche(montantSousEntete(sheet, "Montant M"));
+        lireMarche(dto);
+        dto.setDureeMarche(extraireApresPrefixe(sheet, "Durée"));
 
         dto.setCreditDouanier(montantApresLibelle(sheet, "Crédit douanier :", 0));
         dto.setCreditInterieur(montantApresLibelle(sheet, "Crédit intérieur :", 0));
@@ -106,7 +182,7 @@ public class ReleveArchiveParser {
     // Bloc des utilisations
     // ------------------------------------------------------------------
 
-    private List<UtilisationArchiveDto> lireUtilisations(Sheet sheet, ReleveArchiveDto dto) {
+    private List<UtilisationArchiveDto> lireUtilisations(Zone sheet, ReleveArchiveDto dto) {
         List<UtilisationArchiveDto> utilisations = new ArrayList<>();
 
         // « quittance » n'apparaît que dans l'en-tête du bloc des utilisations : c'est l'ancre la
@@ -119,7 +195,7 @@ public class ReleveArchiveParser {
 
         // Position des colonnes relevée sur la ligne d'en-tête, pour ne dépendre
         // d'aucun décalage fixe (l'export cale les blocs différemment selon les cas).
-        Map<String, Integer> colonnes = indexerEntete(sheet.getRow(ligneEntete));
+        Map<String, Integer> colonnes = indexerEntete(sheet.ligne(ligneEntete));
         Integer colDate = colonne(colonnes, "DATE");
         Integer colLibelle = colonne(colonnes, "LIBELLE");
         Integer colTvaInterieur = colonne(colonnes, "TVA INTERIEUR");
@@ -132,8 +208,8 @@ public class ReleveArchiveParser {
             return utilisations;
         }
 
-        for (int i = ligneEntete + 1; i <= sheet.getLastRowNum(); i++) {
-            Row row = sheet.getRow(i);
+        for (int i = ligneEntete + 1; i <= sheet.fin(); i++) {
+            Row row = sheet.ligne(i);
             if (row == null) {
                 continue;
             }
@@ -245,6 +321,15 @@ public class ReleveArchiveParser {
 
         signalerEcart(dto, "douanier", dto.getSoldeDouanierDeclare(), dto.getSoldeDouanierCalcule());
         signalerEcart(dto, "intérieur", dto.getSoldeInterieurDeclare(), dto.getSoldeInterieurCalcule());
+        signalerNegatif(dto, "douanier", dto.getSoldeDouanierCalcule());
+        signalerNegatif(dto, "intérieur", dto.getSoldeInterieurCalcule());
+    }
+
+    private void signalerNegatif(ReleveArchiveDto dto, String libelle, BigDecimal calcule) {
+        if (calcule != null && calcule.signum() < 0) {
+            dto.getAnomalies().add("Solde " + libelle + " calculé négatif (" + calcule.toPlainString()
+                    + ") : les utilisations dépassent le crédit. Il sera enregistré à 0.");
+        }
     }
 
     private void signalerEcart(ReleveArchiveDto dto, String libelle, BigDecimal declare, BigDecimal calcule) {
@@ -253,7 +338,7 @@ public class ReleveArchiveParser {
         }
         dto.getAnomalies().add("Solde " + libelle + " : le relevé indique " + declare.toPlainString()
                 + " alors que le calcul (crédit − utilisations ± transfert) donne " + calcule.toPlainString()
-                + ". Le montant retenu à l'import est celui du relevé.");
+                + ". Le montant retenu à l'import est celui du calcul.");
     }
 
     private BigDecimal soustraire(BigDecimal base, BigDecimal... aRetirer) {
@@ -307,8 +392,8 @@ public class ReleveArchiveParser {
      * Le motif tolère l'accent de « Marché » et les variantes du symbole numéro, sans toucher
      * au « N°11 » final qui appartient à la référence.
      */
-    private String extraireReferenceMarche(Sheet sheet) {
-        for (Row row : sheet) {
+    private String extraireReferenceMarche(Zone sheet) {
+        for (Row row : sheet.lignes()) {
             for (Cell cell : row) {
                 String brut = texte(cell).trim();
                 if (!normaliser(brut).startsWith("MARCHE PUBLIC")) {
@@ -322,13 +407,33 @@ public class ReleveArchiveParser {
     }
 
     /**
+     * Numéro et date du marché, tirés de sa référence : « 2030/T/016/CPMP/MPIMP/SNDP/2025 DU 06/10/2025 »
+     * donne le numéro « 2030/T/016/CPMP/MPIMP/SNDP/2025 » et la date du 6 octobre 2025. L'export
+     * écrit la date de plusieurs façons (« 07/12/23 », « 06/1/26 », « N19/11/25 ») ; sans date
+     * reconnaissable, le numéro reste la référence entière.
+     */
+    private void lireMarche(ReleveArchiveDto dto) {
+        String reference = dto.getReferenceMarche();
+        if (reference == null) {
+            return;
+        }
+        Matcher m = REFERENCE_AVEC_DATE.matcher(reference);
+        if (m.matches()) {
+            dto.setNumeroMarche(emptyToNull(m.group(1).trim()));
+            dto.setDateMarche(dateTexte(m.group(2)));
+        } else {
+            dto.setNumeroMarche(reference);
+        }
+    }
+
+    /**
      * Total sorti du crédit douanier, lu dans le bloc « Détailles transfert » qui le ventile par taxe.
      *
      * <p>La colonne {@code TVADD} y reprend la valeur de {@code TVA} : elle est exclue du cumul pour
      * ne pas compter deux fois la part transférable. Le total ainsi obtenu couvre à la fois la part
      * versée au crédit intérieur et les droits soldés sans transfert.
      */
-    private BigDecimal lireTotalTransfertSortant(Sheet sheet) {
+    private BigDecimal lireTotalTransfertSortant(Zone sheet) {
         // Ancrage sur le titre du bloc, pas sur « TVADD » : ce libellé figure aussi dans l'en-tête
         // « Totaux » situé plus haut, dont les lignes « Initiaux » et « Solde » seraient sommées à tort.
         int ligneTitre = trouverLigneTransfert(sheet);
@@ -336,15 +441,15 @@ public class ReleveArchiveParser {
             return null;
         }
         int ligneEntete = ligneTitre + 1;
-        if (sheet.getRow(ligneEntete) == null) {
+        if (sheet.ligne(ligneEntete) == null) {
             return null;
         }
-        Map<String, Integer> colonnes = indexerEntete(sheet.getRow(ligneEntete));
+        Map<String, Integer> colonnes = indexerEntete(sheet.ligne(ligneEntete));
         BigDecimal total = BigDecimal.ZERO;
         boolean auMoinsUneValeur = false;
 
-        for (int i = ligneEntete + 1; i <= sheet.getLastRowNum(); i++) {
-            Row row = sheet.getRow(i);
+        for (int i = ligneEntete + 1; i <= sheet.fin(); i++) {
+            Row row = sheet.ligne(i);
             if (row == null) {
                 break;   // le bloc s'arrête à la première ligne vide
             }
@@ -371,8 +476,8 @@ public class ReleveArchiveParser {
     }
 
     /** Texte d'une cellule dont le contenu commence par un préfixe (ex. « NIF 90600034 »). */
-    private String extraireApresPrefixe(Sheet sheet, String prefixe) {
-        for (Row row : sheet) {
+    private String extraireApresPrefixe(Zone sheet, String prefixe) {
+        for (Row row : sheet.lignes()) {
             for (Cell cell : row) {
                 String t = texte(cell).trim();
                 if (t.regionMatches(true, 0, prefixe, 0, prefixe.length()) && t.length() > prefixe.length()) {
@@ -384,11 +489,11 @@ public class ReleveArchiveParser {
     }
 
     /** Valeur placée juste sous un intitulé de colonne. */
-    private String valeurSousEntete(Sheet sheet, String entete) {
-        for (Row row : sheet) {
+    private String valeurSousEntete(Zone sheet, String entete) {
+        for (Row row : sheet.lignes()) {
             for (Cell cell : row) {
                 if (normaliser(texte(cell)).equals(normaliser(entete))) {
-                    Row suivante = sheet.getRow(row.getRowNum() + 1);
+                    Row suivante = sheet.ligne(row.getRowNum() + 1);
                     return suivante != null ? emptyToNull(texte(suivante.getCell(cell.getColumnIndex()))) : null;
                 }
             }
@@ -396,11 +501,11 @@ public class ReleveArchiveParser {
         return null;
     }
 
-    private BigDecimal montantSousEntete(Sheet sheet, String entete) {
-        for (Row row : sheet) {
+    private BigDecimal montantSousEntete(Zone sheet, String entete) {
+        for (Row row : sheet.lignes()) {
             for (Cell cell : row) {
                 if (normaliser(texte(cell)).startsWith(normaliser(entete))) {
-                    Row suivante = sheet.getRow(row.getRowNum() + 1);
+                    Row suivante = sheet.ligne(row.getRowNum() + 1);
                     return suivante != null ? montant(suivante.getCell(cell.getColumnIndex())) : null;
                 }
             }
@@ -408,14 +513,14 @@ public class ReleveArchiveParser {
         return null;
     }
 
-    private Instant dateSousEntete(Sheet sheet, String entete, String enteteVoisin) {
-        for (Row row : sheet) {
+    private Instant dateSousEntete(Zone sheet, String entete, String enteteVoisin) {
+        for (Row row : sheet.lignes()) {
             if (!contientTexte(row, enteteVoisin)) {
                 continue;   // ancre sur la bonne ligne d'en-tête, « Date » étant trop fréquent
             }
             for (Cell cell : row) {
                 if (normaliser(texte(cell)).equals(normaliser(entete))) {
-                    Row suivante = sheet.getRow(row.getRowNum() + 1);
+                    Row suivante = sheet.ligne(row.getRowNum() + 1);
                     return suivante != null ? date(suivante.getCell(cell.getColumnIndex())) : null;
                 }
             }
@@ -424,10 +529,10 @@ public class ReleveArchiveParser {
     }
 
     /** Premier montant non vide à droite d'un libellé, à partir de la ligne indiquée. */
-    private BigDecimal montantApresLibelle(Sheet sheet, String libelle, int aPartirDeLaLigne) {
+    private BigDecimal montantApresLibelle(Zone sheet, String libelle, int aPartirDeLaLigne) {
         String cible = normaliser(libelle);
-        for (int i = Math.max(0, aPartirDeLaLigne); i <= sheet.getLastRowNum(); i++) {
-            Row row = sheet.getRow(i);
+        for (int i = Math.max(sheet.debut(), aPartirDeLaLigne); i <= sheet.fin(); i++) {
+            Row row = sheet.ligne(i);
             if (row == null) {
                 continue;
             }
@@ -451,8 +556,8 @@ public class ReleveArchiveParser {
      * la recherche porte donc sur la présence conjointe de « DETAIL » et « TRANSFERT » afin de
      * résister à une correction ultérieure de cette coquille.
      */
-    private int trouverLigneTransfert(Sheet sheet) {
-        for (Row row : sheet) {
+    private int trouverLigneTransfert(Zone sheet) {
+        for (Row row : sheet.lignes()) {
             for (Cell cell : row) {
                 String t = normaliser(texte(cell));
                 if (t.contains("DETAIL") && t.contains("TRANSFERT")) {
@@ -463,8 +568,8 @@ public class ReleveArchiveParser {
         return -1;
     }
 
-    private int trouverLigne(Sheet sheet, String fragment) {
-        for (Row row : sheet) {
+    private int trouverLigne(Zone sheet, String fragment) {
+        for (Row row : sheet.lignes()) {
             if (contientTexte(row, fragment)) {
                 return row.getRowNum();
             }
@@ -514,7 +619,7 @@ public class ReleveArchiveParser {
             return null;
         }
         if (cell.getCellType() == CellType.NUMERIC) {
-            return BigDecimal.valueOf(cell.getNumericCellValue());
+            return auCentime(BigDecimal.valueOf(cell.getNumericCellValue()));
         }
         String brut = texte(cell).replace(" ", "").replace(" ", "");
         if (brut.isBlank()) {
@@ -524,10 +629,15 @@ public class ReleveArchiveParser {
             brut = brut.replace(".", "").replace(",", ".");
         }
         try {
-            return new BigDecimal(brut);
+            return auCentime(new BigDecimal(brut));
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /** L'export laisse parfois filer des résidus de calcul flottant (« 367675.019999981 »). */
+    private BigDecimal auCentime(BigDecimal v) {
+        return v.scale() > 2 ? v.setScale(2, RoundingMode.HALF_UP) : v;
     }
 
     private Instant date(Cell cell) {
@@ -537,15 +647,22 @@ public class ReleveArchiveParser {
         if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
             return cell.getDateCellValue().toInstant();
         }
-        String brut = texte(cell).trim();
+        return dateTexte(texte(cell));
+    }
+
+    private Instant dateTexte(String valeur) {
+        String brut = valeur == null ? "" : valeur.trim();
         if (brut.isBlank() || brut.startsWith("00/00")) {
             return null;   // date nulle de l'ancienne application
         }
-        try {
-            return LocalDate.parse(brut, JJ_MM_AAAA).atStartOfDay(ZoneOffset.UTC).toInstant();
-        } catch (Exception e) {
-            return null;
+        for (DateTimeFormatter format : FORMATS_DATE) {
+            try {
+                return LocalDate.parse(brut, format).atStartOfDay(ZoneOffset.UTC).toInstant();
+            } catch (Exception e) {
+                // format suivant
+            }
         }
+        return null;
     }
 
     /**

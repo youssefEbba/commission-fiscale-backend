@@ -42,6 +42,9 @@ public class UpdateMarcheRequest {
      */
     private BigDecimal montantContratTtc;
 
+    /** Durée d'exécution en texte libre ; absente, la durée enregistrée est gardée. */
+    private String dureeExecution;
+
     /** Fourniture, prestation ou travaux. Optionnel : rien ne permet de le déduire. */
     private TypeMarche typeMarche;
 

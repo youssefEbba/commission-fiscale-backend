@@ -36,6 +36,8 @@ public class MarcheDto {
     private BigDecimal montantContratHt;
     /** Montant TTC, facultatif ; distinct du HT (anomalie A41). */
     private BigDecimal montantContratTtc;
+    /** Durée d'exécution en texte libre (« 07 MOIS »), facultative. */
+    private String dureeExecution;
     private StatutMarche statut;
 
     /** Fourniture, prestation ou travaux. {@code null} sur les marchés antérieurs. */
