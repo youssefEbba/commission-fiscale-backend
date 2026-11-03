@@ -111,8 +111,10 @@ public class ColonnesTexteSchemaMigration implements ApplicationRunner {
         if (!info.needsWiden(minLength)) {
             return;
         }
+        String nullClause = notNull ? " NOT NULL" : " NULL";
         try {
-            IdentifiantSql.modifyVarchar(jdbcTemplate, table, column, minLength, notNull);
+            jdbcTemplate.execute("ALTER TABLE " + IdentifiantSql.sur(table) + " MODIFY COLUMN " + IdentifiantSql.sur(column)
+                    + " VARCHAR(" + minLength + ")" + nullClause);
             log.info("{}: colonne {} migrée vers VARCHAR({})", table, column, minLength);
         } catch (Exception e) {
             log.warn("{}: impossible de migrer la colonne {} — {}", table, column, e.getMessage());

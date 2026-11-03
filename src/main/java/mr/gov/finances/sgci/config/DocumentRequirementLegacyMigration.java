@@ -53,7 +53,7 @@ public class DocumentRequirementLegacyMigration {
             return;
         }
         try {
-            IdentifiantSql.dropIndex(jdbcTemplate, table, indexName);
+            jdbcTemplate.execute("ALTER TABLE " + IdentifiantSql.sur(table) + " DROP INDEX " + IdentifiantSql.sur(indexName));
             log.info("document_requirement: index {} supprimé", indexName);
         } catch (Exception e) {
             log.warn("document_requirement: impossible de supprimer l'index {} — {}", indexName, e.getMessage());

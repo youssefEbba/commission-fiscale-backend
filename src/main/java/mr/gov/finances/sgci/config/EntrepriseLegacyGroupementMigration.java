@@ -29,7 +29,7 @@ public class EntrepriseLegacyGroupementMigration {
             return;
         }
         try {
-            IdentifiantSql.dropColumn(jdbcTemplate, table, column);
+            jdbcTemplate.execute("ALTER TABLE " + IdentifiantSql.sur(table) + " DROP COLUMN " + IdentifiantSql.sur(column));
             log.info("{}: colonne obsolète {} supprimée", table, column);
         } catch (Exception e) {
             log.warn("{}: impossible de supprimer la colonne {} — {}", table, column, e.getMessage());
@@ -58,7 +58,8 @@ public class EntrepriseLegacyGroupementMigration {
                 if (constraintName == null || constraintName.isBlank()) {
                     continue;
                 }
-                IdentifiantSql.dropForeignKey(jdbcTemplate, table, constraintName);
+                jdbcTemplate.execute("ALTER TABLE " + IdentifiantSql.sur(table) + " DROP FOREIGN KEY "
+                        + IdentifiantSql.sur(constraintName));
                 log.info("{}: contrainte FK {} (colonne {}) supprimée", table, constraintName, column);
             }
         } catch (Exception e) {

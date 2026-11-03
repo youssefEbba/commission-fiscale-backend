@@ -3,7 +3,6 @@ package mr.gov.finances.sgci.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.TypedQuery;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.AuditLog;
 import mr.gov.finances.sgci.domain.enums.AuditAction;
@@ -19,7 +18,6 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -33,9 +31,17 @@ public class AuditLogQueryService {
      * « DemandeCorrection #49 » là où l'agent connaît « DC-0040-11-2026 » (anomalie A29). La
      * référence est résolue à la lecture, par lot, pour les seuls types qui en ont une.
      */
-    private static final Set<String> TYPES_AVEC_REFERENCE = Set.of(
-            "DemandeCorrection", "CertificatCredit", "UtilisationCredit", "Avenant", "Convention",
-            "Marche", "ReferentielProjet", "DemandeRattachement", "Entreprise", "Utilisateur");
+    private static final Map<String, String> REFERENCE_PAR_TYPE = Map.ofEntries(
+            Map.entry("DemandeCorrection", "coalesce(e.reference, e.numero)"),
+            Map.entry("CertificatCredit", "coalesce(e.reference, e.numero)"),
+            Map.entry("UtilisationCredit", "e.reference"),
+            Map.entry("Avenant", "e.numero"),
+            Map.entry("Convention", "e.reference"),
+            Map.entry("Marche", "coalesce(e.reference, e.numeroMarche)"),
+            Map.entry("ReferentielProjet", "coalesce(e.numero, e.nomProjet)"),
+            Map.entry("DemandeRattachement", "e.reference"),
+            Map.entry("Entreprise", "e.raisonSociale"),
+            Map.entry("Utilisateur", "e.username"));
 
     private final AuditLogRepository repository;
     private final EntityManager entityManager;
@@ -51,13 +57,17 @@ public class AuditLogQueryService {
 
     private Map<String, Map<Long, String>> resoudreReferences(List<AuditLog> logs) {
         Map<String, List<Long>> idsParType = logs.stream()
-                .filter(a -> TYPES_AVEC_REFERENCE.contains(a.getEntityType()))
+                .filter(a -> REFERENCE_PAR_TYPE.containsKey(a.getEntityType()))
                 .filter(a -> idNumerique(a.getEntityId()) != null)
                 .collect(Collectors.groupingBy(AuditLog::getEntityType,
                         Collectors.mapping(a -> idNumerique(a.getEntityId()), Collectors.toList())));
         Map<String, Map<Long, String>> out = new HashMap<>();
         idsParType.forEach((type, ids) -> {
-            List<Object[]> rows = chargerReferences(type, ids);
+            List<Object[]> rows = entityManager.createQuery(
+                            "select e.id, " + REFERENCE_PAR_TYPE.get(type) + " from " + type + " e where e.id in :ids",
+                            Object[].class)
+                    .setParameter("ids", ids.stream().distinct().toList())
+                    .getResultList();
             Map<Long, String> parId = new HashMap<>();
             for (Object[] row : rows) {
                 if (row[1] != null) {
@@ -67,37 +77,6 @@ public class AuditLogQueryService {
             out.put(type, parId);
         });
         return out;
-    }
-
-    /** Requêtes HQL littérales : le type d'entité n'est jamais interpolé. */
-    private List<Object[]> chargerReferences(String type, List<Long> ids) {
-        TypedQuery<Object[]> query = switch (type) {
-            case "DemandeCorrection" -> entityManager.createQuery(
-                    "select e.id, coalesce(e.reference, e.numero) from DemandeCorrection e where e.id in :ids", Object[].class);
-            case "CertificatCredit" -> entityManager.createQuery(
-                    "select e.id, coalesce(e.reference, e.numero) from CertificatCredit e where e.id in :ids", Object[].class);
-            case "UtilisationCredit" -> entityManager.createQuery(
-                    "select e.id, e.reference from UtilisationCredit e where e.id in :ids", Object[].class);
-            case "Avenant" -> entityManager.createQuery(
-                    "select e.id, e.numero from Avenant e where e.id in :ids", Object[].class);
-            case "Convention" -> entityManager.createQuery(
-                    "select e.id, e.reference from Convention e where e.id in :ids", Object[].class);
-            case "Marche" -> entityManager.createQuery(
-                    "select e.id, coalesce(e.reference, e.numeroMarche) from Marche e where e.id in :ids", Object[].class);
-            case "ReferentielProjet" -> entityManager.createQuery(
-                    "select e.id, coalesce(e.numero, e.nomProjet) from ReferentielProjet e where e.id in :ids", Object[].class);
-            case "DemandeRattachement" -> entityManager.createQuery(
-                    "select e.id, e.reference from DemandeRattachement e where e.id in :ids", Object[].class);
-            case "Entreprise" -> entityManager.createQuery(
-                    "select e.id, e.raisonSociale from Entreprise e where e.id in :ids", Object[].class);
-            case "Utilisateur" -> entityManager.createQuery(
-                    "select e.id, e.username from Utilisateur e where e.id in :ids", Object[].class);
-            default -> null;
-        };
-        if (query == null) {
-            return List.of();
-        }
-        return query.setParameter("ids", ids.stream().distinct().toList()).getResultList();
     }
 
     private AuditLogDto toDto(AuditLog a, Map<String, Map<Long, String>> references) {
