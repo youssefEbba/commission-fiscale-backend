@@ -124,7 +124,7 @@
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp-jvm</artifactId>
-            <version>5.1.0</version>
+            <version>5.5.1</version>
         </dependency>
         <!-- Lecture des relevés de crédit d'impôt de l'ancienne application (.xls binaire / .xlsx). -->
         <!--
