@@ -119,8 +119,6 @@ public class AvenantService {
         return toDto(charger(id, user));
     }
 
-    /** L'avenant, s'il est dans le périmètre de l'appelant : celui de son crédit. */
-    @Transactional(readOnly = true)
     /** Les pièces obligatoires de la GED (MODIFICATION_CI), hors celles qui ne sont pas encore dues. */
     private void exigerPiecesObligatoires(Avenant a, Set<String> pasEncoreDues) {
         List<String> presentes = new ArrayList<>(pasEncoreDues);
@@ -129,6 +127,7 @@ public class AvenantService {
         requirementValidator.assertRequiredDocumentsPresent(ProcessusDocument.MODIFICATION_CI, presentes);
     }
 
+    /** L'avenant, s'il est dans le périmètre de l'appelant : celui de son crédit. */
     public Avenant charger(Long id, AuthenticatedUser user) {
         Avenant a = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Avenant non trouvé: " + id));

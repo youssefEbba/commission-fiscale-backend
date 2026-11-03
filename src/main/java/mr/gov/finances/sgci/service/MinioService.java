@@ -49,7 +49,7 @@ public class MinioService {
         this.backend = backend != null ? backend.trim() : "minio";
         this.uploadDir = uploadDir;
         this.bucket = bucket;
-        this.minioUrl = minioUrl != null ? minioUrl.replaceAll("/+$", "") : "";
+        this.minioUrl = stripTrailingSlashes(minioUrl);
     }
 
     public String uploadFile(MultipartFile file) {
@@ -212,6 +212,17 @@ public class MinioService {
             throw ApiException.serviceUnavailable(ApiErrorCode.OBJECT_STORAGE_UNAVAILABLE,
                     "Stockage objet indisponible ou mal configuré", e);
         }
+    }
+
+    private static String stripTrailingSlashes(String url) {
+        if (url == null) {
+            return "";
+        }
+        int end = url.length();
+        while (end > 0 && url.charAt(end - 1) == '/') {
+            end--;
+        }
+        return url.substring(0, end);
     }
 
     private static String safeOriginalName(String name) {

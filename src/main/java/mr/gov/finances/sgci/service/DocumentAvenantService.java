@@ -30,7 +30,7 @@ public class DocumentAvenantService {
     private final AuditService auditService;
     private final DocumentUploadSupport documentUploadSupport;
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentAvenantDto upload(Long avenantId, String codeDocument, MultipartFile file) throws IOException {
         Avenant avenant = avenantRepository.findById(avenantId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Avenant non trouvé: " + avenantId));

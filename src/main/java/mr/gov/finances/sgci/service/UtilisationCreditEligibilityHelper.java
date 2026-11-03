@@ -131,26 +131,33 @@ public class UtilisationCreditEligibilityHelper {
                                      BigDecimal montantCordonRequis,
                                      BigDecimal tvaImportRequis,
                                      List<String> motifs) {
-        BigDecimal soldeCordon = certificat.getSoldeCordon() != null ? certificat.getSoldeCordon() : BigDecimal.ZERO;
-        if (montantCordonRequis.compareTo(BigDecimal.ZERO) > 0 && soldeCordon.compareTo(montantCordonRequis) < 0) {
-            motifs.add("Solde cordon insuffisant (disponible=" + soldeCordon + ", requis=" + montantCordonRequis + ")");
+        if (certificat == null) {
+            motifs.add("Certificat absent");
+            return;
         }
+        BigDecimal requisCordon = montantCordonRequis != null ? montantCordonRequis : BigDecimal.ZERO;
+        BigDecimal soldeCordon = certificat.getSoldeCordon() != null ? certificat.getSoldeCordon() : BigDecimal.ZERO;
+        if (requisCordon.compareTo(BigDecimal.ZERO) > 0 && soldeCordon.compareTo(requisCordon) < 0) {
+            motifs.add("Solde cordon insuffisant (disponible=" + soldeCordon + ", requis=" + requisCordon + ")");
+        }
+        BigDecimal requisTva = tvaImportRequis != null ? tvaImportRequis : BigDecimal.ZERO;
         BigDecimal quotaTva = resolveQuotaTvaImport(certificat);
         if (quotaTva != null
-                && tvaImportRequis.compareTo(BigDecimal.ZERO) > 0
-                && quotaTva.compareTo(tvaImportRequis) < 0) {
-            motifs.add("Quota TVA import insuffisant (disponible=" + quotaTva + ", requis=" + tvaImportRequis + ")");
+                && requisTva.compareTo(BigDecimal.ZERO) > 0
+                && quotaTva.compareTo(requisTva) < 0) {
+            motifs.add("Quota TVA import insuffisant (disponible=" + quotaTva + ", requis=" + requisTva + ")");
         }
     }
 
     private BigDecimal resolveQuotaTvaImport(CertificatCredit certificat) {
-        if (certificat.getTvaImportationDouane() != null) {
-            return certificat.getTvaImportationDouane();
+        if (certificat == null) {
+            return null;
         }
-        if (certificat.getTvaImportationDouaneAccordee() != null) {
-            return certificat.getTvaImportationDouaneAccordee();
+        BigDecimal tvaImportationDouane = certificat.getTvaImportationDouane();
+        if (tvaImportationDouane != null) {
+            return tvaImportationDouane;
         }
-        return null;
+        return certificat.getTvaImportationDouaneAccordee();
     }
 
     private record SoldesProposes(BigDecimal montantCordon, BigDecimal tvaImport) {}

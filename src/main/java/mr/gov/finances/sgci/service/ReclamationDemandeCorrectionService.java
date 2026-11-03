@@ -55,7 +55,7 @@ public class ReclamationDemandeCorrectionService {
                 .collect(Collectors.toList());
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public ReclamationDemandeCorrectionDto create(Long demandeId, String texte, MultipartFile file, AuthenticatedUser user) throws IOException {
         assertActorUser(user);
         Role role = loadRole(user);
@@ -111,7 +111,7 @@ public class ReclamationDemandeCorrectionService {
         return dto;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public ReclamationDemandeCorrectionDto traiter(Long demandeId, Long reclamationId, boolean acceptee, String motifReponse, MultipartFile file, AuthenticatedUser user) throws IOException {
         assertActorUser(user);
         Role role = loadRole(user);

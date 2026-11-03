@@ -46,7 +46,7 @@ public class DocumentUtilisationCreditService {
     private final DocumentRequirementValidator requirementValidator;
     private final RejetTempResponseService rejetTempResponseService;
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentUtilisationCreditDto upload(Long utilisationCreditId, String codeDocument, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
         return upload(utilisationCreditId, codeDocument, message, file, null, user);
     }
@@ -58,7 +58,7 @@ public class DocumentUtilisationCreditService {
      * client ne le déclare pas. Le signataire n'est retenu que pour un dépôt du Président — c'est
      * sa signature qui est en jeu, pas celle de l'agent qui téléverse.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentUtilisationCreditDto upload(Long utilisationCreditId, String codeDocument, String message, MultipartFile file,
                                 ModeApposition modeApposition, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
@@ -125,7 +125,7 @@ public class DocumentUtilisationCreditService {
      * {@link AuditAction#ADMIN_CORRECTION}. L'ancienne version est désactivée (historique
      * conservé), pas supprimée.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentUtilisationCreditDto adminReplace(Long utilisationCreditId, String codeDocument, String motif, MultipartFile file, AuthenticatedUser user) throws IOException {
         if (user == null || user.getRole() != Role.ADMIN_SI) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Correction administrateur réservée à l'administrateur système");

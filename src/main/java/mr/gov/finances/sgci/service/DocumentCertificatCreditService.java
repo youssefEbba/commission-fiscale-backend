@@ -45,7 +45,7 @@ public class DocumentCertificatCreditService {
     private final RejetTempResponseService rejetTempResponseService;
     private final VisibiliteDocumentService visibiliteDocumentService;
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentCertificatCreditDto upload(Long certificatCreditId, String codeDocument, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
         return upload(certificatCreditId, codeDocument, message, file, null, user);
     }
@@ -57,7 +57,7 @@ public class DocumentCertificatCreditService {
      * client ne le déclare pas. Le signataire n'est retenu que pour un dépôt du Président — c'est
      * sa signature qui est en jeu, pas celle de l'agent qui téléverse.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentCertificatCreditDto upload(Long certificatCreditId, String codeDocument, String message, MultipartFile file,
                                 ModeApposition modeApposition, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
@@ -122,7 +122,7 @@ public class DocumentCertificatCreditService {
      * {@link AuditAction#ADMIN_CORRECTION}. L'ancienne version est désactivée (historique
      * conservé), pas supprimée.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentCertificatCreditDto adminReplace(Long certificatCreditId, String codeDocument, String motif, MultipartFile file, AuthenticatedUser user) throws IOException {
         if (user == null || user.getRole() != Role.ADMIN_SI) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Correction administrateur réservée à l'administrateur système");

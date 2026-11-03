@@ -322,7 +322,7 @@ public class DecisionTransfertCreditService {
         return toDto(entity);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public List<RejetTempResponseDto> respondRejetTemp(
             Long decisionId,
             String message,

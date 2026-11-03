@@ -191,7 +191,7 @@ public class DecisionUtilisationCreditService {
      * Réponse à un rejet temporaire : JSON (message seul) ou multipart (message + fichier optionnel).
      * Avec fichier, {@code type} est obligatoire (même contrat que POST .../documents?type=).
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public List<RejetTempResponseDto> respondRejetTemp(
             Long decisionId,
             String message,

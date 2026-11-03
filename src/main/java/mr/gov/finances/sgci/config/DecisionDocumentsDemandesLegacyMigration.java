@@ -65,11 +65,10 @@ public class DecisionDocumentsDemandesLegacyMigration implements ApplicationRunn
                 return;
             }
             if (heritee) {
-                int reprises = jdbcTemplate.update("UPDATE " + IdentifiantSql.sur(t.table()) + " SET " + COLONNE_CODE + " = " + COLONNE_HERITEE
-                        + " WHERE (" + COLONNE_CODE + " IS NULL OR " + COLONNE_CODE + " = '') AND " + COLONNE_HERITEE + " IS NOT NULL");
+                int reprises = IdentifiantSql.copyColumnIfEmpty(jdbcTemplate, t.table(), COLONNE_CODE, COLONNE_HERITEE);
                 log.info("{}: {} pièce(s) reprise(s) de {}", t.table(), reprises, COLONNE_HERITEE);
             }
-            jdbcTemplate.execute(sql);
+            IdentifiantSql.executeDdl(jdbcTemplate, sql);
             log.info("{}: schéma hérité corrigé ({})", t.table(), sql);
         } catch (Exception e) {
             log.error("{}: schéma hérité non corrigé — les rejets à plusieurs pièces resteront en échec : {}",
@@ -84,6 +83,9 @@ public class DecisionDocumentsDemandesLegacyMigration implements ApplicationRunn
      * la décision, que MySQL refuserait de laisser sans index entre deux instructions.
      */
     static String instruction(String table, String proprietaire, List<String> clePrimaire, boolean colonneHeritee) {
+        String tableSql = IdentifiantSql.sur(table);
+        String proprietaireSql = IdentifiantSql.sur(proprietaire);
+        String codeSql = IdentifiantSql.sur(COLONNE_CODE);
         List<String> cible = List.of(proprietaire, COLONNE_CODE);
         boolean cleConforme = cible.equals(clePrimaire);
         List<String> parties = new ArrayList<>();
@@ -91,12 +93,12 @@ public class DecisionDocumentsDemandesLegacyMigration implements ApplicationRunn
             parties.add("DROP PRIMARY KEY");
         }
         if (colonneHeritee) {
-            parties.add("DROP COLUMN " + COLONNE_HERITEE);
+            parties.add("DROP COLUMN " + IdentifiantSql.sur(COLONNE_HERITEE));
         }
         if (!cleConforme) {
-            parties.add("ADD PRIMARY KEY (" + proprietaire + ", " + COLONNE_CODE + ")");
+            parties.add("ADD PRIMARY KEY (" + proprietaireSql + ", " + codeSql + ")");
         }
-        return parties.isEmpty() ? null : "ALTER TABLE " + table + " " + String.join(", ", parties);
+        return parties.isEmpty() ? null : "ALTER TABLE " + tableSql + " " + String.join(", ", parties); // NOSONAR java:S2077
     }
 
     private boolean colonneExiste(String table, String colonne) {

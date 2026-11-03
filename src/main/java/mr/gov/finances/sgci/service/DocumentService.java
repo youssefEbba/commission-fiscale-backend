@@ -49,7 +49,7 @@ public class DocumentService {
     private final UtilisateurRepository utilisateurRepository;
     private final EffectiveIdentityService effectiveIdentityService;
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentDto upload(Long demandeCorrectionId, String codeDocument, String message, MultipartFile file, AuthenticatedUser user) throws IOException {
         return upload(demandeCorrectionId, codeDocument, message, file, null, user);
     }
@@ -61,7 +61,7 @@ public class DocumentService {
      * client ne le déclare pas. Le signataire n'est retenu que pour un dépôt du Président — c'est
      * sa signature qui est en jeu, pas celle de l'agent qui téléverse.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentDto upload(Long demandeCorrectionId, String codeDocument, String message, MultipartFile file,
                                 ModeApposition modeApposition, AuthenticatedUser user) throws IOException {
         if (file.isEmpty()) {
@@ -135,7 +135,7 @@ public class DocumentService {
      * {@link AuditAction#ADMIN_CORRECTION}. L'ancienne version est désactivée (historique conservé),
      * pas supprimée.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentDto adminReplace(Long demandeCorrectionId, String codeDocument, String motif, MultipartFile file, AuthenticatedUser user) throws IOException {
         if (user == null || user.getRole() != Role.ADMIN_SI) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN, "Correction administrateur réservée à l'administrateur système");
