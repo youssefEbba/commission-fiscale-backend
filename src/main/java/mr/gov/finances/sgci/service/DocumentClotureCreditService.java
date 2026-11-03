@@ -30,7 +30,7 @@ public class DocumentClotureCreditService {
     private final AuditService auditService;
     private final DocumentUploadSupport documentUploadSupport;
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentClotureCreditDto upload(Long clotureCreditId, String codeDocument, MultipartFile file) throws IOException {
         ClotureCredit cloture = clotureCreditRepository.findById(clotureCreditId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Clôture crédit non trouvée: " + clotureCreditId));

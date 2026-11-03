@@ -667,7 +667,7 @@ public class UtilisationCreditOperations {
      * <p>Le justificatif est stocké avant tout changement de statut : si le stockage est
      * indisponible, l'appel échoue en 503 et le dossier reste intact.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public UtilisationCreditDto deposerQuittanceDgi(Long id, String numeroQuittance, Instant dateQuittance,
                                                     BigDecimal montant, MultipartFile file,
                                                     AuthenticatedUser user) throws IOException {
@@ -1143,7 +1143,7 @@ public class UtilisationCreditOperations {
      * Statut résultant : {@link StatutUtilisation#VISE} — le contrôle est clos, la main passe à
      * l'entreprise pour la saisie du chèque.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public UtilisationCreditDto visaDgd(Long id, String decisionsJson, MultipartFile file, AuthenticatedUser user) throws IOException {
         UtilisationCredit entity = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation de crédit non trouvée: " + id));
@@ -1286,7 +1286,7 @@ public class UtilisationCreditOperations {
      * Le fichier justificatif (scan du chèque) est obligatoire et enregistré dans le GED.
      * Statut résultant : {@link StatutUtilisation#CHEQUE_SAISI}.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public UtilisationCreditDto saisirCheque(Long id, SaisirChequeRequest request, MultipartFile file, AuthenticatedUser user) throws IOException {
         UtilisationCredit entity = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation non trouvée: " + id));
@@ -1443,7 +1443,7 @@ public class UtilisationCreditOperations {
      * </p>
      * Statut résultant : {@link StatutUtilisation#QUITTANCES_ENREGISTREES}.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public UtilisationCreditDto saisirQuittances(Long id, String quittancesJson, List<MultipartFile> files, AuthenticatedUser user) throws IOException {
         UtilisationCredit entity = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation non trouvée: " + id));
@@ -1784,7 +1784,7 @@ public class UtilisationCreditOperations {
      * la numérotation. Le fichier passe par cette route parce que l'ADMIN_SI ne détient pas
      * {@code utilisation.*.document.upload} et ne peut donc pas utiliser {@code POST /{id}/documents}.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public UtilisationCreditDto adminEmettreCertificatUtilisation(Long id, String motif,
                                                                   MultipartFile file,
                                                                   AuthenticatedUser user) throws IOException {
@@ -2006,7 +2006,7 @@ public class UtilisationCreditOperations {
         UtilisationCreditDto dossier = findById(utilisationId, user);
         // Les montants et références restent lisibles : c'est le justificatif scanné qui est
         // réservé, pas le fait qu'une quittance existe.
-        boolean justificatifsVisibles = visibiliteDocumentService.visiblePour(
+        boolean justificatifsVisibles = dossier != null && visibiliteDocumentService.visiblePour(
                 ProcessusDocument.UTILISATION_CI_DOUANE, "QUITTANCE_TRESOR",
                 dossier.getStatut(), user != null ? user.getRole() : null);
         return quittanceTresorRepository.findByUtilisationDouaniere_IdOrderByDateQuittanceAscIdAsc(utilisationId)

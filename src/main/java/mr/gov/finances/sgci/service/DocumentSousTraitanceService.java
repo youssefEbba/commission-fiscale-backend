@@ -30,7 +30,7 @@ public class DocumentSousTraitanceService {
     private final AuditService auditService;
     private final DocumentUploadSupport documentUploadSupport;
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentSousTraitanceDto upload(Long sousTraitanceId, String codeDocument, MultipartFile file) throws IOException {
         SousTraitance st = sousTraitanceRepository.findById(sousTraitanceId)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Sous-traitance non trouvée: " + sousTraitanceId));

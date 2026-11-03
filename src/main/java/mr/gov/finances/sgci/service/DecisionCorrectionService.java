@@ -300,7 +300,7 @@ public class DecisionCorrectionService {
      * journalisé sous {@link AuditAction#ADMIN_CORRECTION} et tracé sur le visa
      * ({@code visaParAdmin}, {@code motifAdmin}).
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public AdminVisaCorrectionResultDto adminVisaPourRole(Long demandeId,
                                                           Role roleCible,
                                                           String motif,
@@ -310,7 +310,7 @@ public class DecisionCorrectionService {
     }
 
     /** Variante avec les crédits corrigés, exigés quand l'administrateur vise pour la direction de la correction. */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public AdminVisaCorrectionResultDto adminVisaPourRole(Long demandeId,
                                                           Role roleCible,
                                                           String motif,

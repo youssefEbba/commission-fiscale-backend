@@ -167,7 +167,7 @@ public class ReferentielProjetService {
         return result;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentProjetDto uploadDocument(Long referentielProjetId, TypeDocumentProjet type, MultipartFile file) throws IOException {
         if (file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
@@ -192,7 +192,7 @@ public class ReferentielProjetService {
         return result;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentProjetDto replaceDocument(Long referentielProjetId, Long documentId, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");

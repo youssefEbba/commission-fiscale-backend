@@ -23,6 +23,8 @@ import java.util.List;
 @Component
 public class SecuriteAuDemarrage implements InitializingBean {
 
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
     private final Environment environment;
     private final JwtProperties jwtProperties;
 
@@ -41,7 +43,7 @@ public class SecuriteAuDemarrage implements InitializingBean {
         String cle = jwtProperties.getSecret();
         if (cle == null || cle.isBlank()) {
             byte[] octets = new byte[48];
-            new SecureRandom().nextBytes(octets);
+            SECURE_RANDOM.nextBytes(octets);
             jwtProperties.setSecret(Base64.getEncoder().encodeToString(octets));
             log.warn("APP_JWT_SECRET absent : clé de signature aléatoire pour cette session de développement "
                     + "(les jetons émis ne survivront pas au redémarrage)");

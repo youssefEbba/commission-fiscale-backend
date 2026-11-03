@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
@@ -427,6 +428,30 @@ public class SignatureService {
     }
 
     private record PngInfo(byte[] content, int width, int height, String checksum) {
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof PngInfo other)) {
+                return false;
+            }
+            return width == other.width
+                    && height == other.height
+                    && Objects.equals(checksum, other.checksum)
+                    && Arrays.equals(content, other.content);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(width, height, checksum, Arrays.hashCode(content));
+        }
+
+        @Override
+        public String toString() {
+            return "PngInfo[width=" + width + ", height=" + height + ", checksum=" + checksum
+                    + ", bytes=" + (content == null ? 0 : content.length) + "]";
+        }
     }
 
     private PngInfo validateAndInspectPng(MultipartFile file) {

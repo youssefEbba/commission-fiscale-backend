@@ -27,6 +27,8 @@ import mr.gov.finances.sgci.workflow.CertificatCreditWorkflow;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import mr.gov.finances.sgci.domain.MontantsTexte;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -326,16 +328,16 @@ public class ClotureCreditService {
 
         List<String> soldesRestants = new ArrayList<>();
         if (soldeCordon.compareTo(BigDecimal.ZERO) > 0) {
-            soldesRestants.add("Solde cordon (e) restant : " + soldeCordon + " MRU");
+            soldesRestants.add("Solde cordon (e) restant : " + MontantsTexte.mru(soldeCordon));
         }
         if (soldeTva.compareTo(BigDecimal.ZERO) > 0) {
-            soldesRestants.add("Solde TVA intérieure (h) restant : " + soldeTva + " MRU");
+            soldesRestants.add("Solde TVA intérieure (h) restant : " + MontantsTexte.mru(soldeTva));
         }
         if (tvaImport.compareTo(BigDecimal.ZERO) > 0) {
-            soldesRestants.add("TVA importation (d) non épuisée : " + tvaImport + " MRU");
+            soldesRestants.add("TVA importation (d) non épuisée : " + MontantsTexte.mru(tvaImport));
         }
         if (stockRestant.compareTo(BigDecimal.ZERO) > 0) {
-            soldesRestants.add("Stock TVA déductible restant : " + stockRestant + " MRU");
+            soldesRestants.add("Stock TVA déductible restant : " + MontantsTexte.mru(stockRestant));
         }
         boolean soldesEpuises = soldesRestants.isEmpty();
 

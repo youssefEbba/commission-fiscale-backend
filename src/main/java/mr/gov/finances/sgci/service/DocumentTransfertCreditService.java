@@ -44,12 +44,12 @@ public class DocumentTransfertCreditService {
             EnumSet.of(StatutTransfert.DEMANDE, StatutTransfert.EN_COURS, StatutTransfert.VALIDE,
                     StatutTransfert.INCOMPLETE, StatutTransfert.A_RECONTROLER);
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentTransfertCreditDto upload(Long transfertCreditId, String codeDocument, MultipartFile file) throws IOException {
         return upload(transfertCreditId, codeDocument, null, file, null, null);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentTransfertCreditDto upload(Long transfertCreditId, String codeDocument, String message, MultipartFile file,
                                              AuthenticatedUser user) throws IOException {
         return upload(transfertCreditId, codeDocument, message, file, user, null);
@@ -60,7 +60,7 @@ public class DocumentTransfertCreditService {
      *                                              et {@link RejetTempResponseService#recordTransfertUploadResponse}
      *                                              n’associe la pièce qu’à cette décision.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentTransfertCreditDto upload(Long transfertCreditId, String codeDocument, String message, MultipartFile file,
                                              AuthenticatedUser user, Long restrictRejetTempResponseToDecisionId) throws IOException {
         if (file == null || file.isEmpty()) {

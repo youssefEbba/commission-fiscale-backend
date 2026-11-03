@@ -412,7 +412,7 @@ public class ConventionService {
         }
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentConventionDto uploadDocument(Long conventionId, TypeDocumentConvention type, MultipartFile file) throws IOException {
         if (file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");
@@ -437,7 +437,7 @@ public class ConventionService {
         return result;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public DocumentConventionDto replaceDocument(Long conventionId, Long documentId, MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Le fichier est vide");

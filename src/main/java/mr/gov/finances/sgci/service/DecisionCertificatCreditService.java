@@ -280,7 +280,8 @@ public class DecisionCertificatCreditService {
         if (!visaRequirementResolver.requiredRolesForCertificat(certificat).contains(role)) {
             return "ROLE_NON_CONCERNE";
         }
-        if (!DECISION_ALLOWED_STATUTS.contains(certificat.getStatut())) {
+        StatutCertificat statut = certificat.getStatut();
+        if (statut == null || !DECISION_ALLOWED_STATUTS.contains(statut)) {
             return "STATUT_INCOMPATIBLE";
         }
         if (decisionRepository.existsByCertificatCreditIdAndRoleAndDecision(
@@ -314,7 +315,8 @@ public class DecisionCertificatCreditService {
             case "STATUT_INCOMPATIBLE":
                 return ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                         "Le certificat doit être en statut EN_CONTROLE, INCOMPLETE ou A_RECONTROLER "
-                                + "pour recevoir un visa ou rejet. Statut actuel: " + certificat.getStatut());
+                                + "pour recevoir un visa ou rejet. Statut actuel: "
+                                + (certificat != null ? certificat.getStatut() : null));
             case "VISA_DEJA_POSE":
                 return ApiException.conflict(ApiErrorCode.CONFLICT,
                         "Décision impossible: un visa a déjà été accordé par " + role
@@ -365,13 +367,15 @@ public class DecisionCertificatCreditService {
         Set<Role> requiredRoles = visaRequirementResolver.requiredRolesForCertificat(entity);
         boolean cordonRequis = requiredRoles.contains(Role.DGD);
         boolean tvaRequise = requiredRoles.contains(Role.DGI);
+        BigDecimal montantCordon = entity.getMontantCordon();
         if (cordonRequis
-                && (entity.getMontantCordon() == null || entity.getMontantCordon().compareTo(BigDecimal.ZERO) <= 0)) {
+                && (montantCordon == null || montantCordon.compareTo(BigDecimal.ZERO) <= 0)) {
             return ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "DGTCP doit renseigner le montant cordon (crédit extérieur), strictement supérieur à zéro, avant d'apposer le visa");
         }
+        BigDecimal montantTva = entity.getMontantTVAInterieure();
         if (tvaRequise
-                && (entity.getMontantTVAInterieure() == null || entity.getMontantTVAInterieure().compareTo(BigDecimal.ZERO) <= 0)) {
+                && (montantTva == null || montantTva.compareTo(BigDecimal.ZERO) <= 0)) {
             return ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "DGTCP doit renseigner le montant TVA intérieure (crédit intérieur), strictement supérieur à zéro, avant d'apposer le visa");
         }
@@ -509,7 +513,7 @@ public class DecisionCertificatCreditService {
      * <p>Pendant exact de {@code DecisionCorrectionService.adminVisaPourRole}. L'ouverture du crédit
      * qui suit la validation présidentielle reste une action distincte, sous sa propre permission.
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public AdminVisaCertificatResultDto adminVisaPourRole(Long certificatCreditId,
                                                          Role roleCible,
                                                          String motif,
