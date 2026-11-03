@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -36,6 +37,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
@@ -87,6 +89,15 @@ public class FeedbackService {
     @Transactional
     public FeedbackDtos.RetourDto deposerRetour(FeedbackDtos.RetourRequest request, AuthenticatedUser user) {
         ProfilFeedback profil = profilObligatoire(user);
+        // Un envoi coupé par le réseau est souvent enregistré, puis renvoyé : le même avis, du même
+        // utilisateur, dans la minute, n'est pas enregistré deux fois (A50).
+        RetourUtilisateur precedent = retourRepository
+                .findFirstByUtilisateurIdAndDateCreationAfterOrderByDateCreationDesc(
+                        user.getUserId(), Instant.now().minus(FENETRE_DOUBLON))
+                .orElse(null);
+        if (precedent != null && memeAvis(precedent, request)) {
+            return toDto(precedent);
+        }
         RetourUtilisateur retour = retourRepository.save(RetourUtilisateur.builder()
                 .utilisateurId(user.getUserId())
                 .role(user.getRole())
@@ -99,6 +110,16 @@ public class FeedbackService {
                 .dateCreation(Instant.now())
                 .build());
         return toDto(retour);
+    }
+
+    private static final Duration FENETRE_DOUBLON = Duration.ofSeconds(60);
+
+    private boolean memeAvis(RetourUtilisateur r, FeedbackDtos.RetourRequest req) {
+        return Objects.equals(r.getNote(), req.getNote())
+                && r.getCategorie() == req.getCategorie()
+                && Objects.equals(r.getProcessus(), vide(req.getProcessus()))
+                && Objects.equals(r.getPage(), vide(req.getPage()))
+                && Objects.equals(r.getCommentaire(), vide(req.getCommentaire()));
     }
 
     // ── enquêtes : gestion ────────────────────────────────────────────────────────────────────

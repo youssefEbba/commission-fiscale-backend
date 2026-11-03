@@ -24,7 +24,18 @@ import org.springframework.web.multipart.MultipartException;
 
 import mr.gov.finances.sgci.workflow.WorkflowTransitionException;
 
+import java.time.LocalDate;
+import java.time.temporal.Temporal;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.exc.InvalidFormatException;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
+import com.fasterxml.jackson.databind.exc.ValueInstantiationException;
 
 @RestControllerAdvice
 @Slf4j
@@ -62,13 +73,85 @@ public class GlobalExceptionHandler {
                 null));
     }
 
+    /**
+     * Corps illisible. Quand c'est une valeur qui ne convient pas à son champ, le message nomme le
+     * champ et ce qui est attendu — pour une énumération, la liste des valeurs acceptées. Sans cela,
+     * une catégorie saisie en clair bloquait l'enregistrement d'une enquête sans dire pourquoi (A46).
+     * La valeur saisie n'est pas renvoyée, comme pour les paramètres d'URL (handleTypeMismatch).
+     */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException ex) {
+        JsonMappingException jme = cause(ex, JsonMappingException.class);
+        if (jme != null && !jme.getPath().isEmpty()) {
+            String champ = chemin(jme.getPath());
+            Class<?> type = null;
+            if (jme instanceof InvalidFormatException ife) {
+                type = ife.getTargetType();
+            } else if (jme instanceof ValueInstantiationException vie) {
+                type = vie.getType() != null ? vie.getType().getRawClass() : null;
+            } else if (jme instanceof MismatchedInputException mie) {
+                type = mie.getTargetType();
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("champ", champ);
+            String message;
+            if (type != null && type.isEnum()) {
+                List<String> acceptees = Arrays.stream(type.getEnumConstants())
+                        .map(e -> ((Enum<?>) e).name())
+                        .toList();
+                details.put("valeursAcceptees", acceptees);
+                message = "Valeur invalide pour « " + champ + " » : valeurs acceptées " + String.join(", ", acceptees);
+            } else {
+                message = "Valeur invalide pour « " + champ + " »" + attendu(type);
+            }
+            return body(ErrorResponse.of(HttpStatus.BAD_REQUEST.value(), ApiErrorCode.VALIDATION_FAILED, message, details));
+        }
         return body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(),
                 ApiErrorCode.VALIDATION_FAILED,
                 "Corps de requête illisible ou format JSON invalide",
                 null));
+    }
+
+    private static <T extends Throwable> T cause(Throwable t, Class<T> type) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (type.isInstance(c)) {
+                return type.cast(c);
+            }
+        }
+        return null;
+    }
+
+    /** « questions[0].categorie » à partir du chemin Jackson. */
+    private static String chemin(List<JsonMappingException.Reference> path) {
+        StringBuilder sb = new StringBuilder();
+        for (JsonMappingException.Reference r : path) {
+            if (r.getFieldName() != null) {
+                if (!sb.isEmpty()) {
+                    sb.append('.');
+                }
+                sb.append(r.getFieldName());
+            } else if (r.getIndex() >= 0) {
+                sb.append('[').append(r.getIndex()).append(']');
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String attendu(Class<?> type) {
+        if (type == null) {
+            return "";
+        }
+        if (Number.class.isAssignableFrom(type) || (type.isPrimitive() && type != boolean.class)) {
+            return " : nombre attendu";
+        }
+        if (type == Boolean.class || type == boolean.class) {
+            return " : true ou false attendu";
+        }
+        if (Temporal.class.isAssignableFrom(type)) {
+            return type == LocalDate.class ? " : date attendue (AAAA-MM-JJ)" : " : date attendue (ISO 8601)";
+        }
+        return " : " + type.getSimpleName() + " attendu";
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)

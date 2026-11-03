@@ -36,6 +36,7 @@ class FeedbackIT {
     @Autowired private FeedbackService service;
     @Autowired private PermissionService permissionService;
     @Autowired private UtilisateurRepository utilisateurRepository;
+    @Autowired private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     private AuthenticatedUser entreprise;
     private AuthenticatedUser dgd;
@@ -82,6 +83,42 @@ class FeedbackIT {
         assertThat(t.getDifficultes()).extracting(FeedbackDtos.Agregat::getCle).containsExactly("PROCEDURE");
         // Le commentaire est présenté avec le profil, sans le nom de son auteur.
         assertThat(t.getCommentaires()).extracting(FeedbackDtos.Commentaire::getProfil).containsExactly(ProfilFeedback.ENTREPRISE);
+    }
+
+    @Test
+    @Transactional
+    void unAvisRenvoyeDansLaMinuteNEstPasEnregistreDeuxFois() {
+        FeedbackDtos.RetourRequest avis = FeedbackDtos.RetourRequest.builder()
+                .note(3).categorie(CategorieRetour.PERFORMANCE).commentaire("Lent ce matin").build();
+
+        FeedbackDtos.RetourDto premier = service.deposerRetour(avis, dgd);
+        FeedbackDtos.RetourDto renvoi = service.deposerRetour(avis, dgd);
+        FeedbackDtos.RetourDto autre = service.deposerRetour(FeedbackDtos.RetourRequest.builder()
+                .note(3).categorie(CategorieRetour.PERFORMANCE).commentaire("Lent cet après-midi").build(), dgd);
+
+        assertThat(renvoi.getId()).as("A50 : l'envoi répété rend l'avis déjà enregistré").isEqualTo(premier.getId());
+        assertThat(autre.getId()).isNotEqualTo(premier.getId());
+    }
+
+    @Test
+    void uneCategorieSaisieEnClairEstReconnueEtUneInconnueEstExpliquee() throws Exception {
+        assertThat(objectMapper.readValue("{\"note\":4,\"categorie\":\"Procédure\"}", FeedbackDtos.RetourRequest.class)
+                .getCategorie()).isEqualTo(CategorieRetour.PROCEDURE);
+        assertThat(objectMapper.readValue("{\"note\":4,\"categorie\":\"\"}", FeedbackDtos.RetourRequest.class)
+                .getCategorie()).isNull();
+
+        String corps = "{\"titre\":\"Enquête\",\"questions\":[{\"libelle\":\"Q1\",\"categorie\":\"Délais\"}]}";
+        var erreur = org.junit.jupiter.api.Assertions.assertThrows(
+                com.fasterxml.jackson.databind.JsonMappingException.class,
+                () -> objectMapper.readValue(corps, FeedbackDtos.EnqueteRequest.class));
+        var reponse = new mr.gov.finances.sgci.web.exception.GlobalExceptionHandler().handleNotReadable(
+                new org.springframework.http.converter.HttpMessageNotReadableException("illisible", erreur,
+                        new org.springframework.mock.http.MockHttpInputMessage(new byte[0])));
+
+        assertThat(reponse.getStatusCode().value()).isEqualTo(400);
+        assertThat(reponse.getBody().message())
+                .contains("questions[0].categorie", "ERGONOMIE, PERFORMANCE, PROCEDURE, ASSISTANCE, AUTRE")
+                .as("la valeur saisie n'est pas renvoyée").doesNotContain("Délais");
     }
 
     @Test
