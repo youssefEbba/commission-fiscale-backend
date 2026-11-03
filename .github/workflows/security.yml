@@ -16,7 +16,7 @@ jobs:
   osv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Échec du job seulement si le scanner plante. Les CVE transitives
       # (Boot 3.5) sont suivies dans Snyk ; OSV les affiche dans le résumé.
       - name: OSV Scanner
@@ -36,7 +36,7 @@ jobs:
     container:
       image: semgrep/semgrep
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # p/spring n'existe pas (404) et faisait échouer le job en 2 s.
       - name: Semgrep
         run: semgrep scan --config p/java --severity ERROR --error --metrics=off
