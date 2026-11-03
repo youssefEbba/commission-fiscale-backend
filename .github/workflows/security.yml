@@ -37,6 +37,6 @@ jobs:
       image: semgrep/semgrep
     steps:
       - uses: actions/checkout@v4
-      # p/java + p/spring : règles publiques. --config auto exige SEMGREP_APP_TOKEN.
+      # p/spring n'existe pas (404) et faisait échouer le job en 2 s.
       - name: Semgrep
-        run: semgrep scan --config p/java --config p/spring --severity ERROR --error
+        run: semgrep scan --config p/java --severity ERROR --error --metrics=off
