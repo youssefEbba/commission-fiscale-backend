@@ -81,7 +81,9 @@ public class ColonnesTexteSchemaMigration implements ApplicationRunner {
             new ColonneTexte("enquete_satisfaction", "statut", 32, true),
             new ColonneTexte("question_enquete", "type", 16, true),
             new ColonneTexte("question_enquete", "categorie", 32, false),
-            new ColonneTexte("reponse_enquete", "profil", 32, true));
+            new ColonneTexte("reponse_enquete", "profil", 32, true),
+            // Reprise d'archive par fichier de période (novembre 2026).
+            new ColonneTexte("lot_import_archive_credit", "statut", 24, true));
 
     public void migrateIfNeeded() {
         REGISTRE.forEach(this::widenStringColumnIfNeeded);

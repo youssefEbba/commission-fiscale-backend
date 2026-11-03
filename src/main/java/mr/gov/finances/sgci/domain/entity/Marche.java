@@ -88,6 +88,13 @@ public class Marche {
     private TypeMarche typeMarche;
 
     /**
+     * Durée d'exécution en texte libre (« 07 MOIS », « 30 JOURS », « IMMEDIAT »), telle que la
+     * donnent les relevés de l'ancienne application. Facultative.
+     */
+    @Column(name = "duree_execution", length = 120)
+    private String dureeExecution;
+
+    /**
      * La convention principale du marché. Un marché peut en avoir plusieurs (décision de l'équipe,
      * octobre 2026) : {@link #conventions} les porte toutes, celle-ci comprise.
      */

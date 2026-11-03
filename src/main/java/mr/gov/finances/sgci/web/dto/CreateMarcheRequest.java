@@ -49,6 +49,9 @@ public class CreateMarcheRequest {
      */
     private BigDecimal montantContratTtc;
 
+    /** Durée d'exécution en texte libre (« 07 MOIS »), facultative. */
+    private String dureeExecution;
+
     /** Fourniture, prestation ou travaux. Optionnel : rien ne permet de le déduire. */
     private TypeMarche typeMarche;
 
