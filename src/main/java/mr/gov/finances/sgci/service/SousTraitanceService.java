@@ -163,6 +163,21 @@ public class SousTraitanceService {
         return toDto(st);
     }
 
+    /** Statuts d'une sous-traitance qu'une nouvelle demande peut remplacer (décision close sans autorisation active). */
+    static final java.util.Set<StatutSousTraitance> REMPLACABLE =
+            java.util.EnumSet.of(StatutSousTraitance.REFUSEE, StatutSousTraitance.REVOQUEE);
+
+    private static String libelle(StatutSousTraitance s) {
+        if (s == null) return "en cours";
+        return switch (s) {
+            case AUTORISEE -> "autorisée";
+            case DEMANDE -> "demandée";
+            case SUSPENDUE -> "suspendue";
+            case EN_COURS -> "en cours";
+            default -> s.name().toLowerCase(java.util.Locale.ROOT);
+        };
+    }
+
     @Transactional
     public SousTraitanceDto create(CreateSousTraitanceRequest request, AuthenticatedUser user) {
         if (request == null) {
@@ -196,6 +211,12 @@ public class SousTraitanceService {
         SousTraitance st = repository.findByCertificatCreditId(c.getId()).orElse(null);
         if (st == null) {
             st = SousTraitance.builder().certificatCredit(c).build();
+        } else if (!REMPLACABLE.contains(st.getStatut())) {
+            // Une seule sous-traitance par crédit : la réécrire retirait sans prévenir l'autorisation
+            // déjà donnée par la DGTCP (et pouvait changer de sous-traitant). Il faut d'abord la révoquer.
+            throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                    "Une sous-traitance est déjà " + libelle(st.getStatut()) + " sur ce crédit : "
+                            + "révoquez-la avant d'en demander une nouvelle.");
         }
 
         st.setSousTraitantEntreprise(sousTraitantEntreprise);
@@ -456,6 +477,7 @@ public class SousTraitanceService {
                 .id(st.getId())
                 .certificatCreditId(c != null ? c.getId() : null)
                 .certificatNumero(c != null ? c.getNumero() : null)
+                .certificatReference(c != null ? c.getReference() : null)
                 .entrepriseSourceId(c != null && c.getEntreprise() != null ? c.getEntreprise().getId() : null)
 
                 .sousTraitantEntrepriseId(st.getSousTraitantEntreprise() != null ? st.getSousTraitantEntreprise().getId() : null)

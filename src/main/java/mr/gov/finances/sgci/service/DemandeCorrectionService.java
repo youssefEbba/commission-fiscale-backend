@@ -234,9 +234,9 @@ public class DemandeCorrectionService {
         Titulaire titulaire = resolveTitulaire(request.getGroupementId(), request.getEntrepriseId());
         Convention convention = conventionRepository.findById(request.getConventionId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée"));
-        if (!ConventionDisponibilitePolicy.estActive(convention)) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                    ConventionDisponibilitePolicy.MOTIF_DESACTIVEE);
+        String refusConvention = ConventionDisponibilitePolicy.motifRefusRattachement(convention);
+        if (refusConvention != null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, refusConvention);
         }
         Marche marche = null;
         if (request.getMarcheId() != null) {
@@ -482,9 +482,9 @@ public class DemandeCorrectionService {
         Titulaire titulaire = resolveTitulaire(request.getGroupementId(), request.getEntrepriseId());
         Convention convention = conventionRepository.findById(request.getConventionId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée"));
-        if (!ConventionDisponibilitePolicy.estActive(convention)) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                    ConventionDisponibilitePolicy.MOTIF_DESACTIVEE);
+        String refusConvention = ConventionDisponibilitePolicy.motifRefusRattachement(convention);
+        if (refusConvention != null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, refusConvention);
         }
         entity.setAutoriteContractante(autorite);
         entity.setEntreprise(titulaire.entreprise());

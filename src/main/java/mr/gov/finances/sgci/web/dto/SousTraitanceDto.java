@@ -16,6 +16,8 @@ public class SousTraitanceDto {
     private Long id;
     private Long certificatCreditId;
     private String certificatNumero;
+    /** Référence lisible du crédit (CR-…), à afficher ; le numéro sert de code de vérification. */
+    private String certificatReference;
 
     private Long entrepriseSourceId;
 

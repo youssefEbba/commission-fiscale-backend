@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.service;
 
+import mr.gov.finances.sgci.domain.MontantsTexte;
 import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.LigneBulletinLiquidation;
@@ -138,14 +139,14 @@ public class UtilisationCreditEligibilityHelper {
         BigDecimal requisCordon = montantCordonRequis != null ? montantCordonRequis : BigDecimal.ZERO;
         BigDecimal soldeCordon = certificat.getSoldeCordon() != null ? certificat.getSoldeCordon() : BigDecimal.ZERO;
         if (requisCordon.compareTo(BigDecimal.ZERO) > 0 && soldeCordon.compareTo(requisCordon) < 0) {
-            motifs.add("Solde cordon insuffisant (disponible=" + soldeCordon + ", requis=" + requisCordon + ")");
+            motifs.add("Solde cordon insuffisant : disponible " + MontantsTexte.mru(soldeCordon) + ", requis " + MontantsTexte.mru(requisCordon));
         }
         BigDecimal requisTva = tvaImportRequis != null ? tvaImportRequis : BigDecimal.ZERO;
         BigDecimal quotaTva = resolveQuotaTvaImport(certificat);
         if (quotaTva != null
                 && requisTva.compareTo(BigDecimal.ZERO) > 0
                 && quotaTva.compareTo(requisTva) < 0) {
-            motifs.add("Quota TVA import insuffisant (disponible=" + quotaTva + ", requis=" + requisTva + ")");
+            motifs.add("Quota TVA import insuffisant : disponible " + MontantsTexte.mru(quotaTva) + ", requis " + MontantsTexte.mru(requisTva));
         }
     }
 

@@ -1,0 +1,40 @@
+{
+  "profiles": {
+    "admin": {
+      "loginUrl": "http://localhost:5173/login",
+      "description": "Administrateur SI (ADMIN_SI) : utilisateurs, rôles, paramètres, journal d'audit, reprise d'archives"
+    },
+    "president": {
+      "loginUrl": "http://localhost:5173/login",
+      "description": "Président de la Commission fiscale (PRESIDENT) : adoption, signature des certificats, reporting, satisfaction"
+    },
+    "dgd": {
+      "loginUrl": "http://localhost:5173/login",
+      "description": "Douanes (DGD) : visas, contrôle des utilisations en douane"
+    },
+    "dgi": {
+      "loginUrl": "http://localhost:5173/login",
+      "description": "Impôts (DGI) : visas, quittances"
+    },
+    "dgtcp": {
+      "loginUrl": "http://localhost:5173/login",
+      "description": "Trésor (DGTCP) : chiffrage et ouverture des crédits, apurement, avenants, clôture"
+    },
+    "dgb": {
+      "loginUrl": "http://localhost:5173/login",
+      "description": "Budget (DGB) : visa de l'offre fiscale, validation des conventions"
+    },
+    "autorite-contractante": {
+      "loginUrl": "http://localhost:5173/login",
+      "description": "Autorité contractante (AUTORITE_CONTRACTANTE) : conventions, marchés, corrections, mises en place"
+    },
+    "entreprise": {
+      "loginUrl": "http://localhost:5173/login",
+      "description": "Entreprise (ENTREPRISE) : titulaire du crédit, utilisations douane et TVA, sous-traitance"
+    },
+    "commission-relais": {
+      "loginUrl": "http://localhost:5173/login",
+      "description": "Commission relais (COMMISSION_RELAIS) : agit au nom d'une entreprise ou d'une autorité"
+    }
+  }
+}

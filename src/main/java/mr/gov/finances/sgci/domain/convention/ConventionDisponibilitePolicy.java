@@ -2,6 +2,7 @@ package mr.gov.finances.sgci.domain.convention;
 
 import mr.gov.finances.sgci.domain.entity.Convention;
 import mr.gov.finances.sgci.domain.enums.Role;
+import mr.gov.finances.sgci.domain.enums.StatutConvention;
 
 import java.util.EnumSet;
 import java.util.Set;
@@ -44,6 +45,29 @@ public final class ConventionDisponibilitePolicy {
      */
     public static boolean estActive(Convention convention) {
         return convention != null && !Boolean.FALSE.equals(convention.getActif());
+    }
+
+    public static final String MOTIF_REJETEE =
+            "Convention rejetée : aucun nouveau rattachement n'est possible";
+    public static final String MOTIF_ANNULEE =
+            "Convention annulée : aucun nouveau rattachement n'est possible";
+
+    /**
+     * Pourquoi la convention ne peut pas recevoir un nouveau marché ou une nouvelle demande, ou
+     * {@code null} si elle le peut. Désactivée, rejetée ou annulée : refusée. Une convention encore
+     * en attente de validation reste acceptée, comme avant (règle métier non tranchée).
+     */
+    public static String motifRefusRattachement(Convention convention) {
+        if (!estActive(convention)) {
+            return MOTIF_DESACTIVEE;
+        }
+        if (convention.getStatut() == StatutConvention.REJETE) {
+            return MOTIF_REJETEE;
+        }
+        if (convention.getStatut() == StatutConvention.ANNULEE) {
+            return MOTIF_ANNULEE;
+        }
+        return null;
     }
 
 }

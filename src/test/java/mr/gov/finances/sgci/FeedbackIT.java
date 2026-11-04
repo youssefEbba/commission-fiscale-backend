@@ -122,6 +122,13 @@ class FeedbackIT {
     }
 
     @Test
+    void laNotificationDUneEnqueteDonneLaDateDeFinEnJourMoisAnnee() {
+        assertThat(FeedbackService.messageInvitation("T4 2026", LocalDate.of(2026, 12, 15)))
+                .contains("ouverte jusqu'au 15/12/2026").doesNotContain("2026-12-15");
+        assertThat(FeedbackService.messageInvitation("Sans fin", null)).doesNotContain("null");
+    }
+
+    @Test
     void lAdministrateurNeDonnePasDAvis() {
         assertThatThrownBy(() -> service.deposerRetour(FeedbackDtos.RetourRequest.builder()
                 .note(4).categorie(CategorieRetour.AUTRE).build(), admin))

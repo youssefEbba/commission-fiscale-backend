@@ -70,7 +70,7 @@ public class LocalFileController {
         byte[] contenu = minioService.downloadFile(fileName);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .contentType(typeAffichable(fileName))
                 .body(new ByteArrayResource(contenu));
     }
 
@@ -88,8 +88,23 @@ public class LocalFileController {
         FileSystemResource resource = new FileSystemResource(file);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .contentType(typeAffichable(fileName))
                 .body(resource);
+    }
+
+    /**
+     * Type annoncé au navigateur : PDF et images sont affichés dans un onglet (l'écran « Ouvrir »
+     * ne sait afficher que ceux-là) ; tout le reste, HTML et SVG compris, part en
+     * {@code application/octet-stream} pour qu'un fichier déposé ne s'exécute jamais dans le site.
+     */
+    public static MediaType typeAffichable(String fileName) {
+        String nom = fileName == null ? "" : fileName.toLowerCase(java.util.Locale.ROOT);
+        if (nom.endsWith(".pdf")) return MediaType.APPLICATION_PDF;
+        if (nom.endsWith(".png")) return MediaType.IMAGE_PNG;
+        if (nom.endsWith(".jpg") || nom.endsWith(".jpeg")) return MediaType.IMAGE_JPEG;
+        if (nom.endsWith(".gif")) return MediaType.IMAGE_GIF;
+        if (nom.endsWith(".webp")) return MediaType.parseMediaType("image/webp");
+        return MediaType.APPLICATION_OCTET_STREAM;
     }
 
     /**
