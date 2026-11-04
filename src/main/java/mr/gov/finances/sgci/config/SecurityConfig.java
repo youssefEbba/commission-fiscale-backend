@@ -51,7 +51,7 @@ public class SecurityConfig {
                         // connexion, donc avant authentification. La route ne rend que les
                         // cles de la liste blanche de ParametreService, jamais la table.
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/public/parametres").permitAll()
-                        .requestMatchers("/api/local-files/**").authenticated()
+                        .requestMatchers("/api/local-files/**", "/api/fichiers/**").authenticated()
                         .requestMatchers("/ws/**").permitAll();
                     if (!ExigencesProduction.estProduction(environment)) {
                         auth.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll();
