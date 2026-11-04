@@ -13,5 +13,7 @@ public interface AvenantRepository extends JpaRepository<Avenant, Long> {
 
     List<Avenant> findByDemandeCorrectionId(Long demandeCorrectionId);
 
+    List<Avenant> findByDemandeCorrectionIdIn(java.util.Collection<Long> demandeCorrectionIds);
+
     boolean existsByDemandeCorrectionId(Long demandeCorrectionId);
 }

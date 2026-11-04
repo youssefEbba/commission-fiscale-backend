@@ -5,6 +5,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -122,7 +123,12 @@ public class Marche {
     @JoinColumn(name = "autorite_contractante_id")
     private AutoriteContractante autoriteContractante;
 
-    @OneToOne
+    /**
+     * Chargée à la demande : lue d'office, elle entraînait pour chaque marché la demande et ses objets
+     * liés (modèle fiscal, DQE, feuille d'évaluation), une requête chacun — la liste des marchés
+     * restait bloquée en production. Son identifiant se lit sans la charger.
+     */
+    @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "demande_correction_id", unique = true)
     private DemandeCorrection demandeCorrection;
 

@@ -102,7 +102,11 @@ public class DemandeCorrectionService {
     @Transactional(readOnly = true)
     public List<DemandeCorrectionDto> findAll(AuthenticatedUser user) {
         List<DemandeCorrection> list = resolveDemandeList(user);
-        return list.stream().map(d -> pourAppelant(d, user)).collect(Collectors.toList());
+        // Avenants de toute la liste en une requête, plutôt que deux par demande.
+        Map<Long, mr.gov.finances.sgci.domain.entity.Avenant> avenants = avenantsDe(list);
+        return list.stream()
+                .map(d -> masquerPiecesNonCommunicables(toDto(d, java.util.Optional.ofNullable(avenants.get(d.getId()))), user))
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -953,6 +957,21 @@ public class DemandeCorrectionService {
                 : avenantRepository.findByDemandeCorrectionId(d.getId()).stream().findFirst();
     }
 
+    /** Les avenants d'une liste de demandes, par identifiant de demande (le premier s'il y en a plusieurs). */
+    private Map<Long, mr.gov.finances.sgci.domain.entity.Avenant> avenantsDe(List<DemandeCorrection> list) {
+        List<Long> ids = list.stream().map(DemandeCorrection::getId).filter(java.util.Objects::nonNull).toList();
+        Map<Long, mr.gov.finances.sgci.domain.entity.Avenant> parDemande = new java.util.HashMap<>();
+        if (ids.isEmpty()) {
+            return parDemande;
+        }
+        for (mr.gov.finances.sgci.domain.entity.Avenant a : avenantRepository.findByDemandeCorrectionIdIn(ids)) {
+            if (a.getDemandeCorrection() != null) {
+                parDemande.putIfAbsent(a.getDemandeCorrection().getId(), a);
+            }
+        }
+        return parDemande;
+    }
+
     /** Le DTO tel que l'appelant a le droit de le lire. */
     private DemandeCorrectionDto pourAppelant(DemandeCorrection d, AuthenticatedUser user) {
         return masquerPiecesNonCommunicables(toDto(d), user);
@@ -978,6 +997,10 @@ public class DemandeCorrectionService {
     }
 
     private DemandeCorrectionDto toDto(DemandeCorrection d) {
+        return toDto(d, avenantDe(d));
+    }
+
+    private DemandeCorrectionDto toDto(DemandeCorrection d, java.util.Optional<mr.gov.finances.sgci.domain.entity.Avenant> avenant) {
         return DemandeCorrectionDto.builder()
                 .id(d.getId())
                 .numero(d.getNumero())
@@ -985,8 +1008,8 @@ public class DemandeCorrectionService {
                 .dateDepot(d.getDateDepot())
                 .intituleMarche(d.getIntituleMarche())
                 .referenceAppelOffre(d.getReferenceAppelOffre())
-                .avenantId(avenantDe(d).map(mr.gov.finances.sgci.domain.entity.Avenant::getId).orElse(null))
-                .avenantNumero(avenantDe(d).map(mr.gov.finances.sgci.domain.entity.Avenant::getNumero).orElse(null))
+                .avenantId(avenant.map(mr.gov.finances.sgci.domain.entity.Avenant::getId).orElse(null))
+                .avenantNumero(avenant.map(mr.gov.finances.sgci.domain.entity.Avenant::getNumero).orElse(null))
                 .creditInterieur(d.getCreditInterieur())
                 .creditExterieur(d.getCreditExterieur())
                 .creditInterieurDeclare(d.getCreditInterieurDeclare())
