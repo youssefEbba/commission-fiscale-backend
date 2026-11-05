@@ -482,11 +482,17 @@ public class FeedbackService {
             return;
         }
         notificationService.notifyUsers(destinataires, NotificationType.ENQUETE_SATISFACTION,
-                "EnqueteSatisfaction", e.getId(),
-                "Enquête de satisfaction : « " + e.getTitre() + " », ouverte jusqu'au " + e.getDateFin()
-                        + ". Votre avis nous aide à améliorer la plateforme.",
+                "EnqueteSatisfaction", e.getId(), messageInvitation(e.getTitre(), e.getDateFin()),
                 Map.of("enqueteId", e.getId()));
     }
+
+    /** Texte de la notification d'une enquête ; la date de fin au format jj/mm/aaaa, lu par l'usager. */
+    public static String messageInvitation(String titre, LocalDate dateFin) {
+        String jusquau = dateFin != null ? ", ouverte jusqu'au " + dateFin.format(JJ_MM_AAAA) : "";
+        return "Enquête de satisfaction : « " + titre + " »" + jusquau + ". Votre avis nous aide à améliorer la plateforme.";
+    }
+
+    private static final java.time.format.DateTimeFormatter JJ_MM_AAAA = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private static Role[] roles(Set<ProfilFeedback> profils) {
         return profils.stream().flatMap(p -> p.roles().stream()).distinct().toArray(Role[]::new);

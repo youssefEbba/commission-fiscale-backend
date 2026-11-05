@@ -622,22 +622,21 @@ public class ImportArchiveLotService {
         AutoriteContractante autorite = c.getAutoriteContractante();
         Convention convention = c.getConvention();
 
+        // Un crédit dont la référence ARCHIVE-<N° Credit> existe déjà est refusé.
+        importService.refuserSiDejaRepris(releve);
         Marche marche = null;
-        boolean dejaRepris = importService.certificatExistant(releve).isPresent();
-        if (!dejaRepris) {
-            if (c.getMarche() != null) {
-                marche = c.getMarche();
-                if (marche.getDemandeCorrection() != null) {
-                    // Un marché ne porte qu'un dossier : le crédit est repris sans ce rattachement.
-                    releve.getAnomalies().add("Le marché « " + marche.getNumeroMarche()
-                            + " » est déjà rattaché à un autre dossier : crédit repris sans rattachement au marché.");
-                    marche = null;
-                }
-            } else if (Boolean.TRUE.equals(c.getCreerMarche())) {
-                marche = importService.creerMarcheDepuisReleve(releve, autorite, convention);
-                c.setMarche(marche);
-                c.setSourceMarche("CREE");
+        if (c.getMarche() != null) {
+            marche = c.getMarche();
+            if (marche.getDemandeCorrection() != null) {
+                // Un marché ne porte qu'un dossier : le crédit est repris sans ce rattachement.
+                releve.getAnomalies().add("Le marché « " + marche.getNumeroMarche()
+                        + " » est déjà rattaché à un autre dossier : crédit repris sans rattachement au marché.");
+                marche = null;
             }
+        } else if (Boolean.TRUE.equals(c.getCreerMarche())) {
+            marche = importService.creerMarcheDepuisReleve(releve, autorite, convention);
+            c.setMarche(marche);
+            c.setSourceMarche("CREE");
         }
 
         ImportArchiveResultatDto resultat = importService.importerReleve(releve, entreprise, autorite, convention,

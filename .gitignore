@@ -56,3 +56,7 @@ logs/
 Thumbs.db
 desktop.ini
 test-uploads/
+
+# Profils Playwright (cookies et jetons de session)
+.playwright/profiles/
+.playwright-mcp/

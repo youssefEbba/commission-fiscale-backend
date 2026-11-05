@@ -157,6 +157,29 @@ class ConventionPerimetreIT {
 
     @Test
     @Transactional
+    void conventionRejeteeOuAnnulee_refuseUnNouveauMarche() {
+        for (var statut : java.util.List.of(mr.gov.finances.sgci.domain.enums.StatutConvention.REJETE,
+                mr.gov.finances.sgci.domain.enums.StatutConvention.ANNULEE)) {
+            Convention c = convention(mienne, mienne, true);
+            c.setStatut(statut);
+            conventionRepository.save(c);
+            CreateMarcheRequest req = CreateMarcheRequest.builder()
+                    .conventionId(c.getId())
+                    .numeroMarche("M-" + statut + "-" + System.nanoTime())
+                    .intitule("Marché sur convention " + statut)
+                    .montantContratHt(BigDecimal.valueOf(500_000))
+                    .statut(StatutMarche.EN_COURS)
+                    .build();
+            assertThatThrownBy(() -> marcheService.create(req, ac))
+                    .isInstanceOf(ApiException.class)
+                    .satisfies(e -> assertThat(((ApiException) e).getMessage()).isEqualTo(
+                            statut == mr.gov.finances.sgci.domain.enums.StatutConvention.REJETE
+                                    ? ConventionDisponibilitePolicy.MOTIF_REJETEE : ConventionDisponibilitePolicy.MOTIF_ANNULEE));
+        }
+    }
+
+    @Test
+    @Transactional
     void reactivation_rendLaConventionDeNouveauVisible() {
         Convention c = convention(mienne, mienne, false);
 

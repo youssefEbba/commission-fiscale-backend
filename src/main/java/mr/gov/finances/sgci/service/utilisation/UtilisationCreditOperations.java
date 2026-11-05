@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.service.utilisation;
 
+import mr.gov.finances.sgci.domain.MontantsTexte;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 
@@ -860,8 +861,8 @@ public class UtilisationCreditOperations {
             }
             if (tvaDeductible.compareTo(tvaDeductibleDispo) > 0) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                        "TVA déductible insuffisante (disponible=" + tvaDeductibleDispo
-                        + ", demandée=" + tvaDeductible + ")");
+                        "TVA déductible insuffisante : disponible " + MontantsTexte.mru(tvaDeductibleDispo)
+                        + ", demandée " + MontantsTexte.mru(tvaDeductible));
             }
         }
 
@@ -1653,7 +1654,8 @@ public class UtilisationCreditOperations {
         if (montantCordon.compareTo(BigDecimal.ZERO) > 0) {
             if (soldeCordonAvant.compareTo(montantCordon) < 0) {
                 throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                        "Solde cordon insuffisant (disponible=" + soldeCordonAvant + ", requis=" + montantCordon + ")");
+                        "Solde cordon insuffisant : disponible " + MontantsTexte.mru(soldeCordonAvant)
+                        + ", requis " + MontantsTexte.mru(montantCordon));
             }
             certificat.setSoldeCordon(soldeCordonAvant.subtract(montantCordon));
         }

@@ -13,6 +13,8 @@ import mr.gov.finances.sgci.security.EffectiveIdentityService;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
 import org.springframework.beans.factory.annotation.Value;
+import mr.gov.finances.sgci.service.MinioService;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -22,7 +24,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.file.Files;
@@ -43,7 +44,6 @@ import java.util.Optional;
  * demande de les traiter chacune, ce qui sort de ce lot.
  */
 @RestController
-@RequestMapping("/api/local-files")
 @RequiredArgsConstructor
 public class LocalFileController {
 
@@ -54,8 +54,27 @@ public class LocalFileController {
     private final VisibiliteDocumentService visibiliteDocumentService;
     private final UtilisateurRepository utilisateurRepository;
     private final EffectiveIdentityService effectiveIdentityService;
+    private final MinioService minioService;
 
-    @GetMapping("/{fileName:[a-zA-Z0-9._-]+}")
+    /**
+     * Fichier déposé dans MinIO. Son chemin stocké est l'adresse interne du serveur MinIO
+     * ({@code http://commission-minio:9000/{bucket}/{nom}}), que le navigateur ne peut pas joindre
+     * (et que la politique de sécurité du site bloque) : l'écran passe par cette route, qui lit
+     * l'objet côté serveur avec la même règle d'accès que les fichiers locaux.
+     */
+    @GetMapping("/api/fichiers/{fileName:[a-zA-Z0-9._-]+}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Resource> downloadStocke(@PathVariable String fileName,
+                                                   @AuthenticationPrincipal AuthenticatedUser user) {
+        assertPeutLire(fileName, user);
+        byte[] contenu = minioService.downloadFile(fileName);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
+                .contentType(typeAffichable(fileName))
+                .body(new ByteArrayResource(contenu));
+    }
+
+    @GetMapping("/api/local-files/{fileName:[a-zA-Z0-9._-]+}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Resource> download(@PathVariable String fileName,
                                              @AuthenticationPrincipal AuthenticatedUser user) {
@@ -69,8 +88,23 @@ public class LocalFileController {
         FileSystemResource resource = new FileSystemResource(file);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .contentType(typeAffichable(fileName))
                 .body(resource);
+    }
+
+    /**
+     * Type annoncé au navigateur : PDF et images sont affichés dans un onglet (l'écran « Ouvrir »
+     * ne sait afficher que ceux-là) ; tout le reste, HTML et SVG compris, part en
+     * {@code application/octet-stream} pour qu'un fichier déposé ne s'exécute jamais dans le site.
+     */
+    public static MediaType typeAffichable(String fileName) {
+        String nom = fileName == null ? "" : fileName.toLowerCase(java.util.Locale.ROOT);
+        if (nom.endsWith(".pdf")) return MediaType.APPLICATION_PDF;
+        if (nom.endsWith(".png")) return MediaType.IMAGE_PNG;
+        if (nom.endsWith(".jpg") || nom.endsWith(".jpeg")) return MediaType.IMAGE_JPEG;
+        if (nom.endsWith(".gif")) return MediaType.IMAGE_GIF;
+        if (nom.endsWith(".webp")) return MediaType.parseMediaType("image/webp");
+        return MediaType.APPLICATION_OCTET_STREAM;
     }
 
     /**

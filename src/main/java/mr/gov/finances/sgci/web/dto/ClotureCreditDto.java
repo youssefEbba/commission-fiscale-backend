@@ -33,6 +33,8 @@ public class ClotureCreditDto {
     private Long certificatCreditId;
 
     private String certificatNumero;
+    /** Référence lisible du crédit (CR-…), à afficher ; le numéro sert de code de vérification. */
+    private String certificatReference;
 
     /**
      * Vrai si la demande de correction d'origine déclarait des équipements sous régime (plaques TT).

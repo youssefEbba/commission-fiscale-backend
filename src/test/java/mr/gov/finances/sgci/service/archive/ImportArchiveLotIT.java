@@ -152,6 +152,8 @@ class ImportArchiveLotIT {
         CreditDto importe = credit(service.detail(lot.getId()), transfert.getId());
         assertThat(importe.getStatut()).isEqualTo("IMPORTE");
         CertificatCredit certificat = certificatRepository.findById(importe.getCertificatId()).orElseThrow();
+        // Référence de l'archive : « ARCHIVE- » suivi du N° Credit du fichier de période.
+        assertThat(certificat.getReference()).isEqualTo("ARCHIVE-" + transfert.getNumeroCredit());
         assertThat(certificat.getSoldeCordon()).isEqualByComparingTo("0");
         assertThat(certificat.getSoldeTVA()).isEqualByComparingTo("2430379.73");
 
@@ -251,7 +253,7 @@ class ImportArchiveLotIT {
     }
 
     @Test
-    void unCreditDejaReprisEstCompleteSansDoublonDUtilisations() {
+    void unCreditDejaReprisEstRefuse() {
         String numero = "T" + n + "/2023";
         LotDto premier = service.analyser(new ExportPeriodeFixture()
                 .bloc(ExportPeriodeFixture.avecTransfert(n, numero, "0349/T/038/CPMP/AC" + n + "/2022 DU 03/09/2022"))
@@ -273,8 +275,12 @@ class ImportArchiveLotIT {
 
         ImportResultatDto resultat = service.importer(second.getId(), List.of(repris.getId()), ADMIN);
 
-        assertThat(resultat.getImportes()).isEqualTo(1);
-        assertThat(resultat.getCredits().get(0).getCertificatId()).isEqualTo(certificatId);
+        // La référence ARCHIVE-<N° Credit> existe déjà : l'import est refusé, rien n'est écrit.
+        assertThat(resultat.getImportes()).isZero();
+        assertThat(resultat.getErreurs()).isEqualTo(1);
+        CreditDto refuse = credit(service.detail(second.getId()), repris.getId());
+        assertThat(refuse.getStatut()).isEqualTo("ERREUR");
+        assertThat(refuse.getMessageErreur()).contains("déjà été repris (ARCHIVE-" + numero + ")");
         assertThat(utilisationRepository.findByCertificatCreditId(certificatId)).hasSize(utilisationsAvant);
     }
 

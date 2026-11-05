@@ -120,6 +120,10 @@ public class ClotureCreditService {
             throw ApiException.conflict(ApiErrorCode.CONFLICT,
                     "Une proposition de clôture est déjà en attente de validation par le Président");
         }
+        if (existing != null && Boolean.TRUE.equals(existing.getApprouvee())) {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT,
+                    "La clôture de ce crédit est déjà approuvée par le Président : il reste à la finaliser");
+        }
 
         BigDecimal soldeCordon = nz(c.getSoldeCordon());
         BigDecimal soldeTva = nz(c.getSoldeTVA());
@@ -270,7 +274,9 @@ public class ClotureCreditService {
 
     private boolean notYetFinalise(CertificatCredit c) {
         ClotureCredit cc = clotureCreditRepository.findByCertificatCreditId(c.getId()).orElse(null);
-        return cc == null || cc.getDateCloture() == null;
+        // Une clôture approuvée par le Président n'attend plus que sa finalisation (table des propositions) :
+        // la reproposer effacerait la décision du Président.
+        return cc == null || (cc.getDateCloture() == null && !Boolean.TRUE.equals(cc.getApprouvee()));
     }
 
     /**
@@ -393,6 +399,7 @@ public class ClotureCreditService {
                 .approuvee(cc.getApprouvee())
                 .certificatCreditId(c != null ? c.getId() : null)
                 .certificatNumero(c != null ? c.getNumero() : null)
+                .certificatReference(c != null ? c.getReference() : null)
                 .equipementsPresents(equipementsDeclares(c))
                 .demandeCorrectionId(demandeDorigine(c))
                 .build();

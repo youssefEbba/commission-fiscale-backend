@@ -6,6 +6,8 @@ import mr.gov.finances.sgci.domain.enums.RejetTempStatus;
 import mr.gov.finances.sgci.domain.enums.Role;
 import mr.gov.finances.sgci.domain.enums.StatutAvenant;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
+import mr.gov.finances.sgci.domain.enums.StatutConvention;
+import mr.gov.finances.sgci.domain.enums.StatutSousTraitance;
 import mr.gov.finances.sgci.domain.enums.StatutDemandeRattachement;
 import mr.gov.finances.sgci.domain.enums.StatutDemandeResetPassword;
 import mr.gov.finances.sgci.domain.enums.StatutTransfert;
@@ -15,6 +17,7 @@ import mr.gov.finances.sgci.domain.enums.StatutDemande;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.ClotureCreditService;
 import mr.gov.finances.sgci.service.DecisionTransfertCreditService;
+import mr.gov.finances.sgci.service.PermissionService;
 import mr.gov.finances.sgci.service.reporting.ReportingPredicates;
 import mr.gov.finances.sgci.service.reporting.ReportingQueryRunner;
 import mr.gov.finances.sgci.service.reporting.ReportingScope;
@@ -116,6 +119,7 @@ public class MainCouranteService {
     private final ReportingPredicates predicates;
     private final ReportingQueryRunner runner;
     private final ClotureCreditService clotureCreditService;
+    private final PermissionService permissionService;
 
     public MainCouranteDto pourMoi(AuthenticatedUser auth) {
         ReportingScope scope;
@@ -144,10 +148,16 @@ public class MainCouranteService {
             couverts.add("CORRECTION");
         }
         if (VISA_CERTIFICAT.contains(role)) {
+            // Une mise en place envoyée attend d'être prise en charge par l'une de ces directions avant
+            // tout visa : sans cette ligne, elle n'apparaissait dans aucune main courante.
+            lignes.addAll(certificatsAuStatut(scope, maintenant, StatutCertificat.ENVOYEE,
+                    "Prendre en charge la mise en place"));
             lignes.addAll(certificatsAViser(scope, role, maintenant));
             couverts.add("MISE_EN_PLACE");
         }
         if (role == Role.PRESIDENT) {
+            // Les propositions de clôture attendent la décision du Président (absentes jusqu'ici).
+            lignes.addAll(cloturesADecider(scope, maintenant));
             lignes.addAll(demandesAAdopter(scope, maintenant));
             lignes.addAll(certificatsAValider(scope, maintenant));
             lignes.addAll(avenantsAuStatut(scope, maintenant, StatutAvenant.EN_COURS_TRAITEMENT, true,
@@ -182,6 +192,19 @@ public class MainCouranteService {
             lignes.addAll(utilisationsAttendantLeRole(scope, role, maintenant));
             couverts.add("UTILISATION");
         }
+        if (role != null && role != Role.ADMIN_SI
+                && permissionService.findPermissionCodesByRole(role).contains("convention.validate")) {
+            // La DGB et la DGI valident les conventions : sans cette ligne, une convention déposée
+            // n'apparaissait dans aucune main courante.
+            lignes.addAll(conventionsAValider(scope, maintenant));
+            couverts.add("CONVENTION");
+        }
+        if (role != null && role != Role.ADMIN_SI
+                && permissionService.findPermissionCodesByRole(role).contains("sous_traitance.dgtcp.update")) {
+            // Une demande de sous-traitance attend l'autorisation de la DGTCP : elle n'apparaissait nulle part.
+            lignes.addAll(sousTraitancesADecider(scope));
+            couverts.add("SOUS_TRAITANCE");
+        }
         if (role == Role.ADMIN_SI || role == Role.PRESIDENT) {
             lignes.addAll(demandesAdministratives(scope, maintenant));
             couverts.add("ADMINISTRATION");
@@ -191,6 +214,7 @@ public class MainCouranteService {
             // Ne pas l'appeler hors de ce rôle est la seule façon correcte de s'en abstenir :
             // voir le commentaire de cloturesAApprouver.
             lignes.addAll(cloturesAApprouver(auth, maintenant));
+            lignes.addAll(cloturesAFinaliser(scope, maintenant));
             couverts.add("CLOTURE");
         }
 
@@ -391,6 +415,60 @@ public class MainCouranteService {
         }
         return lignes(hql.toString(), scope, params, maintenant,
                 "TRANSFERT", "TransfertCredit", "Poser le visa " + role.name());
+    }
+
+    // ── les propositions de clôture ─────────────────────────────────────────────────────────────
+
+    /** Proposition déposée par la DGTCP, pas encore décidée par le Président. */
+    private List<LigneMainCouranteDto> cloturesADecider(ReportingScope scope, Instant maintenant) {
+        String hql = "select cc.id, coalesce(c.reference, c.numero), c.statut, ent.raisonSociale, cc.dateProposition "
+                + "from ClotureCredit cc join cc.certificatCredit c left join c.entreprise ent "
+                + "where cc.approuvee is null";
+        return lignes(hql, scope, Map.of(), maintenant, "CLOTURE", "ClotureCredit",
+                "Valider ou rejeter la proposition de clôture");
+    }
+
+    /** Proposition approuvée par le Président, que la DGTCP doit encore finaliser. */
+    private List<LigneMainCouranteDto> cloturesAFinaliser(ReportingScope scope, Instant maintenant) {
+        String hql = "select cc.id, coalesce(c.reference, c.numero), c.statut, ent.raisonSociale, cc.dateProposition "
+                + "from ClotureCredit cc join cc.certificatCredit c left join c.entreprise ent "
+                + "where cc.approuvee = true and c.statut not in (:termines)";
+        return lignes(hql, scope, Map.of("termines", Set.of(StatutCertificat.CLOTURE, StatutCertificat.ANNULE)), maintenant,
+                "CLOTURE", "ClotureCredit", "Finaliser la clôture du crédit");
+    }
+
+    // ── les sous-traitances ────────────────────────────────────────────────────────────────────
+
+    /**
+     * Les demandes de sous-traitance en attente de décision. La sous-traitance ne porte pas de date
+     * de demande : la ligne n'a donc pas de durée d'attente (0), plutôt qu'une date inventée.
+     */
+    private List<LigneMainCouranteDto> sousTraitancesADecider(ReportingScope scope) {
+        String hql = "select st.id, coalesce(c.reference, c.numero), st.statut, ent.raisonSociale "
+                + "from SousTraitance st join st.certificatCredit c left join c.entreprise ent "
+                + "where st.statut = :demande";
+        List<LigneMainCouranteDto> out = new ArrayList<>();
+        for (Object[] row : runner.lignes(hql, scope, Map.of("demande", StatutSousTraitance.DEMANDE))) {
+            out.add(LigneMainCouranteDto.builder()
+                    .processus("SOUS_TRAITANCE").type("SousTraitance")
+                    .id(nombre(row[0])).reference(texte(row[1])).statut(texte(row[2]))
+                    .entrepriseRaisonSociale(texte(row[3]))
+                    .action("Autoriser ou refuser la sous-traitance")
+                    .joursDAttente(0L)
+                    .build());
+        }
+        return out;
+    }
+
+    // ── les conventions ────────────────────────────────────────────────────────────────────────
+
+    /** Les conventions actives encore en attente de validation, datées de leur dépôt. */
+    private List<LigneMainCouranteDto> conventionsAValider(ReportingScope scope, Instant maintenant) {
+        String hql = "select c.id, c.reference, c.statut, ac.nom, c.dateCreation "
+                + "from Convention c left join c.autoriteContractante ac "
+                + "where c.statut = :attente and (c.actif is null or c.actif = true)";
+        return lignes(hql, scope, Map.of("attente", StatutConvention.EN_ATTENTE), maintenant,
+                "CONVENTION", "Convention", "Valider ou rejeter la convention");
     }
 
     // ── les clôtures ───────────────────────────────────────────────────────────────────────────

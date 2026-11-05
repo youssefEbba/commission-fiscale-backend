@@ -444,9 +444,9 @@ public class MarcheService {
 
         Convention convention = conventionRepository.findById(request.getConventionId())
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + request.getConventionId()));
-        if (!ConventionDisponibilitePolicy.estActive(convention)) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                    ConventionDisponibilitePolicy.MOTIF_DESACTIVEE);
+        String refusConvention = ConventionDisponibilitePolicy.motifRefusRattachement(convention);
+        if (refusConvention != null) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, refusConvention);
         }
 
         DemandeCorrection demande = null;
@@ -572,9 +572,10 @@ public class MarcheService {
                 }
                 Convention c = conventionRepository.findById(id)
                         .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Convention non trouvée: " + id));
-                if (!ConventionDisponibilitePolicy.estActive(c)) {
+                String refus = ConventionDisponibilitePolicy.motifRefusRattachement(c);
+                if (refus != null) {
                     throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                            ConventionDisponibilitePolicy.MOTIF_DESACTIVEE + " (" + c.getReference() + ")");
+                            refus + " (" + c.getReference() + ")");
                 }
                 out.add(c);
             }
