@@ -37,7 +37,12 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
-                    auth.requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
+                    // Envoi différé (exports en flux : StreamingResponseBody) et page d'erreur : la requête
+                    // d'origine a déjà été authentifiée et autorisée (@PreAuthorize). Sans cette règle,
+                    // l'envoi différé, sans jeton, était refusé après le début de la réponse et le
+                    // téléchargement ne se terminait jamais.
+                    auth.dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC, jakarta.servlet.DispatcherType.ERROR).permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/login", "/api/auth/password-reset/**").permitAll()
                         .requestMatchers("/api/health").permitAll()
                         // Vérification d'un document par QR code : ouverte à dessein, pour que

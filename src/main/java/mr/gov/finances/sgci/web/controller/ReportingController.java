@@ -228,7 +228,7 @@ public class ReportingController {
     ) {
         ReportingDossier dossier = reportingDossierService.assembler(
                 user, from, to, autoriteContractanteId, entrepriseId, blocs);
-        return fichier(nom("xlsx"),
+        return fichier(nom("xlsx", blocs),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 sortie -> xlsxReportWriter.ecrire(dossier, sortie));
     }
@@ -246,7 +246,7 @@ public class ReportingController {
     ) {
         ReportingDossier dossier = reportingDossierService.assembler(
                 user, from, to, autoriteContractanteId, entrepriseId, blocs);
-        return fichier(nom("csv"), "text/csv; charset=UTF-8",
+        return fichier(nom("csv", blocs), "text/csv; charset=UTF-8",
                 sortie -> csvReportWriter.ecrire(dossier, sortie));
     }
 
@@ -269,7 +269,7 @@ public class ReportingController {
     ) {
         ReportingDossier dossier = reportingDossierService.assembler(
                 user, from, to, autoriteContractanteId, entrepriseId, blocs);
-        return fichier(nom("pdf"), "application/pdf",
+        return fichier(nom("pdf", blocs), "application/pdf",
                 sortie -> pdfReportWriter.ecrire(dossier, sortie));
     }
 
@@ -330,8 +330,11 @@ public class ReportingController {
         valeurReferenceService.supprimer(code);
     }
 
-    private static String nom(String extension) {
-        return "reporting-" + DateTimeFormatter.ofPattern("yyyyMMdd")
+    /** « reporting-engagement-20261105.xlsx » : un export par onglet ne porte plus le même nom que les autres. */
+    private static String nom(String extension, Set<BlocReporting> blocs) {
+        String bloc = blocs != null && blocs.size() == 1
+                ? blocs.iterator().next().name().toLowerCase(java.util.Locale.ROOT).replace('_', '-') + "-" : "";
+        return "reporting-" + bloc + DateTimeFormatter.ofPattern("yyyyMMdd")
                 .withZone(ZoneId.systemDefault()).format(Instant.now()) + "." + extension;
     }
 

@@ -155,7 +155,16 @@ public class XlsxReportWriter {
      * \u00e9chouer l'\u00e9criture enti\u00e8re, et nos titres de sections se ressemblent par construction.
      */
     private String nomUnique(String titre, Set<String> deja) {
-        String propre = WorkbookUtil.createSafeSheetName(titre != null ? titre : "Section");
+        // Excel interdit « : / \ ? * [ ] » et limite le nom à 31 caractères : le séparateur devient
+        // un tiret (et non trois espaces), et la coupe se fait sur un mot.
+        String brut = (titre != null ? titre : "Section").replaceAll("\\s*[:\\\\/?*\\[\\]—]+\\s*", " - ")
+                .replaceAll("\\s+", " ").trim();
+        if (brut.length() > 31) {
+            String coupe = brut.substring(0, 31);
+            int espace = coupe.lastIndexOf(' ');
+            brut = (espace > 15 ? coupe.substring(0, espace) : coupe).replaceAll("[\\s-]+$", "");
+        }
+        String propre = WorkbookUtil.createSafeSheetName(brut);
         String candidat = propre;
         int suffixe = 2;
         while (!deja.add(candidat)) {

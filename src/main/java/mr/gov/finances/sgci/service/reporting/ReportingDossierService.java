@@ -201,7 +201,7 @@ public class ReportingDossierService {
 
         List<List<String>> immobiles = new ArrayList<>();
         for (DossierImmobileDto d : dto.getDossiersImmobiles()) {
-            immobiles.add(Arrays.asList(texte(d.getType()), String.valueOf(d.getId()),
+            immobiles.add(Arrays.asList(libelleType(d.getType()), String.valueOf(d.getId()),
                     texte(d.getReference()), texte(d.getStatut()),
                     date(d.getDateReference()), d.isDateDeRepli() ? "oui" : "non",
                     String.valueOf(d.getJoursDepuisDerniereDecision()),
@@ -218,7 +218,7 @@ public class ReportingDossierService {
 
         List<List<String>> rejets = new ArrayList<>();
         for (RejetTempOuvertDto r : dto.getRejetsTempOuverts()) {
-            rejets.add(Arrays.asList(texte(r.getType()), String.valueOf(r.getDossierId()),
+            rejets.add(Arrays.asList(libelleType(r.getType()), String.valueOf(r.getDossierId()),
                     texte(r.getReference()), texte(r.getRole()), texte(r.getAgentUsername()),
                     date(r.getDateDecision()), String.valueOf(r.getJoursOuvert()),
                     texte(r.getMotifRejet())));
@@ -300,7 +300,7 @@ public class ReportingDossierService {
                                                    String troncature, String note) {
         List<List<String>> lignes = new ArrayList<>();
         for (LigneAFermerDto l : source) {
-            lignes.add(Arrays.asList(texte(l.getType()), String.valueOf(l.getId()),
+            lignes.add(Arrays.asList(libelleType(l.getType()), String.valueOf(l.getId()),
                     texte(l.getReference()), texte(l.getStatut()),
                     texte(l.getEntrepriseRaisonSociale()),
                     l.getDateValidite() != null ? date(l.getDateValidite())
@@ -499,6 +499,25 @@ public class ReportingDossierService {
             return "entreprise " + entId;
         }
         return "périmètre de l'utilisateur";
+    }
+
+    /** Type de dossier en clair : l'état est lu en séance, pas un nom de classe (« CertificatCredit »). */
+    static String libelleType(String type) {
+        if (type == null || type.isBlank()) {
+            return ABSENT;
+        }
+        return switch (type) {
+            case "CertificatCredit" -> "Crédit";
+            case "DemandeCorrection" -> "Demande de correction";
+            case "UtilisationCredit" -> "Utilisation";
+            case "TransfertCredit" -> "Transfert";
+            case "Convention" -> "Convention";
+            case "Marche" -> "Marché";
+            case "ModificationCredit" -> "Avenant";
+            case "SousTraitance" -> "Sous-traitance";
+            case "ClotureCredit" -> "Clôture";
+            default -> type;
+        };
     }
 
     private static String texte(String v) {
