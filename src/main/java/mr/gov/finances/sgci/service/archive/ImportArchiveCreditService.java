@@ -78,7 +78,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ImportArchiveCreditService {
 
-    private static final String PREFIXE_NUMERO = "ARCHIVE-";
+    /** Préfixe du numéro (et de la référence) d'un crédit repris : « ARCHIVE- » + N° Credit du relevé. */
+    public static final String PREFIXE_NUMERO = "ARCHIVE-";
 
     private final ReleveArchiveParser parser;
     private final CertificatCreditRepository certificatRepository;
@@ -107,9 +108,7 @@ public class ImportArchiveCreditService {
             releve.setCertificatDejaImporteReference(
                     existant.getReference() != null ? existant.getReference() : existant.getNumero());
             releve.getAnomalies().add("Ce crédit a déjà été repris (certificat "
-                    + releve.getCertificatDejaImporteReference() + "). Le dossier sera complété : "
-                    + "seules les utilisations absentes seront ajoutées, les montants et soldes "
-                    + "seront réalignés sur ce relevé.");
+                    + releve.getCertificatDejaImporteReference() + ") : l'import sera refusé.");
         });
 
         return releve;
@@ -142,9 +141,24 @@ public class ImportArchiveCreditService {
         }
     }
 
-    /** Certificat déjà repris pour ce relevé (même numéro « ARCHIVE-… »), s'il existe. */
+    /**
+     * Certificat déjà repris pour ce relevé : le N° Credit du fichier est comparé aux seules références
+     * de l'application qui portent le préfixe « ARCHIVE- » (« 02/2026 » ↔ « ARCHIVE-02/2026 ») ; une
+     * référence « 02/2026 » sans préfixe n'est pas un crédit repris. Le numéro reste un repli.
+     */
     public Optional<CertificatCredit> certificatExistant(ReleveArchiveDto releve) {
-        return certificatRepository.findByNumero(numeroCertificat(releve));
+        String numero = numeroCertificat(releve);
+        return certificatRepository.findFirstByReferenceIgnoreCase(numero)
+                .or(() -> certificatRepository.findByNumero(numero));
+    }
+
+    /** Un crédit déjà repris est refusé à l'import : il n'est ni dupliqué ni complété. */
+    public void refuserSiDejaRepris(ReleveArchiveDto releve) {
+        certificatExistant(releve).ifPresent(existant -> {
+            throw ApiException.conflict(ApiErrorCode.CONFLICT, "Ce crédit a déjà été repris ("
+                    + (existant.getReference() != null ? existant.getReference() : existant.getNumero())
+                    + ") : import refusé.");
+        });
     }
 
     /**
@@ -280,6 +294,7 @@ public class ImportArchiveCreditService {
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
                         "Marché non trouvé : " + marcheId));
 
+        refuserSiDejaRepris(releve);
         return importerReleve(releve, entreprise, autorite, convention, marche, confirmerMalgreAnomalies, user);
     }
 
@@ -293,9 +308,9 @@ public class ImportArchiveCreditService {
                                                    Marche marche, boolean confirmerMalgreAnomalies,
                                                    AuthenticatedUser user) {
         String numero = numeroCertificat(releve);
-        // Un crédit déjà repris n'est pas un doublon : le relevé peut être reversé complété de
-        // nouvelles utilisations. On complète alors l'existant au lieu de refuser.
-        CertificatCredit existant = certificatRepository.findByNumero(numero).orElse(null);
+        // L'import refuse un crédit déjà repris (refuserSiDejaRepris) ; seul le recalcul d'un lot
+        // repasse ici sur un crédit existant, pour le réaligner sur son relevé.
+        CertificatCredit existant = certificatExistant(releve).orElse(null);
 
         // Un crédit sans utilisation est légitime : le crédit est ouvert, rien n'a encore été
         // consommé. On le reprend tel quel, ses utilisations seront versées plus tard.
@@ -656,7 +671,9 @@ public class ImportArchiveCreditService {
     private CertificatCredit creerCertificat(ReleveArchiveDto releve, Entreprise entreprise, String numero) {
         CertificatCredit certificat = new CertificatCredit();
         certificat.setNumero(numero);
-        certificat.setReference(null);   // attribuée par ReferenceBackfillMigration au redémarrage
+        // Un crédit repris garde la référence de l'archive (« ARCHIVE- » + N° Credit du fichier),
+        // pas une référence de crédit nouveau (CR-NNNN-MM-AAAA).
+        certificat.setReference(numero);
         certificat.setEntreprise(entreprise);
         certificat.setMontantCordon(releve.getCreditDouanier());
         certificat.setMontantTVAInterieure(releve.getCreditInterieur());

@@ -17,6 +17,7 @@ public interface CertificatCreditRepository extends JpaRepository<CertificatCred
 
     Optional<CertificatCredit> findByNumero(String numero);
     Optional<CertificatCredit> findByReference(String reference);
+    Optional<CertificatCredit> findFirstByReferenceIgnoreCase(String reference);
     boolean existsByNumero(String numero);
     boolean existsByDemandeCorrectionId(Long demandeCorrectionId);
     Optional<CertificatCredit> findFirstByDemandeCorrectionId(Long demandeCorrectionId);

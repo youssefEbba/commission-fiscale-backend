@@ -11,6 +11,7 @@ import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.MarcheRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.service.ReferenceSequenceGenerator;
+import mr.gov.finances.sgci.service.archive.ImportArchiveCreditService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +38,8 @@ public class ReferenceBackfillMigration {
 
     @Transactional
     public void migrateIfNeeded() {
+        referencesDesCreditsRepris();
+
         backfill("DemandeCorrection", ReferenceSequenceGenerator.PREFIX_DEMANDE_CORRECTION,
                 demandeCorrectionRepository.findAll(),
                 DemandeCorrection::getId, DemandeCorrection::getReference,
@@ -56,6 +59,26 @@ public class ReferenceBackfillMigration {
                 utilisationCreditRepository.findAll(),
                 UtilisationCredit::getId, UtilisationCredit::getReference,
                 UtilisationCredit::setReference, utilisationCreditRepository::save);
+    }
+
+    /**
+     * Un crédit repris de l'archive porte la référence « ARCHIVE- » + N° Credit du fichier (son numéro).
+     * Les crédits repris avant cette règle avaient reçu une référence de crédit nouveau : elle est remplacée.
+     */
+    private void referencesDesCreditsRepris() {
+        int count = 0;
+        for (CertificatCredit c : certificatCreditRepository.findAll()) {
+            String numero = c.getNumero();
+            if (numero != null && numero.startsWith(ImportArchiveCreditService.PREFIXE_NUMERO)
+                    && !numero.equals(c.getReference())) {
+                c.setReference(numero);
+                certificatCreditRepository.save(c);
+                count++;
+            }
+        }
+        if (count > 0) {
+            log.info("CertificatCredit : {} crédit(s) repris de l'archive renommé(s) « ARCHIVE-… »", count);
+        }
     }
 
     private <T> void backfill(String entityName, String prefix, List<T> all,

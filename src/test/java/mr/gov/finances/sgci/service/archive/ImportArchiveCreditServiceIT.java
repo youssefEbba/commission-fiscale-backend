@@ -152,9 +152,9 @@ class ImportArchiveCreditServiceIT {
         assertEquals(0, demande.getCreditExterieur().compareTo(new BigDecimal("145829345.49")));
         assertEquals(0, demande.getCreditInterieur().compareTo(new BigDecimal("137336993.31")));
 
-        // La référence lisible est laissée vide : le rattrapage applicatif l'attribuera.
-        assertEquals(null, certificat.getReference());
+        // Un crédit repris garde la référence de l'archive (« ARCHIVE- » + N° Credit), pas une référence CR-.
         assertTrue(certificat.getNumero().startsWith("ARCHIVE-"));
+        assertEquals(certificat.getNumero(), certificat.getReference());
 
         // --- Les utilisations sont rattachées au certificat ---
         List<UtilisationCredit> utilisations =
@@ -271,7 +271,7 @@ class ImportArchiveCreditServiceIT {
      */
     @Test
     @Transactional
-    void reimporter_le_meme_releve_complete_sans_dupliquer() throws Exception {
+    void reimporter_le_meme_releve_est_refuse() throws Exception {
         Entreprise entreprise = entrepriseCible();
         AutoriteContractante autorite = autoriteCible();
         Convention convention = conventionCible(autorite);
@@ -284,15 +284,12 @@ class ImportArchiveCreditServiceIT {
         long utilisationsApresPremier = utilisationRepository
                 .findByCertificatCreditId(premier.getCertificatId()).size();
 
-        ImportArchiveResultatDto second = service.importer(
-                releve(), entreprise.getId(), autorite.getId(), convention.getId(), null, true, null);
-
-        assertTrue(second.isCertificatDejaExistant(), "le second import doit compléter le crédit existant");
-        assertEquals(premier.getCertificatId(), second.getCertificatId(), "le crédit ne doit pas être recréé");
-        assertEquals(0, second.getUtilisationsDouanieres() + second.getUtilisationsInterieures(),
-                "aucune utilisation ne doit être réinsérée");
-        assertEquals(reprisesInitiales, second.getUtilisationsIgnorees(),
-                "toutes les lignes du relevé doivent être reconnues comme déjà reprises");
+        // Le crédit existe déjà (référence ARCHIVE-<N° Credit>) : le second import est refusé.
+        mr.gov.finances.sgci.web.exception.ApiException refus = org.junit.jupiter.api.Assertions.assertThrows(
+                mr.gov.finances.sgci.web.exception.ApiException.class,
+                () -> service.importer(releve(), entreprise.getId(), autorite.getId(), convention.getId(), null, true, null));
+        assertTrue(refus.getMessage().contains("déjà été repris"), refus.getMessage());
+        assertTrue(reprisesInitiales >= 0);
         assertEquals(utilisationsApresPremier,
                 utilisationRepository.findByCertificatCreditId(premier.getCertificatId()).size(),
                 "le nombre d'utilisations en base ne doit pas bouger");
