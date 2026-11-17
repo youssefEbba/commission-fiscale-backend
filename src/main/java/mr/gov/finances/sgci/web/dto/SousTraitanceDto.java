@@ -30,5 +30,7 @@ public class SousTraitanceDto {
     private BigDecimal quantites;
 
     private Instant dateAutorisation;
+    /** Date de la demande (dépôt), celle du récépissé. */
+    private Instant dateDemande;
     private StatutSousTraitance statut;
 }

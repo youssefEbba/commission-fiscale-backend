@@ -185,6 +185,15 @@ public class SeedDocumentRequirements {
         seedDocReq(ProcessusDocument.SOUS_TRAITANCE, "LETTRE_SOUS_TRAITANCE", false,
                 all, "Lettre détaillant volumes, quantités et pouvoirs", 2);
 
+        // Le récépissé de dépôt de chaque demande : le navigateur le génère à la soumission et le
+        // dépose comme une pièce ordinaire. Jamais réclamé au déposant : obligatoire = false.
+        for (ProcessusDocument processus : java.util.List.of(ProcessusDocument.MISE_EN_PLACE_CI,
+                ProcessusDocument.UTILISATION_CI_DOUANE, ProcessusDocument.UTILISATION_CI_TVA_INTERIEURE,
+                ProcessusDocument.TRANSFERT_CREDIT, ProcessusDocument.MODIFICATION_CI,
+                ProcessusDocument.SOUS_TRAITANCE)) {
+            seedDocReq(processus, "RECU_DEPOT", false, all, "Récépissé de dépôt de la demande", 99);
+        }
+
         seedDocReq(ProcessusDocument.CLOTURE_CI, "LISTE_CREDITS_A_CLOTURER", false,
                 all, "Liste des crédits à annuler ou clôturer", 1);
 

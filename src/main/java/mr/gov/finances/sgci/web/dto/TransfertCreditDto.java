@@ -14,6 +14,8 @@ import java.time.Instant;
 public class TransfertCreditDto {
 
     private Long id;
+    /** Référence lisible du transfert ({@code TR-…}), celle du récépissé de dépôt. */
+    private String reference;
     private Instant dateDemande;
     private Long certificatCreditId;
     private String certificatNumero;

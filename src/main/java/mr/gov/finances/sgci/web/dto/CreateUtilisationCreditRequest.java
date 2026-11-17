@@ -36,7 +36,10 @@ public class CreateUtilisationCreditRequest {
 
     // ── Champs spécifiques utilisation douanière ─────────────────────────────
 
+    /** Ancien champ unique : ignoré si {@link #numerosDeclaration} est fourni. */
     private String numeroDeclaration;
+    /** Les numéros de déclaration (un ou plusieurs). */
+    private List<String> numerosDeclaration;
     private String numeroBulletin;
     private Instant dateDeclaration;
     private Boolean enregistreeSYDONIA;
@@ -51,7 +54,10 @@ public class CreateUtilisationCreditRequest {
     // ── Champs spécifiques utilisation TVA intérieure ────────────────────────
 
     private TypeAchat typeAchat;
+    /** Ancien champ unique : ignoré si {@link #numerosFacture} est fourni. */
     private String numeroFacture;
+    /** Les numéros de facture (un ou plusieurs). */
+    private List<String> numerosFacture;
     private Instant dateFacture;
     private BigDecimal montantTVAInterieure;
     private String numeroDecompte;

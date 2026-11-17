@@ -5,10 +5,12 @@ import lombok.extern.slf4j.Slf4j;
 import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.Marche;
+import mr.gov.finances.sgci.domain.entity.TransfertCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.MarcheRepository;
+import mr.gov.finances.sgci.repository.TransfertCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.service.ReferenceSequenceGenerator;
 import mr.gov.finances.sgci.service.archive.ImportArchiveCreditService;
@@ -34,6 +36,7 @@ public class ReferenceBackfillMigration {
     private final CertificatCreditRepository certificatCreditRepository;
     private final MarcheRepository marcheRepository;
     private final UtilisationCreditRepository utilisationCreditRepository;
+    private final TransfertCreditRepository transfertCreditRepository;
     private final ReferenceSequenceGenerator referenceSequenceGenerator;
 
     @Transactional
@@ -59,6 +62,25 @@ public class ReferenceBackfillMigration {
                 utilisationCreditRepository.findAll(),
                 UtilisationCredit::getId, UtilisationCredit::getReference,
                 UtilisationCredit::setReference, utilisationCreditRepository::save);
+
+        referencesDesTransfertsRepris();
+        backfill("TransfertCredit", ReferenceSequenceGenerator.PREFIX_TRANSFERT,
+                transfertCreditRepository.findAll(),
+                TransfertCredit::getId, TransfertCredit::getReference,
+                TransfertCredit::setReference, transfertCreditRepository::save);
+    }
+
+    /** Les transferts repris de l'archive avant l'ajout de la référence reçoivent {@code ARCHIVE-TR-…}. */
+    private void referencesDesTransfertsRepris() {
+        for (TransfertCredit t : transfertCreditRepository.findAll()) {
+            if (isBlank(t.getReference()) && t.getCertificatCredit() != null) {
+                String ref = ImportArchiveCreditService.referenceTransfertArchive(t.getCertificatCredit());
+                if (ref != null) {
+                    t.setReference(ref);
+                    transfertCreditRepository.save(t);
+                }
+            }
+        }
     }
 
     /**

@@ -3,6 +3,8 @@ package mr.gov.finances.sgci.domain.document;
 import mr.gov.finances.sgci.domain.enums.ProcessusDocument;
 
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Qui dépose quoi, processus par processus : ce que le formulaire de dépôt propose au demandeur.
@@ -98,7 +100,27 @@ public final class DocumentDepotPolicy {
     public static final Set<String> MISE_EN_PLACE_CODES_DE_LA_PRESIDENCE = Set.of(
             "CERTIFICAT_CREDIT_IMPOTS");
 
+    /**
+     * Le récépissé de dépôt : chaque soumission en produit un, généré par le navigateur et déposé
+     * par le déposant lui-même. Hors du formulaire de dépôt de tous les processus qui en ont un,
+     * mais toujours déposable par le déposant et remplaçable sans rejet ouvert (une nouvelle
+     * soumission produit un nouveau récépissé ; l'ancien passe en historique).
+     */
+    public static final String RECU_DEPOT = "RECU_DEPOT";
+
+    private static final Set<String> UTILISATION_HORS_DEPOT = avecRecu(UTILISATION_CODES_DU_CIRCUIT);
+    private static final Set<String> AVENANT_HORS_DEPOT = avecRecu(AVENANT_CODES_DE_LA_COMMISSION);
+    private static final Set<String> MISE_EN_PLACE_HORS_DEPOT = avecRecu(MISE_EN_PLACE_CODES_DE_LA_PRESIDENCE);
+
     private DocumentDepotPolicy() {
+    }
+
+    public static boolean estRecuDeDepot(String codeDocument) {
+        return RECU_DEPOT.equals(codeDocument);
+    }
+
+    private static Set<String> avecRecu(Set<String> codes) {
+        return Stream.concat(codes.stream(), Stream.of(RECU_DEPOT)).collect(Collectors.toUnmodifiableSet());
     }
 
     /**
@@ -121,9 +143,10 @@ public final class DocumentDepotPolicy {
         return switch (processus) {
             case CORRECTION_OFFRE_FISCALE -> CODES_PRODUITS_PAR_LA_COMMISSION;
             case UTILISATION_CI, UTILISATION_CI_DOUANE, UTILISATION_CI_TVA_INTERIEURE,
-                 UTILISATION_CI_EXTERIEUR, UTILISATION_CI_INTERIEUR -> UTILISATION_CODES_DU_CIRCUIT;
-            case MODIFICATION_CI -> AVENANT_CODES_DE_LA_COMMISSION;
-            case MISE_EN_PLACE_CI -> MISE_EN_PLACE_CODES_DE_LA_PRESIDENCE;
+                 UTILISATION_CI_EXTERIEUR, UTILISATION_CI_INTERIEUR -> UTILISATION_HORS_DEPOT;
+            case MODIFICATION_CI -> AVENANT_HORS_DEPOT;
+            case MISE_EN_PLACE_CI -> MISE_EN_PLACE_HORS_DEPOT;
+            case TRANSFERT_CREDIT, SOUS_TRAITANCE -> Set.of(RECU_DEPOT);
             default -> Set.of();
         };
     }

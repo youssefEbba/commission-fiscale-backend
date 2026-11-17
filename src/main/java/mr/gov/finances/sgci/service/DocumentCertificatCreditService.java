@@ -73,7 +73,9 @@ public class DocumentCertificatCreditService {
         DocumentCertificatCredit previous = repository.findByCertificatCreditIdAndCodeDocumentAndActifTrue(certificatCreditId, codeDocument)
                 .orElse(null);
         if (previous != null) {
-            assertReplacementAllowed(certificat, codeDocument, user);
+            if (!DocumentDepotPolicy.estRecuDeDepot(codeDocument)) {
+                assertReplacementAllowed(certificat, codeDocument, user);
+            }
             previous.setActif(false);
             nextVersion = previous.getVersion() != null ? previous.getVersion() + 1 : 1;
         }
@@ -227,6 +229,7 @@ public class DocumentCertificatCreditService {
      */
     private static void assertDeposableParLActeur(String codeDocument, AuthenticatedUser user) {
         if (user == null || user.getRole() == null
+                || DocumentDepotPolicy.estRecuDeDepot(codeDocument)
                 || DocumentDepotPolicy.deposableParLeDemandeur(ProcessusDocument.MISE_EN_PLACE_CI, codeDocument)) {
             return;
         }

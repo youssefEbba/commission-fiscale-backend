@@ -35,6 +35,15 @@ public class LigneMainCouranteDto {
 
     private String entrepriseRaisonSociale;
 
+    /** Le crédit d'impôt du dossier, quand il en a un (utilisation, transfert, avenant, clôture…). */
+    private Long certificatId;
+
+    /** Le n° du crédit d'impôt (sa référence, {@code CR-…} ou {@code ARCHIVE-…}). */
+    private String certificatReference;
+
+    /** Le n° du marché du dossier, quand il en a un. */
+    private String marcheNumero;
+
     /** Ce que l'utilisateur doit faire. */
     private String action;
 

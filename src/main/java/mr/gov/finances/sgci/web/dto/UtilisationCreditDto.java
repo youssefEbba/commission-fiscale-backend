@@ -44,7 +44,12 @@ public class UtilisationCreditDto {
     private Boolean demandeurEstSousTraitant;
 
     /** Champs spécifiques utilisation douanière */
+    /** Libellé de l'opération dans le relevé de l'ancienne application, pour une utilisation reprise de l'archive. */
+    private String origineArchiveLibelle;
+
+    /** Le premier numéro de déclaration ; tous sont dans {@link #numerosDeclaration}. */
     private String numeroDeclaration;
+    private java.util.List<String> numerosDeclaration;
     private String numeroBulletin;
     private Instant dateDeclaration;
     private Boolean enregistreeSYDONIA;
@@ -77,7 +82,9 @@ public class UtilisationCreditDto {
 
     /** Champs spécifiques utilisation TVA intérieure */
     private TypeAchat typeAchat;
+    /** Le premier numéro de facture ; tous sont dans {@link #numerosFacture}. */
     private String numeroFacture;
+    private java.util.List<String> numerosFacture;
     private Instant dateFacture;
     private BigDecimal montantTVAInterieure;
     private String numeroDecompte;

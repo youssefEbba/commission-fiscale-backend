@@ -1,5 +1,6 @@
 package mr.gov.finances.sgci.service.utilisation;
 
+import mr.gov.finances.sgci.domain.entity.NumerosJustificatifs;
 import mr.gov.finances.sgci.domain.MontantsTexte;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
@@ -365,7 +366,9 @@ public class UtilisationCreditOperations {
         if (request.getType() == TypeUtilisation.DOUANIER) {
             UtilisationDouaniere d = new UtilisationDouaniere();
             mapBase(d, request, certificat, entreprise);
-            d.setNumeroDeclaration(request.getNumeroDeclaration());
+            List<String> declarations = NumerosJustificatifs.depuis(request.getNumerosDeclaration(), request.getNumeroDeclaration());
+            assertDeclarationsNonDejaUtilisees(certificat, declarations, null);
+            d.remplacerNumerosDeclaration(declarations);
             d.setNumeroBulletin(request.getNumeroBulletin());
             d.setDateDeclaration(request.getDateDeclaration());
             d.setEnregistreeSYDONIA(request.getEnregistreeSYDONIA());
@@ -389,10 +392,10 @@ public class UtilisationCreditOperations {
         } else {
             UtilisationTVAInterieure t = new UtilisationTVAInterieure();
             mapBase(t, request, certificat, entreprise);
-            assertJustificatifNonDejaUtilise(certificat, request.getNumeroDecompte(),
-                    request.getNumeroFacture(), null);
+            List<String> factures = NumerosJustificatifs.depuis(request.getNumerosFacture(), request.getNumeroFacture());
+            assertJustificatifNonDejaUtilise(certificat, request.getNumeroDecompte(), factures, null);
             t.setTypeAchat(resolveTypeAchat(request));
-            t.setNumeroFacture(request.getNumeroFacture());
+            t.remplacerNumerosFacture(factures);
             t.setDateFacture(request.getDateFacture());
             t.setMontantTVA(request.getMontantTVAInterieure());
             t.setNumeroDecompte(request.getNumeroDecompte());
@@ -511,6 +514,8 @@ public class UtilisationCreditOperations {
         assertRequiredDocumentsPresent(entity);
         workflow.validateTransition(StatutUtilisation.BROUILLON, StatutUtilisation.DEMANDEE);
         entity.setStatut(StatutUtilisation.DEMANDEE);
+        // Déposée maintenant : la date du brouillon n'est pas celle du dépôt (récépissé, reporting).
+        entity.setDateDemande(java.time.Instant.now());
         entity = repository.save(entity);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
@@ -561,7 +566,9 @@ public class UtilisationCreditOperations {
         entity.setMontant(request.getMontant());
 
         if (entity instanceof UtilisationDouaniere d) {
-            d.setNumeroDeclaration(request.getNumeroDeclaration());
+            List<String> declarations = NumerosJustificatifs.depuis(request.getNumerosDeclaration(), request.getNumeroDeclaration());
+            assertDeclarationsNonDejaUtilisees(certificat, declarations, d.getId());
+            d.remplacerNumerosDeclaration(declarations);
             d.setNumeroBulletin(request.getNumeroBulletin());
             d.setDateDeclaration(request.getDateDeclaration());
             d.setEnregistreeSYDONIA(request.getEnregistreeSYDONIA());
@@ -594,10 +601,10 @@ public class UtilisationCreditOperations {
                 }
             }
         } else if (entity instanceof UtilisationTVAInterieure t) {
-            assertJustificatifNonDejaUtilise(t.getCertificatCredit(), request.getNumeroDecompte(),
-                    request.getNumeroFacture(), t.getId());
+            List<String> factures = NumerosJustificatifs.depuis(request.getNumerosFacture(), request.getNumeroFacture());
+            assertJustificatifNonDejaUtilise(t.getCertificatCredit(), request.getNumeroDecompte(), factures, t.getId());
             t.setTypeAchat(resolveTypeAchat(request));
-            t.setNumeroFacture(request.getNumeroFacture());
+            t.remplacerNumerosFacture(factures);
             t.setDateFacture(request.getDateFacture());
             t.setMontantTVA(request.getMontantTVAInterieure());
             t.setNumeroDecompte(request.getNumeroDecompte());
@@ -629,8 +636,10 @@ public class UtilisationCreditOperations {
             entity.setMontant(request.getMontant());
         }
         if (entity instanceof UtilisationDouaniere d) {
-            if (request.getNumeroDeclaration() != null) {
-                d.setNumeroDeclaration(request.getNumeroDeclaration());
+            if (request.getNumerosDeclaration() != null || request.getNumeroDeclaration() != null) {
+                List<String> declarations = NumerosJustificatifs.depuis(request.getNumerosDeclaration(), request.getNumeroDeclaration());
+                assertDeclarationsNonDejaUtilisees(d.getCertificatCredit(), declarations, d.getId());
+                d.remplacerNumerosDeclaration(declarations);
             }
             if (request.getNumeroBulletin() != null) {
                 d.setNumeroBulletin(request.getNumeroBulletin());
@@ -981,13 +990,13 @@ public class UtilisationCreditOperations {
      * @param exclureId identifiant de la demande en cours de modification, à ne pas comparer à elle-même
      */
     private void assertJustificatifNonDejaUtilise(CertificatCredit certificat, String numeroDecompte,
-                                                  String numeroFacture, Long exclureId) {
+                                                  List<String> numerosFacture, Long exclureId) {
         if (certificat == null || certificat.getId() == null) {
             return;
         }
         String decompte = normaliserJustificatif(numeroDecompte);
-        String facture = normaliserJustificatif(numeroFacture);
-        if (decompte == null && facture == null) {
+        java.util.Set<String> factures = normaliserJustificatifs(numerosFacture);
+        if (decompte == null && factures.isEmpty()) {
             return;
         }
         for (UtilisationCredit autre : repository.findByCertificatCreditId(certificat.getId())) {
@@ -1001,14 +1010,53 @@ public class UtilisationCreditOperations {
                 continue;
             }
             String autreDecompte = normaliserJustificatif(t.getNumeroDecompte());
-            String autreFacture = normaliserJustificatif(t.getNumeroFacture());
             if (decompte != null && decompte.equals(autreDecompte)) {
                 throw conflitJustificatif("décompte", t.getNumeroDecompte(), t);
             }
-            if (facture != null && facture.equals(autreFacture)) {
-                throw conflitJustificatif("facture", t.getNumeroFacture(), t);
+            for (String autreFacture : t.numerosFactureEffectifs()) {
+                if (factures.contains(normaliserJustificatif(autreFacture))) {
+                    throw conflitJustificatif("facture", autreFacture, t);
+                }
             }
         }
+    }
+
+    /**
+     * Le même contrôle pour les déclarations en douane : une déclaration déjà imputée sur ce crédit
+     * ne peut pas servir à une seconde demande. Les utilisations reprises de l'archive sont écartées
+     * (leur « numéro » est le libellé de l'ancien relevé), comme les demandes rejetées.
+     */
+    private void assertDeclarationsNonDejaUtilisees(CertificatCredit certificat, List<String> numeros, Long exclureId) {
+        java.util.Set<String> declarations = normaliserJustificatifs(numeros);
+        if (certificat == null || certificat.getId() == null || declarations.isEmpty()) {
+            return;
+        }
+        for (UtilisationCredit autre : repository.findByCertificatCreditId(certificat.getId())) {
+            if (!(autre instanceof UtilisationDouaniere d)
+                    || (exclureId != null && exclureId.equals(d.getId()))
+                    || d.getStatut() == StatutUtilisation.REJETEE
+                    || d.getOrigineArchiveLibelle() != null) {
+                continue;
+            }
+            for (String autreNumero : d.numerosDeclarationEffectifs()) {
+                if (declarations.contains(normaliserJustificatif(autreNumero))) {
+                    throw conflitJustificatif("déclaration", autreNumero, d);
+                }
+            }
+        }
+    }
+
+    private static java.util.Set<String> normaliserJustificatifs(List<String> valeurs) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        if (valeurs != null) {
+            for (String v : valeurs) {
+                String n = normaliserJustificatif(v);
+                if (n != null) {
+                    out.add(n);
+                }
+            }
+        }
+        return out;
     }
 
     private static String normaliserJustificatif(String valeur) {
@@ -1019,7 +1067,7 @@ public class UtilisationCreditOperations {
         return nettoye.isEmpty() ? null : nettoye.toUpperCase();
     }
 
-    private ApiException conflitJustificatif(String libelle, String valeur, UtilisationTVAInterieure autre) {
+    private ApiException conflitJustificatif(String libelle, String valeur, UtilisationCredit autre) {
         String reference = autre.getReference() != null ? autre.getReference() : String.valueOf(autre.getId());
         return new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.JUSTIFICATIF_DEJA_UTILISE,
                 "Le numéro de " + libelle + " « " + valeur + " » est déjà utilisé sur ce crédit "
@@ -2218,6 +2266,7 @@ public class UtilisationCreditOperations {
         boolean demandeurSt = titId != null && demandeurId != null && !titId.equals(demandeurId);
 
         UtilisationCreditDto.UtilisationCreditDtoBuilder b = UtilisationCreditDto.builder()
+                .origineArchiveLibelle(u.getOrigineArchiveLibelle())
                 // Portes par la classe mere : les deux branches ont un certificat d'utilisation.
                 .numeroCertificatUtilisation(u.getNumeroCertificatUtilisation())
                 .dateCertificatUtilisation(u.getDateCertificatUtilisation())
@@ -2272,6 +2321,7 @@ public class UtilisationCreditOperations {
                                     .build())
                             .collect(Collectors.toList());
             b.numeroDeclaration(d.getNumeroDeclaration())
+                    .numerosDeclaration(d.numerosDeclarationEffectifs())
                     .numeroBulletin(d.getNumeroBulletin())
                     .dateDeclaration(d.getDateDeclaration())
                     .enregistreeSYDONIA(d.getEnregistreeSYDONIA())
@@ -2290,6 +2340,7 @@ public class UtilisationCreditOperations {
         } else if (u instanceof UtilisationTVAInterieure t) {
             b.typeAchat(t.getTypeAchat())
                     .numeroFacture(t.getNumeroFacture())
+                    .numerosFacture(t.numerosFactureEffectifs())
                     .dateFacture(t.getDateFacture())
                     .montantTVAInterieure(t.getMontantTVA())
                     .numeroDecompte(t.getNumeroDecompte())

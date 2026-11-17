@@ -94,6 +94,7 @@ public class DataInitializer implements CommandLineRunner {
     private final DocumentRequirementLegacyMigration documentRequirementLegacyMigration;
     private final EntrepriseLegacyGroupementMigration entrepriseLegacyGroupementMigration;
     private final ReferenceBackfillMigration referenceBackfillMigration;
+    private final NumerosJustificatifsMigration numerosJustificatifsMigration;
     private final Environment environment;
     private final mr.gov.finances.sgci.config.seed.SeedRbac seedRbac;
     private final mr.gov.finances.sgci.config.seed.SeedDocumentRequirements seedDocumentRequirements;
@@ -139,6 +140,7 @@ public class DataInitializer implements CommandLineRunner {
             seedDemo("certificat ouvert", this::seedCertificatOuvertDemo);
         }
         referenceBackfillMigration.migrateIfNeeded();
+        numerosJustificatifsMigration.migrateIfNeeded();
         signalerComptesAuMotDePasseConnu();
     }
 

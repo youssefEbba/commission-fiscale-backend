@@ -58,6 +58,7 @@ public class TransfertCreditService {
     private final UtilisationCreditWorkflow utilisationCreditWorkflow;
     private final DecisionTransfertCreditRepository decisionTransfertCreditRepository;
     private final TvaDeductibleStockRepository tvaDeductibleStockRepository;
+    private final ReferenceSequenceGenerator referenceSequenceGenerator;
 
     @Transactional(readOnly = true)
     public List<TransfertCreditDto> findAll(AuthenticatedUser user) {
@@ -192,6 +193,7 @@ public class TransfertCreditService {
         }
 
         TransfertCredit entity = TransfertCredit.builder()
+                .reference(referenceSequenceGenerator.next(ReferenceSequenceGenerator.PREFIX_TRANSFERT))
                 .dateDemande(Instant.now())
                 .certificatCredit(source)
                 .montant(montantIndicatif)
@@ -432,6 +434,7 @@ public class TransfertCreditService {
 
         return TransfertCreditDto.builder()
                 .id(t.getId())
+                .reference(t.getReference())
                 .dateDemande(t.getDateDemande())
                 .certificatCreditId(certId)
                 .certificatNumero(certNumero)

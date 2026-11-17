@@ -16,7 +16,27 @@ import java.util.List;
 @AllArgsConstructor
 public class UtilisationDouaniere extends UtilisationCredit {
 
+    /** Remplace les numéros de déclaration ; le premier est recopié dans {@code numeroDeclaration}. */
+    public void remplacerNumerosDeclaration(List<String> numeros) {
+        numerosDeclaration.clear();
+        numerosDeclaration.addAll(numeros);
+        numeroDeclaration = numeros.isEmpty() ? null : numeros.get(0);
+    }
+
+    public List<String> numerosDeclarationEffectifs() {
+        return NumerosJustificatifs.effectifs(numerosDeclaration, numeroDeclaration);
+    }
+
+    /** Le premier des {@link #numerosDeclaration}, gardé pour les lecteurs d'un seul numéro. */
     private String numeroDeclaration;
+
+    /** Tous les numéros de déclaration de l'utilisation, dans l'ordre de saisie. */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "utilisation_numero_declaration", joinColumns = @JoinColumn(name = "utilisation_id"))
+    @OrderColumn(name = "ordre")
+    @Column(name = "numero", length = 128)
+    @org.hibernate.annotations.BatchSize(size = 64)
+    private List<String> numerosDeclaration = new ArrayList<>();
     private String numeroBulletin;
     private Instant dateDeclaration;
 

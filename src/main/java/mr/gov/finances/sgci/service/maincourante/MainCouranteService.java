@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -118,10 +119,23 @@ public class MainCouranteService {
     private final ReportingScopeFactory scopeFactory;
     private final ReportingPredicates predicates;
     private final ReportingQueryRunner runner;
+
+    /** Pour compléter les lignes de leur crédit et de leur marché, hors du cadrage du reporting. */
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
     private final ClotureCreditService clotureCreditService;
     private final PermissionService permissionService;
 
     public MainCouranteDto pourMoi(AuthenticatedUser auth) {
+        return pourMoi(auth, null);
+    }
+
+    /**
+     * @param recherche filtre facultatif sur la référence du dossier, le n° du crédit, le n° du marché
+     *                  ou l'entreprise (sans tenir compte de la casse), appliqué avant la coupe à
+     *                  {@value #MAX_LIGNES} lignes
+     */
+    public MainCouranteDto pourMoi(AuthenticatedUser auth, String recherche) {
         ReportingScope scope;
         try {
             // Pas de fenêtre temporelle : une tâche en attente depuis deux ans est toujours une tâche.
@@ -216,6 +230,13 @@ public class MainCouranteService {
             lignes.addAll(cloturesAApprouver(auth, maintenant));
             lignes.addAll(cloturesAFinaliser(scope, maintenant));
             couverts.add("CLOTURE");
+        }
+
+        completerCreditEtMarche(lignes);
+        String q = recherche != null ? recherche.trim().toLowerCase(Locale.ROOT) : "";
+        if (!q.isEmpty()) {
+            lignes.removeIf(l -> !contient(l.getReference(), q) && !contient(l.getCertificatReference(), q)
+                    && !contient(l.getMarcheNumero(), q) && !contient(l.getEntrepriseRaisonSociale(), q));
         }
 
         lignes.sort(Comparator.comparingLong(LigneMainCouranteDto::getJoursDAttente).reversed());
@@ -388,7 +409,7 @@ public class MainCouranteService {
         List<Role> precedents = ordre.subList(0, rang);
 
         StringBuilder hql = new StringBuilder()
-                .append("select t.id, concat(coalesce(cert.reference, cert.numero), ' — transfert n° ', cast(t.id as string)), ")
+                .append("select t.id, coalesce(t.reference, concat(coalesce(cert.reference, cert.numero), ' — transfert n° ', cast(t.id as string))), ")
                 .append("t.statut, ent.raisonSociale, t.dateDemande ")
                 .append("from TransfertCredit t left join t.certificatCredit cert left join cert.entreprise ent ")
                 .append("where ").append(predicates.transfert("t", scope, false))
@@ -682,6 +703,69 @@ public class MainCouranteService {
                     .build());
         }
         return out;
+    }
+
+    // ── le crédit et le marché de chaque ligne ─────────────────────────────────────────────────
+
+    /**
+     * Par type de dossier : id du dossier, id du crédit, n° du crédit, n° du marché. Une requête par
+     * type présent, quel que soit le nombre de lignes.
+     */
+    private static final Map<String, String> CREDIT_ET_MARCHE = Map.of(
+            "UtilisationCredit", "select x.id, c.id, coalesce(c.reference, c.numero), mar.numeroMarche"
+                    + " from UtilisationCredit x join x.certificatCredit c left join c.demandeCorrection dc"
+                    + " left join dc.marche mar where x.id in (:ids)",
+            "CertificatCredit", "select x.id, x.id, coalesce(x.reference, x.numero), mar.numeroMarche"
+                    + " from CertificatCredit x left join x.demandeCorrection dc left join dc.marche mar where x.id in (:ids)",
+            "TransfertCredit", "select x.id, c.id, coalesce(c.reference, c.numero), mar.numeroMarche"
+                    + " from TransfertCredit x join x.certificatCredit c left join c.demandeCorrection dc"
+                    + " left join dc.marche mar where x.id in (:ids)",
+            "Avenant", "select x.id, c.id, coalesce(c.reference, c.numero), mar.numeroMarche"
+                    + " from Avenant x join x.certificatCredit c left join c.demandeCorrection dc"
+                    + " left join dc.marche mar where x.id in (:ids)",
+            "SousTraitance", "select x.id, c.id, coalesce(c.reference, c.numero), mar.numeroMarche"
+                    + " from SousTraitance x join x.certificatCredit c left join c.demandeCorrection dc"
+                    + " left join dc.marche mar where x.id in (:ids)",
+            "ClotureCredit", "select x.id, c.id, coalesce(c.reference, c.numero), mar.numeroMarche"
+                    + " from ClotureCredit x join x.certificatCredit c left join c.demandeCorrection dc"
+                    + " left join dc.marche mar where x.id in (:ids)",
+            "DemandeCorrection", "select x.id, x.id, x.id, mar.numeroMarche"
+                    + " from DemandeCorrection x left join x.marche mar where x.id in (:ids)");
+
+    private void completerCreditEtMarche(List<LigneMainCouranteDto> lignes) {
+        Map<String, List<LigneMainCouranteDto>> parType = new LinkedHashMap<>();
+        for (LigneMainCouranteDto l : lignes) {
+            if (l.getType() != null && l.getId() != null && CREDIT_ET_MARCHE.containsKey(l.getType())) {
+                parType.computeIfAbsent(l.getType(), k -> new ArrayList<>()).add(l);
+            }
+        }
+        parType.forEach((type, duType) -> {
+            boolean avecCredit = !"DemandeCorrection".equals(type);
+            Map<Long, Object[]> parId = new java.util.HashMap<>();
+            List<Long> ids = duType.stream().map(LigneMainCouranteDto::getId).distinct().toList();
+            for (int i = 0; i < ids.size(); i += 500) {
+                @SuppressWarnings("unchecked")
+                List<Object[]> rows = entityManager.createQuery(CREDIT_ET_MARCHE.get(type))
+                        .setParameter("ids", ids.subList(i, Math.min(ids.size(), i + 500)))
+                        .getResultList();
+                rows.forEach(r -> parId.put(nombre(r[0]), r));
+            }
+            for (LigneMainCouranteDto l : duType) {
+                Object[] r = parId.get(l.getId());
+                if (r == null) {
+                    continue;
+                }
+                if (avecCredit) {
+                    l.setCertificatId(nombre(r[1]));
+                    l.setCertificatReference(texte(r[2]));
+                }
+                l.setMarcheNumero(texte(r[3]));
+            }
+        });
+    }
+
+    private static boolean contient(String valeur, String recherche) {
+        return valeur != null && valeur.toLowerCase(Locale.ROOT).contains(recherche);
     }
 
     // ── utilitaires ────────────────────────────────────────────────────────────────────────────
