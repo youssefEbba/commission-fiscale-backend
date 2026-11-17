@@ -30,6 +30,16 @@ public class SousTraitance {
 
     private Instant dateAutorisation;
 
+    /** Date de la demande (dépôt) : celle du récépissé et du reporting. */
+    private Instant dateDemande;
+
+    @PrePersist
+    void dateDemandeParDefaut() {
+        if (dateDemande == null) {
+            dateDemande = Instant.now();
+        }
+    }
+
     @Enumerated(EnumType.STRING)
     @Builder.Default
     private StatutSousTraitance statut = StatutSousTraitance.DEMANDE;

@@ -22,6 +22,10 @@ public class TransfertCredit {
 
     private Instant dateDemande;
 
+    /** Référence lisible ({@code TR-NNNN-MM-AAAA}), celle du récépissé de dépôt ; {@code ARCHIVE-TR-…} si reprise. */
+    @Column(length = 64)
+    private String reference;
+
     @Column(precision = 19, scale = 4)
     private BigDecimal montant;
 

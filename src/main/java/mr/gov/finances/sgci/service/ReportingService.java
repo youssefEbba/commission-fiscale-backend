@@ -7,6 +7,8 @@ import lombok.RequiredArgsConstructor;
 import mr.gov.finances.sgci.domain.enums.Granularite;
 import mr.gov.finances.sgci.domain.enums.StatutCertificat;
 import mr.gov.finances.sgci.domain.enums.StatutDemande;
+import mr.gov.finances.sgci.domain.enums.StatutUtilisation;
+import mr.gov.finances.sgci.domain.enums.TypeUtilisation;
 import mr.gov.finances.sgci.security.AuthenticatedUser;
 import mr.gov.finances.sgci.service.reporting.CalendrierPeriodes;
 import mr.gov.finances.sgci.service.reporting.ReportingPredicates;
@@ -93,12 +95,15 @@ public class ReportingService {
                         + predicates.demande("d", scope, true)
                         + " group by m.statut", scope);
 
+        // Les transferts et sous-traitances demandés dans la période (et non plus les certificats qui
+        // en portent un, quelle que soit sa date).
         long transferts = runner.countSingle(
-                "select count(c) from CertificatCredit c where c.transfertCredit is not null and "
-                        + predicates.certificat("c", scope), scope, Map.of());
+                "select count(t) from TransfertCredit t where " + predicates.transfert("t", scope, true),
+                scope, Map.of());
         long soustrait = runner.countSingle(
-                "select count(c) from CertificatCredit c where c.sousTraitance is not null and "
-                        + predicates.certificat("c", scope), scope, Map.of());
+                "select count(st) from SousTraitance st join st.certificatCredit c where "
+                        + SOUS_TRAITANCE_DANS_LA_PERIODE + " and " + predicates.certificat("c", scope, false),
+                scope, Map.of());
 
         ReportingAuditStatsDto audit = scope.includeNationalAudit()
                 ? buildAuditStats(scope.from(), scope.to())
@@ -161,17 +166,58 @@ public class ReportingService {
         return out;
     }
 
+    /** Date de demande d'une sous-traitance ; celles d'avant ce champ n'ont que leur date d'autorisation. */
+    private static final String SOUS_TRAITANCE_DANS_LA_PERIODE =
+            "coalesce(st.dateDemande, st.dateAutorisation) between :from and :to";
+
+    private static final String ARCHIVE = "ARCHIVE-%";
+
+    /**
+     * « Demandes » : toutes les demandes déposées dans la période, tous processus confondus, hors
+     * brouillons et hors reprise d'archive — la définition des « dossiers déposés » des indicateurs
+     * d'impact. Le compteur ne portait que sur les demandes de correction, brouillons compris.
+     */
     private ReportingDemandeStatsDto buildDemandeStats(ReportingScope scope) {
-        List<NamedCountDto> byStatut = runner.groupedCounts(
-                "select d.statut, count(d) from DemandeCorrection d where "
-                        + predicates.demande("d", scope, true)
-                        + " group by d.statut", scope);
-        long total = byStatut.stream().mapToLong(NamedCountDto::getCount).sum();
-        long adop = countForStatutDemande(scope, StatutDemande.ADOPTEE)
-                + countForStatutDemande(scope, StatutDemande.NOTIFIEE);
-        long rej = countForStatutDemande(scope, StatutDemande.REJETEE);
-        long ann = countForStatutDemande(scope, StatutDemande.ANNULEE);
-        long base = total - ann;
+        String correction = "from DemandeCorrection d where " + predicates.demande("d", scope, true)
+                + " and d.statut <> :brouillon and (d.numero is null or d.numero not like :archiveDc)";
+        Map<String, Object> pc = Map.of("brouillon", StatutDemande.BROUILLON, "archiveDc", "ARCHIVE-DC-%");
+        List<NamedCountDto> byStatut = new ArrayList<>();
+        for (Object[] row : runner.lignes("select d.statut, count(d) " + correction + " group by d.statut", scope, pc)) {
+            byStatut.add(NamedCountDto.builder().key(String.valueOf(row[0])).count(((Number) row[1]).longValue()).build());
+        }
+        long corrections = byStatut.stream().mapToLong(NamedCountDto::getCount).sum();
+
+        List<NamedCountDto> parProcessus = new ArrayList<>();
+        parProcessus.add(compte("CORRECTION", corrections));
+        parProcessus.add(compte("MISE_EN_PLACE", runner.countSingle(
+                "select count(c) from CertificatCredit c where " + predicates.certificat("c", scope, true)
+                        + " and c.statut <> :brouillon and (c.numero is null or c.numero not like :archive)",
+                scope, Map.of("brouillon", StatutCertificat.BROUILLON, "archive", ARCHIVE))));
+        for (TypeUtilisation type : List.of(TypeUtilisation.DOUANIER, TypeUtilisation.TVA_INTERIEURE)) {
+            parProcessus.add(compte(type == TypeUtilisation.DOUANIER ? "UTILISATION_DOUANE" : "UTILISATION_TVA_INTERIEURE",
+                    runner.countSingle("select count(u) from UtilisationCredit u where "
+                                    + predicates.utilisation("u", scope, true)
+                                    + " and u.type = :type and u.statut <> :brouillon and u.origineArchiveLibelle is null",
+                            scope, Map.of("type", type, "brouillon", StatutUtilisation.BROUILLON))));
+        }
+        parProcessus.add(compte("TRANSFERT", runner.countSingle(
+                "select count(t) from TransfertCredit t where " + predicates.transfert("t", scope, true)
+                        + " and (t.reference is null or t.reference not like :archive)",
+                scope, Map.of("archive", ARCHIVE))));
+        parProcessus.add(compte("AVENANT", runner.countSingle(
+                "select count(a) from Avenant a join a.certificatCredit c where a.dateDepot between :from and :to and "
+                        + predicates.certificat("c", scope, false), scope, Map.of())));
+        parProcessus.add(compte("SOUS_TRAITANCE", runner.countSingle(
+                "select count(st) from SousTraitance st join st.certificatCredit c where "
+                        + SOUS_TRAITANCE_DANS_LA_PERIODE + " and " + predicates.certificat("c", scope, false),
+                scope, Map.of())));
+        long total = parProcessus.stream().mapToLong(NamedCountDto::getCount).sum();
+
+        long adop = countForStatutDemande(byStatut, StatutDemande.ADOPTEE)
+                + countForStatutDemande(byStatut, StatutDemande.NOTIFIEE);
+        long rej = countForStatutDemande(byStatut, StatutDemande.REJETEE);
+        long ann = countForStatutDemande(byStatut, StatutDemande.ANNULEE);
+        long base = corrections - ann;
         Double tauxAdopt = base > 0
                 ? BigDecimal.valueOf(100.0 * adop / base).setScale(2, RoundingMode.HALF_UP).doubleValue()
                 : null;
@@ -181,16 +227,19 @@ public class ReportingService {
         return ReportingDemandeStatsDto.builder()
                 .byStatut(byStatut)
                 .total(total)
+                .parProcessus(parProcessus)
                 .tauxAdoptionPct(tauxAdopt)
                 .tauxRejetPct(tauxRej)
                 .build();
     }
 
-    private long countForStatutDemande(ReportingScope scope, StatutDemande statut) {
-        return runner.countSingle(
-                "select count(d) from DemandeCorrection d where d.statut = :st and "
-                        + predicates.demande("d", scope, true),
-                scope, Map.of("st", statut));
+    private static long countForStatutDemande(List<NamedCountDto> byStatut, StatutDemande statut) {
+        return byStatut.stream().filter(n -> statut.name().equals(n.getKey()))
+                .mapToLong(NamedCountDto::getCount).sum();
+    }
+
+    private static NamedCountDto compte(String processus, long n) {
+        return NamedCountDto.builder().key(processus).count(n).build();
     }
 
     private CertificatFinancialTotalsDto buildCertFinancials(ReportingScope scope) {

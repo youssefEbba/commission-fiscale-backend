@@ -28,6 +28,8 @@ public class AdminCorrectionUtilisationRequest {
     /** Champs propres à {@code UtilisationDouaniere}. */
     @Size(max = 80)
     private String numeroDeclaration;
+    /** Si fourni, remplace tous les numéros de déclaration (prioritaire sur {@link #numeroDeclaration}). */
+    private java.util.List<@Size(max = 80) String> numerosDeclaration;
     @Size(max = 80)
     private String numeroBulletin;
     private Instant dateDeclaration;

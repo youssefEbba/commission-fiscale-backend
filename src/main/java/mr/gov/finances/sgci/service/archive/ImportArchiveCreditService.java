@@ -462,12 +462,21 @@ public class ImportArchiveCreditService {
      * <p>Aucune écriture de stock de TVA déductible n'est créée : les soldes du relevé intègrent
      * déjà le transfert, en ajouter une reviendrait à compter deux fois le même montant.
      */
+    /** {@code ARCHIVE-TR-<N° Credit>} : comme la demande d'archive ({@code ARCHIVE-DC-…}), reconnaissable. */
+    public static String referenceTransfertArchive(CertificatCredit certificat) {
+        String numero = certificat.getNumero();
+        return numero != null && numero.startsWith(PREFIXE_NUMERO)
+                ? numero.replace(PREFIXE_NUMERO, "ARCHIVE-TR-")
+                : null;
+    }
+
     private TransfertCredit creerTransfertArchive(ReleveArchiveDto releve, CertificatCredit certificat) {
         BigDecimal montant = releve.getTransfertCredit();
         if (montant == null || montant.signum() <= 0) {
             return null;   // relevé sans transfert
         }
         TransfertCredit transfert = TransfertCredit.builder()
+                .reference(referenceTransfertArchive(certificat))
                 .certificatCredit(certificat)
                 .montant(montant)
                 .statut(StatutTransfert.TRANSFERE)   // opération déjà réalisée dans l'ancien système
@@ -697,7 +706,7 @@ public class ImportArchiveCreditService {
         d.setMontant(u.getMontant());
         d.setDateDemande(u.getDate());
         d.setDateLiquidation(u.getDate());
-        d.setNumeroDeclaration(u.getLibelle());
+        d.remplacerNumerosDeclaration(mr.gov.finances.sgci.domain.entity.NumerosJustificatifs.depuis(null, u.getLibelle()));
         d.setOrigineArchiveLibelle(u.getLibelle());
         // Reprise d'un dossier clos sur papier : aucune émission de certificat n'est attendue (A20).
         d.setEmissionCertificatRequise(Boolean.FALSE);
@@ -733,7 +742,7 @@ public class ImportArchiveCreditService {
         i.setMontant(u.getMontant());
         i.setDateDemande(u.getDate());
         i.setDateLiquidation(u.getDate());
-        i.setNumeroFacture(u.getLibelle());
+        i.remplacerNumerosFacture(mr.gov.finances.sgci.domain.entity.NumerosJustificatifs.depuis(null, u.getLibelle()));
         i.setOrigineArchiveLibelle(u.getLibelle());
         i.setEmissionCertificatRequise(Boolean.FALSE);
         i.setCreditInterieurUtilise(u.getMontant());

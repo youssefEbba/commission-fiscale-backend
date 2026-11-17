@@ -488,6 +488,7 @@ public class SousTraitanceService {
                 .volumes(st.getVolumes())
                 .quantites(st.getQuantites())
                 .dateAutorisation(st.getDateAutorisation())
+                .dateDemande(st.getDateDemande())
                 .statut(st.getStatut())
                 .build();
     }

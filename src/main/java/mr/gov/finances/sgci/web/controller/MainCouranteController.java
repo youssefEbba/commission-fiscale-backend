@@ -6,6 +6,7 @@ import mr.gov.finances.sgci.service.maincourante.MainCouranteService;
 import mr.gov.finances.sgci.web.dto.maincourante.MainCouranteDto;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -25,7 +26,8 @@ public class MainCouranteController {
     private final MainCouranteService service;
 
     @GetMapping
-    public MainCouranteDto pourMoi(@AuthenticationPrincipal AuthenticatedUser user) {
-        return service.pourMoi(user);
+    public MainCouranteDto pourMoi(@AuthenticationPrincipal AuthenticatedUser user,
+                                   @RequestParam(value = "q", required = false) String q) {
+        return service.pourMoi(user, q);
     }
 }

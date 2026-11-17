@@ -8,4 +8,9 @@ import java.util.List;
 public interface LotImportArchiveCreditRepository extends JpaRepository<LotImportArchiveCredit, Long> {
 
     List<LotImportArchiveCredit> findByLotIdOrderByOrdreAsc(Long lotId);
+
+    /** Crédits de lot qui ont produit, ou retrouvé, ce certificat (tous lots confondus). */
+    List<LotImportArchiveCredit> findByCertificatId(Long certificatId);
+
+    List<LotImportArchiveCredit> findByMarcheId(Long marcheId);
 }

@@ -26,6 +26,7 @@ import java.time.Year;
  *   <li>{@code CR} — Certificat de crédit</li>
  *   <li>{@code DM} — Marché (mise en place)</li>
  *   <li>{@code DU} — Utilisation de crédit</li>
+ *   <li>{@code TR} — Transfert de crédit</li>
  * </ul>
  */
 @Service
@@ -37,6 +38,7 @@ public class ReferenceSequenceGenerator {
     public static final String PREFIX_MARCHE = "DM";
     public static final String PREFIX_UTILISATION = "DU";
     public static final String PREFIX_RATTACHEMENT = "RT";
+    public static final String PREFIX_TRANSFERT = "TR";
     /** Certificat d'utilisation : numéroté à l'apurement, sans segment de mois ({@code CU-001/2026}). */
     public static final String PREFIX_CERTIFICAT_UTILISATION = "CU";
 

@@ -621,6 +621,8 @@ public class CertificatCreditService {
                 documentService.findActiveDocumentTypes(entity.getId()));
         workflow.validateTransition(StatutCertificat.BROUILLON, StatutCertificat.ENVOYEE);
         entity.setStatut(StatutCertificat.ENVOYEE);
+        // Déposé maintenant : la date du brouillon n'est pas celle du dépôt (récépissé, reporting).
+        entity.setDateEmission(java.time.Instant.now());
         entity = repository.save(entity);
         CertificatCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "CertificatCredit", String.valueOf(id), result);

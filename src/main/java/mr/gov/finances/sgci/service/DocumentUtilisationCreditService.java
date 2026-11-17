@@ -74,7 +74,8 @@ public class DocumentUtilisationCreditService {
         int nextVersion = 1;
         DocumentUtilisationCredit previous = repository.findByUtilisationCreditIdAndCodeDocumentAndActifTrue(utilisationCreditId, codeDocument)
                 .orElse(null);
-        if (previous != null && !isCertificatUtilisationReplacement(utilisation, codeDocument, user)) {
+        if (previous != null && !DocumentDepotPolicy.estRecuDeDepot(codeDocument)
+                && !isCertificatUtilisationReplacement(utilisation, codeDocument, user)) {
             assertReplacementAllowed(utilisation, codeDocument, user);
         }
         if (previous != null) {
@@ -246,7 +247,8 @@ public class DocumentUtilisationCreditService {
         Role role = user.getRole();
         boolean deposant = role == Role.ENTREPRISE || role == Role.SOUS_TRAITANT
                 || role == Role.COMMISSION_RELAIS;
-        if (deposant && !DocumentDepotPolicy.deposableParLeDemandeur(processus, codeDocument)) {
+        if (deposant && !DocumentDepotPolicy.estRecuDeDepot(codeDocument)
+                && !DocumentDepotPolicy.deposableParLeDemandeur(processus, codeDocument)) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
                     TypeDocument.CHEQUE_CERTIFIE.name().equals(codeDocument)
                             ? "Le chèque certifié se dépose avec sa saisie (banque, numéro, montant)"

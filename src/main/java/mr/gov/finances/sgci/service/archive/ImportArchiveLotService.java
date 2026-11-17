@@ -655,6 +655,62 @@ public class ImportArchiveLotService {
         return id == null ? null : certificatRepository.getReferenceById(id);
     }
 
+    // ------------------------------------------------------------------
+    // Correction et suppression d'un crédit déjà importé (ArchiveCreditAdminService)
+    // ------------------------------------------------------------------
+
+    /** Le rattachement corrigé sur le crédit importé est reporté sur ses crédits de lot, pour que « Recalculer » le garde. */
+    @Transactional
+    public void reporterRattachement(Long certificatId, Entreprise entreprise, AutoriteContractante autorite,
+                                     Convention convention, Marche marche) {
+        for (LotImportArchiveCredit c : creditRepository.findByCertificatId(certificatId)) {
+            c.setEntreprise(entreprise);
+            c.setSourceEntreprise("MANUEL");
+            c.setAutoriteContractante(autorite);
+            c.setSourceAutorite("MANUEL");
+            c.setConvention(convention);
+            c.setSourceConvention("MANUEL");
+            c.setMarche(marche);
+            c.setSourceMarche(marche != null ? "MANUEL" : null);
+            c.setCreerMarche(false);
+        }
+    }
+
+    /** Vrai si le marché a été créé par l'import de ce crédit (et non choisi parmi les marchés existants). */
+    @Transactional(readOnly = true)
+    public boolean marcheCreeParImport(Long certificatId, Long marcheId) {
+        return marcheId != null && creditRepository.findByCertificatId(certificatId).stream()
+                .anyMatch(c -> c.getMarche() != null && marcheId.equals(c.getMarche().getId())
+                        && "CREE".equals(c.getSourceMarche()));
+    }
+
+    /**
+     * Le certificat a été supprimé : ses crédits de lot redeviennent importables. Le statut est recalculé
+     * (et non laissé à IMPORTE), sans quoi « Recalculer » reconstruirait un dossier entier.
+     */
+    @Transactional
+    public void detacherCertificatSupprime(Long certificatId) {
+        for (LotImportArchiveCredit c : creditRepository.findByCertificatId(certificatId)) {
+            c.setCertificat(null);
+            c.setDejaRepris(false);
+            c.setDateImport(null);
+            c.setMessageErreur(null);
+            c.setStatut(StatutCreditLotArchive.A_COMPLETER);
+            c.setStatut(statutCalcule(c, lire(c)));
+        }
+    }
+
+    /** Le marché va être supprimé : les crédits de lot qui le citent le perdent, et le créeront de nouveau si besoin. */
+    @Transactional
+    public void detacherMarcheSupprime(Long marcheId) {
+        for (LotImportArchiveCredit c : creditRepository.findByMarcheId(marcheId)) {
+            boolean cree = "CREE".equals(c.getSourceMarche());
+            c.setMarche(null);
+            c.setSourceMarche(null);
+            c.setCreerMarche(cree);
+        }
+    }
+
     @Transactional
     public void supprimer(Long lotId) {
         lotRepository.delete(lot(lotId));

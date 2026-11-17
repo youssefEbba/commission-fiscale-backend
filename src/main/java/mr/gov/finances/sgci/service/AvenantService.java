@@ -149,7 +149,8 @@ public class AvenantService {
     public void verifierDepotPiece(Long id, String codeDocument, AuthenticatedUser user) {
         Avenant a = charger(id, user);
         String code = DocumentCodeValidator.normalize(codeDocument);
-        if (DocumentDepotPolicy.horsDepot(ProcessusDocument.MODIFICATION_CI).contains(code)) {
+        if (!DocumentDepotPolicy.estRecuDeDepot(code)
+                && DocumentDepotPolicy.horsDepot(ProcessusDocument.MODIFICATION_CI).contains(code)) {
             Role role = user != null ? user.getRole() : null;
             if (role != Role.PRESIDENT && role != Role.ADMIN_SI) {
                 throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,

@@ -434,6 +434,8 @@ public class DemandeCorrectionService {
                 documentService.findActiveDocumentTypes(entity.getId()));
         workflow.validateTransition(StatutDemande.BROUILLON, StatutDemande.RECUE);
         entity.setStatut(StatutDemande.RECUE);
+        // Déposée maintenant : la date du brouillon n'est pas celle du dépôt (récépissé, reporting).
+        entity.setDateDepot(Instant.now());
         entity = demandeRepository.save(entity);
         DemandeCorrectionDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "DemandeCorrection", String.valueOf(id), result);
