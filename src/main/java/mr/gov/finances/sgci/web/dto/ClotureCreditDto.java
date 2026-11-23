@@ -17,6 +17,8 @@ import java.time.Instant;
 public class ClotureCreditDto {
 
     private Long id;
+    /** Référence lisible ({@code CL-…}) à afficher à la place de l'id. */
+    private String reference;
 
     private Instant dateProposition;
 

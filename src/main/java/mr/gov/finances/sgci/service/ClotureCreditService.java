@@ -60,6 +60,7 @@ public class ClotureCreditService {
 
     private final CertificatCreditRepository certificatCreditRepository;
     private final ClotureCreditRepository clotureCreditRepository;
+    private final ReferenceSequenceGenerator referenceSequenceGenerator;
     private final UtilisationCreditRepository utilisationCreditRepository;
     private final TransfertCreditRepository transfertCreditRepository;
     private final TvaDeductibleStockRepository tvaDeductibleStockRepository;
@@ -130,6 +131,9 @@ public class ClotureCreditService {
         BigDecimal soldeRestant = soldeCordon.add(soldeTva);
 
         ClotureCredit cc = existing != null ? existing : new ClotureCredit();
+        if (cc.getReference() == null) {
+            cc.setReference(referenceSequenceGenerator.next(ReferenceSequenceGenerator.PREFIX_CLOTURE));
+        }
         cc.setCertificatCredit(c);
         cc.setDateProposition(Instant.now());
         cc.setMotif(request.getMotif());
@@ -391,6 +395,7 @@ public class ClotureCreditService {
         CertificatCredit c = cc.getCertificatCredit();
         return ClotureCreditDto.builder()
                 .id(cc.getId())
+                .reference(cc.getReference())
                 .dateProposition(cc.getDateProposition())
                 .dateCloture(cc.getDateCloture())
                 .motif(cc.getMotif())

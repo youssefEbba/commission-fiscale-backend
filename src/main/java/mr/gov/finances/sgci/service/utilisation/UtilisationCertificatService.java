@@ -17,6 +17,11 @@ import java.util.List;
 public class UtilisationCertificatService {
 
     private final UtilisationCreditOperations operations;
+    public UtilisationCreditDto modifierMontantsPresident(Long id,
+            mr.gov.finances.sgci.web.dto.ModificationMontantsPresidentRequest request, AuthenticatedUser user) {
+        return operations.modifierMontantsPresident(id, request, user);
+    }
+
     public UtilisationCreditDto emettreCertificatUtilisation(Long id, AuthenticatedUser user) {
         return operations.emettreCertificatUtilisation(id, user);
     }

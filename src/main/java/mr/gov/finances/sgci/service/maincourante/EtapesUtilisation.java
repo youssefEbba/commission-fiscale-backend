@@ -43,7 +43,7 @@ public final class EtapesUtilisation {
      */
     private static final Map<StatutUtilisation, Set<Role>> DOUANE = new LinkedHashMap<>();
 
-    /** Circuit TVA intérieure : la DGTCP instruit, le Président émet, la DGI encaisse. */
+    /** Circuit TVA intérieure : la DGTCP instruit, la DGI encaisse, la DGTCP apure, le Président émet. */
     private static final Map<StatutUtilisation, Set<Role>> TVA_INTERIEURE = new LinkedHashMap<>();
 
     static {
@@ -61,15 +61,15 @@ public final class EtapesUtilisation {
         // un dossier ancien — les trois sont donc légitimement en attente de quelqu'un.
         DOUANE.put(StatutUtilisation.EN_CONTROLE_DGD, EnumSet.of(Role.DGD, Role.ENTREPRISE));
         DOUANE.put(StatutUtilisation.VISE, EnumSet.of(Role.ENTREPRISE, Role.DGTCP));
-        // Chèque saisi : la DGTCP contrôle et transmet au Président.
+        // Chèque saisi : la DGTCP envoie au Trésor, enregistre les quittances, liquide (débit).
         DOUANE.put(StatutUtilisation.CHEQUE_SAISI, EnumSet.of(Role.DGTCP));
-        DOUANE.put(StatutUtilisation.TRANSMISE_AU_PRESIDENT, EnumSet.of(Role.PRESIDENT));
-        // Le certificat émis ouvre le paiement au Trésor, puis la liquidation.
-        DOUANE.put(StatutUtilisation.CERTIFICAT_EMIS, EnumSet.of(Role.DGTCP));
         DOUANE.put(StatutUtilisation.ENVOYEE_AU_TRESOR, EnumSet.of(Role.DGTCP));
         DOUANE.put(StatutUtilisation.QUITTANCES_ENREGISTREES, EnumSet.of(Role.DGTCP));
-        // Liquidé : l'entreprise accuse réception, ce qui clôt le dossier.
-        DOUANE.put(StatutUtilisation.LIQUIDEE, EnumSet.of(Role.ENTREPRISE, Role.SOUS_TRAITANT));
+        // Liquidé : la DGTCP transmet au Président, qui corrige éventuellement puis émet.
+        DOUANE.put(StatutUtilisation.LIQUIDEE, EnumSet.of(Role.DGTCP));
+        DOUANE.put(StatutUtilisation.TRANSMISE_AU_PRESIDENT, EnumSet.of(Role.PRESIDENT));
+        // Le certificat émis est la dernière pièce : la DGTCP clôture.
+        DOUANE.put(StatutUtilisation.CERTIFICAT_EMIS, EnumSet.of(Role.DGTCP));
 
         // ── TVA intérieure ─────────────────────────────────────────────────────────────────────
         TVA_INTERIEURE.put(StatutUtilisation.BROUILLON, EnumSet.of(Role.ENTREPRISE, Role.SOUS_TRAITANT));
@@ -77,10 +77,13 @@ public final class EtapesUtilisation {
         TVA_INTERIEURE.put(StatutUtilisation.DEMANDEE, EnumSet.of(Role.DGTCP));
         TVA_INTERIEURE.put(StatutUtilisation.A_RECONTROLER, EnumSet.of(Role.DGTCP));
         TVA_INTERIEURE.put(StatutUtilisation.EN_VERIFICATION, EnumSet.of(Role.DGTCP));
-        TVA_INTERIEURE.put(StatutUtilisation.VALIDEE, EnumSet.of(Role.PRESIDENT));
-        // Le certificat est la pièce que l'entreprise présente à la DGI pour obtenir sa quittance.
-        TVA_INTERIEURE.put(StatutUtilisation.CERTIFICAT_EMIS, EnumSet.of(Role.DGI));
+        // Validée : la DGI délivre la quittance, la DGTCP apure (débit) puis transmet au Président.
+        TVA_INTERIEURE.put(StatutUtilisation.VALIDEE, EnumSet.of(Role.DGI));
         TVA_INTERIEURE.put(StatutUtilisation.QUITTANCE_DGI_ENREGISTREE, EnumSet.of(Role.DGTCP));
+        TVA_INTERIEURE.put(StatutUtilisation.APUREE, EnumSet.of(Role.DGTCP));
+        TVA_INTERIEURE.put(StatutUtilisation.TRANSMISE_AU_PRESIDENT, EnumSet.of(Role.PRESIDENT));
+        // Le certificat émis est la dernière pièce : la DGTCP clôture.
+        TVA_INTERIEURE.put(StatutUtilisation.CERTIFICAT_EMIS, EnumSet.of(Role.DGTCP));
     }
 
     /** Les statuts qui attendent ce rôle, pour ce type d'utilisation. */
@@ -113,9 +116,11 @@ public final class EtapesUtilisation {
         if (type == TypeUtilisation.TVA_INTERIEURE) {
             return switch (statut) {
                 case DEMANDEE, A_RECONTROLER, EN_VERIFICATION -> "Vérifier et valider l'utilisation";
-                case VALIDEE -> "Émettre le certificat d'utilisation";
-                case CERTIFICAT_EMIS -> "Enregistrer la quittance DGI";
+                case VALIDEE -> "Enregistrer la quittance DGI";
                 case QUITTANCE_DGI_ENREGISTREE -> "Apurer la TVA intérieure";
+                case APUREE -> "Transmettre au Président";
+                case TRANSMISE_AU_PRESIDENT -> "Vérifier les montants et émettre le certificat d'utilisation";
+                case CERTIFICAT_EMIS -> "Clôturer l'utilisation";
                 default -> "Traiter l'utilisation";
             };
         }
@@ -123,12 +128,12 @@ public final class EtapesUtilisation {
             case DEMANDEE, A_RECONTROLER, EN_VERIFICATION -> "Vérifier le bulletin de liquidation";
             case EN_CONTROLE_DGD -> "Viser le bulletin, ou saisir le chèque";
             case VISE -> "Saisir le chèque de la part à payer";
-            case CHEQUE_SAISI -> "Contrôler et transmettre au Président";
-            case TRANSMISE_AU_PRESIDENT -> "Émettre le certificat d'utilisation";
-            case CERTIFICAT_EMIS -> "Envoyer au Trésor";
+            case CHEQUE_SAISI -> "Envoyer au Trésor";
             case ENVOYEE_AU_TRESOR -> "Enregistrer les quittances du Trésor";
             case QUITTANCES_ENREGISTREES -> "Liquider l'utilisation";
-            case LIQUIDEE -> "Accuser réception pour clôturer";
+            case LIQUIDEE -> "Transmettre au Président";
+            case TRANSMISE_AU_PRESIDENT -> "Vérifier les montants et émettre le certificat d'utilisation";
+            case CERTIFICAT_EMIS -> "Clôturer l'utilisation";
             default -> "Traiter l'utilisation";
         };
     }

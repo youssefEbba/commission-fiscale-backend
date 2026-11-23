@@ -21,6 +21,10 @@ public class ClotureCredit {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Référence lisible ({@code CL-NNNN-MM-AAAA}) : c'est elle qu'on affiche, jamais l'id technique. */
+    @Column(length = 64)
+    private String reference;
+
     private Instant dateProposition;
 
     private Instant dateCloture;

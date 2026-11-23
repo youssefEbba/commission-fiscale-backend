@@ -82,6 +82,7 @@ class EtapesUtilisationTest {
                 StatutUtilisation.ENVOYEE_AU_TRESOR,
                 StatutUtilisation.QUITTANCES_ENREGISTREES,
                 StatutUtilisation.LIQUIDEE,
+                StatutUtilisation.APUREE,
                 StatutUtilisation.VALIDEE,
                 StatutUtilisation.QUITTANCE_DGI_ENREGISTREE);
     }

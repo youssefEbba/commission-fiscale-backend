@@ -1,6 +1,7 @@
 package mr.gov.finances.sgci.service.utilisation;
 
 import mr.gov.finances.sgci.domain.entity.NumerosJustificatifs;
+import mr.gov.finances.sgci.web.dto.ModificationMontantsPresidentRequest;
 import mr.gov.finances.sgci.domain.MontantsTexte;
 import mr.gov.finances.sgci.web.exception.ApiErrorCode;
 import mr.gov.finances.sgci.web.exception.ApiException;
@@ -695,11 +696,12 @@ public class UtilisationCreditOperations {
 
         StatutUtilisation actuel = entity.getStatut();
         boolean remplacement = actuel == StatutUtilisation.QUITTANCE_DGI_ENREGISTREE;
-        // La DGI délivre sa quittance sur présentation du certificat : il doit précéder, pas suivre.
-        if (actuel != StatutUtilisation.CERTIFICAT_EMIS && !remplacement) {
-            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.CERTIFICAT_UTILISATION_NON_EMIS,
-                    "La quittance DGI suppose le certificat d'utilisation émis par le Président. "
-                            + "Statut actuel : " + actuel);
+        // La quittance suit la validation par la DGTCP ; le certificat viendra après l'apurement.
+        // Un dossier engagé sous l'ancien ordre la reçoit, lui, après son certificat.
+        boolean ancienOrdre = actuel == StatutUtilisation.CERTIFICAT_EMIS && !entity.creditDebite();
+        if (actuel != StatutUtilisation.VALIDEE && !ancienOrdre && !remplacement) {
+            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.STATUT_INCOMPATIBLE,
+                    "La quittance DGI suppose l'utilisation validée par la DGTCP. Statut actuel : " + actuel);
         }
 
         if (numeroQuittance == null || numeroQuittance.isBlank()) {
@@ -879,42 +881,12 @@ public class UtilisationCreditOperations {
 
         consumeTvaDeductible(certificat.getId(), tvaDeductible);
 
-        BigDecimal tvaNette = tvaCollectee.subtract(tvaDeductible);
-        t.setTvaDeductibleUtilisee(tvaDeductible);
-        t.setTvaNette(tvaNette);
         t.setSoldeTVAAvant(soldeAvant);
+        ImputationTva imputation = imputerTva(soldeAvant, tvaCollectee, tvaDeductible);
+        appliquerImputationTva(t, tvaDeductible, imputation);
 
-        BigDecimal creditUtilise = BigDecimal.ZERO;
-        BigDecimal paiementEntreprise = BigDecimal.ZERO;
-        BigDecimal report = BigDecimal.ZERO;
-        BigDecimal soldeApres = soldeAvant;
-
-        int cmp = tvaNette.compareTo(BigDecimal.ZERO);
-        if (cmp == 0) {
-            // cas 1: neutre
-        } else if (cmp > 0) {
-            // cas 2
-            if (soldeAvant.compareTo(tvaNette) >= 0) {
-                creditUtilise = tvaNette;
-                soldeApres = soldeAvant.subtract(tvaNette);
-            } else {
-                creditUtilise = soldeAvant;
-                paiementEntreprise = tvaNette.subtract(soldeAvant);
-                soldeApres = BigDecimal.ZERO;
-            }
-        } else {
-            // cas 3
-            report = tvaNette.abs();
-            soldeApres = soldeAvant.add(report);
-        }
-
-        certificat.setSoldeTVA(soldeApres);
+        certificat.setSoldeTVA(imputation.soldeApres());
         certificatRepository.save(certificat);
-
-        t.setCreditInterieurUtilise(creditUtilise);
-        t.setPaiementEntreprise(paiementEntreprise);
-        t.setReportANouveau(report);
-        t.setSoldeTVAApres(soldeApres);
 
         t.setStatut(StatutUtilisation.APUREE);
         t.setDateLiquidation(Instant.now());
@@ -929,6 +901,226 @@ public class UtilisationCreditOperations {
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
         notifyUtilisationStatutChange(entity, StatutUtilisation.APUREE, user);
         return result;
+    }
+
+    /** Résultat de l'imputation d'une TVA intérieure sur le crédit, à partir du solde avant. */
+    private record ImputationTva(BigDecimal tvaNette, BigDecimal creditUtilise, BigDecimal paiementEntreprise,
+                                 BigDecimal report, BigDecimal soldeApres) {
+    }
+
+    /**
+     * La règle de l'apurement, seule source du calcul : TVA nette = collectée − déductible ; nette
+     * positive, imputée sur le solde et le reste payé par l'entreprise ; négative, reportée à nouveau.
+     */
+    private static ImputationTva imputerTva(BigDecimal soldeAvant, BigDecimal tvaCollectee, BigDecimal tvaDeductible) {
+        BigDecimal tvaNette = tvaCollectee.subtract(tvaDeductible);
+        int cmp = tvaNette.compareTo(BigDecimal.ZERO);
+        if (cmp == 0) {
+            return new ImputationTva(tvaNette, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, soldeAvant);
+        }
+        if (cmp > 0) {
+            if (soldeAvant.compareTo(tvaNette) >= 0) {
+                return new ImputationTva(tvaNette, tvaNette, BigDecimal.ZERO, BigDecimal.ZERO, soldeAvant.subtract(tvaNette));
+            }
+            return new ImputationTva(tvaNette, soldeAvant, tvaNette.subtract(soldeAvant), BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+        BigDecimal report = tvaNette.abs();
+        return new ImputationTva(tvaNette, BigDecimal.ZERO, BigDecimal.ZERO, report, soldeAvant.add(report));
+    }
+
+    private static void appliquerImputationTva(UtilisationTVAInterieure t, BigDecimal tvaDeductible, ImputationTva i) {
+        t.setTvaDeductibleUtilisee(tvaDeductible);
+        t.setTvaNette(i.tvaNette());
+        t.setCreditInterieurUtilise(i.creditUtilise());
+        t.setPaiementEntreprise(i.paiementEntreprise());
+        t.setReportANouveau(i.report());
+        t.setSoldeTVAApres(i.soldeApres());
+    }
+
+    /**
+     * Correction des montants par le Président, avant l'émission du certificat d'utilisation.
+     *
+     * <p>Le crédit est déjà débité : chaque écart est rendu au crédit (ou repris) pour que les soldes
+     * restent justes. En douane, le Président ne peut que réduire le montant imputé — la part à payer
+     * a déjà été encaissée par le Trésor, le chèque reste tel quel. En TVA intérieure, la TVA
+     * collectée et la TVA déductible se corrigent librement, dans la limite du stock disponible ; le
+     * résultat est recalculé par la règle de l'apurement.
+     *
+     * <p>Le montant imputé d'origine est conservé ({@code montantImputeAvantModification}) pour la
+     * mention du certificat. L'ADMIN_SI peut se substituer au Président.
+     */
+    @Transactional
+    public UtilisationCreditDto modifierMontantsPresident(Long id, ModificationMontantsPresidentRequest request,
+                                                          AuthenticatedUser user) {
+        Role role = user != null ? user.getRole() : null;
+        if (role != Role.PRESIDENT && role != Role.ADMIN_SI) {
+            throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
+                    "La correction des montants avant le certificat revient au Président");
+        }
+        String motif = request != null && request.getMotif() != null ? request.getMotif().trim() : "";
+        if (motif.isEmpty()) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Le motif de la correction est obligatoire");
+        }
+        UtilisationCredit entity = repository.findById(id)
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Utilisation non trouvée: " + id));
+        if (entity.getStatut() != StatutUtilisation.TRANSMISE_AU_PRESIDENT || !entity.creditDebite()) {
+            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.STATUT_INCOMPATIBLE,
+                    "Les montants se corrigent sur un dossier débité et transmis au Président, avant le certificat. "
+                            + "Statut actuel : " + entity.getStatut());
+        }
+        CertificatCredit certificat = certificatRepository.findById(entity.getCertificatCredit().getId())
+                .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND, "Certificat de crédit non trouvé"));
+
+        Map<String, Object> avant = new HashMap<>();
+        Map<String, Object> apres = new HashMap<>();
+        BigDecimal imputeAvant;
+        if (entity instanceof UtilisationDouaniere d) {
+            imputeAvant = corrigerDouane(d, certificat, request, avant, apres);
+        } else if (entity instanceof UtilisationTVAInterieure t) {
+            imputeAvant = corrigerTvaInterieure(t, certificat, request, avant, apres);
+        } else {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Type d'utilisation inconnu");
+        }
+        certificatRepository.save(certificat);
+        if (entity.getMontantImputeAvantModification() == null) {
+            entity.setMontantImputeAvantModification(imputeAvant);
+        }
+        entity.setMotifModificationPresident(motif);
+        entity.setDateModificationPresident(Instant.now());
+        entity = repository.save(entity);
+
+        Map<String, Object> trace = new HashMap<>();
+        trace.put("avant", avant);
+        trace.put("apres", apres);
+        trace.put("role", role.name());
+        auditService.log(role == Role.ADMIN_SI ? AuditAction.ADMIN_CORRECTION : AuditAction.UPDATE,
+                "UtilisationCredit", String.valueOf(id), trace, motif);
+        return toDto(entity);
+    }
+
+    /** Douane : réduction seulement ; rend les droits au solde cordon et la TVA au quota et au stock. */
+    private BigDecimal corrigerDouane(UtilisationDouaniere d, CertificatCredit certificat,
+                                      ModificationMontantsPresidentRequest r,
+                                      Map<String, Object> avant, Map<String, Object> apres) {
+        BigDecimal total = nz(d.getTotalPrisEnCharge());
+        BigDecimal tva = nz(d.getMontantTVA());
+        BigDecimal droits = total.subtract(tva);
+        BigDecimal nouveauxDroits = r.getDroitsImputes() != null ? r.getDroitsImputes() : droits;
+        BigDecimal nouvelleTva = r.getTvaImputee() != null ? r.getTvaImputee() : tva;
+        if (nouveauxDroits.signum() < 0 || nouvelleTva.signum() < 0) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Les montants ne peuvent pas être négatifs");
+        }
+        if (nouveauxDroits.compareTo(droits) > 0 || nouvelleTva.compareTo(tva) > 0) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "En douane, le montant imputé ne peut qu'être réduit : la part à payer est déjà encaissée "
+                            + "(droits ≤ " + MontantsTexte.mru(droits) + ", TVA ≤ " + MontantsTexte.mru(tva) + ")");
+        }
+        BigDecimal droitsRendus = droits.subtract(nouveauxDroits);
+        BigDecimal tvaRendue = tva.subtract(nouvelleTva);
+        if (tvaRendue.signum() > 0) {
+            mr.gov.finances.sgci.domain.entity.TvaDeductibleStock stock = tvaStockRepository
+                    .findByCertificatCreditIdOrderByDateCreationAsc(certificat.getId()).stream()
+                    .filter(s -> s.getUtilisationDouane() != null && d.getId().equals(s.getUtilisationDouane().getId()))
+                    .findFirst().orElse(null);
+            if (stock == null || nz(stock.getMontantRestant()).compareTo(tvaRendue) < 0) {
+                throw ApiException.conflict(ApiErrorCode.STATUT_INCOMPATIBLE,
+                        "La TVA de cette liquidation a déjà été déduite d'une TVA intérieure : elle ne peut plus être "
+                                + "réduite de " + MontantsTexte.mru(tvaRendue));
+            }
+            stock.setMontantInitial(nz(stock.getMontantInitial()).subtract(tvaRendue));
+            stock.setMontantRestant(stock.getMontantRestant().subtract(tvaRendue));
+            tvaStockRepository.save(stock);
+            certificat.setTvaImportationDouane(nz(certificat.getTvaImportationDouane()).add(tvaRendue));
+        }
+        if (droitsRendus.signum() > 0) {
+            certificat.setSoldeCordon(nz(certificat.getSoldeCordon()).add(droitsRendus));
+            d.setSoldeCordonApres(nz(d.getSoldeCordonApres()).add(droitsRendus));
+        }
+        avant.put("droitsImputes", droits);
+        avant.put("tvaImputee", tva);
+        apres.put("droitsImputes", nouveauxDroits);
+        apres.put("tvaImputee", nouvelleTva);
+        BigDecimal nouveauTotal = nouveauxDroits.add(nouvelleTva);
+        d.setMontantTVA(nouvelleTva);
+        d.setTotalPrisEnCharge(nouveauTotal);
+        d.setMontant(nouveauTotal);
+        return total;
+    }
+
+    /** TVA intérieure : recalcul par la règle de l'apurement, stock et solde ajustés de l'écart. */
+    private BigDecimal corrigerTvaInterieure(UtilisationTVAInterieure t, CertificatCredit certificat,
+                                             ModificationMontantsPresidentRequest r,
+                                             Map<String, Object> avant, Map<String, Object> apres) {
+        BigDecimal collectee = nz(t.getMontantTVA());
+        BigDecimal deductible = nz(t.getTvaDeductibleUtilisee());
+        BigDecimal nouvelleCollectee = r.getMontantTVA() != null ? r.getMontantTVA() : collectee;
+        BigDecimal nouvelleDeductible = r.getTvaDeductibleUtilisee() != null ? r.getTvaDeductibleUtilisee() : deductible;
+        if (nouvelleCollectee.signum() < 0 || nouvelleDeductible.signum() < 0) {
+            throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED, "Les montants ne peuvent pas être négatifs");
+        }
+        BigDecimal ecartDeductible = nouvelleDeductible.subtract(deductible);
+        if (ecartDeductible.signum() > 0) {
+            BigDecimal dispo = tvaStockRepository.findByCertificatCreditIdOrderByDateCreationAsc(certificat.getId()).stream()
+                    .map(s -> nz(s.getMontantRestant())).reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (ecartDeductible.compareTo(dispo) > 0) {
+                throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                        "TVA déductible insuffisante : disponible " + MontantsTexte.mru(dispo)
+                                + ", supplément demandé " + MontantsTexte.mru(ecartDeductible));
+            }
+        }
+        BigDecimal soldeAvant = nz(t.getSoldeTVAAvant());
+        BigDecimal ancienSoldeApres = nz(t.getSoldeTVAApres());
+        ImputationTva imputation = imputerTva(soldeAvant, nouvelleCollectee, nouvelleDeductible);
+        BigDecimal nouveauSoldeCredit = nz(certificat.getSoldeTVA()).add(imputation.soldeApres()).subtract(ancienSoldeApres);
+        if (nouveauSoldeCredit.signum() < 0) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Solde TVA du crédit insuffisant pour cette correction (il deviendrait "
+                            + MontantsTexte.mru(nouveauSoldeCredit) + ")");
+        }
+        if (ecartDeductible.signum() > 0) {
+            consumeTvaDeductible(certificat.getId(), ecartDeductible);
+        } else if (ecartDeductible.signum() < 0) {
+            restituerTvaDeductible(certificat.getId(), ecartDeductible.negate());
+        }
+        BigDecimal imputeAvant = nz(t.getCreditInterieurUtilise());
+        avant.put("montantTVA", collectee);
+        avant.put("tvaDeductibleUtilisee", deductible);
+        avant.put("creditInterieurUtilise", imputeAvant);
+        apres.put("montantTVA", nouvelleCollectee);
+        apres.put("tvaDeductibleUtilisee", nouvelleDeductible);
+        apres.put("creditInterieurUtilise", imputation.creditUtilise());
+        if (t.getMontant() != null && t.getMontant().compareTo(collectee) == 0) {
+            t.setMontant(nouvelleCollectee);
+        }
+        t.setMontantTVA(nouvelleCollectee);
+        appliquerImputationTva(t, nouvelleDeductible, imputation);
+        certificat.setSoldeTVA(nouveauSoldeCredit);
+        return imputeAvant;
+    }
+
+    /** Rend de la TVA déductible au stock, aux lignes consommées en dernier d'abord. */
+    private void restituerTvaDeductible(Long certificatCreditId, BigDecimal montant) {
+        BigDecimal reste = montant;
+        List<mr.gov.finances.sgci.domain.entity.TvaDeductibleStock> stocks =
+                new java.util.ArrayList<>(tvaStockRepository.findByCertificatCreditIdOrderByDateCreationAsc(certificatCreditId));
+        java.util.Collections.reverse(stocks);
+        for (mr.gov.finances.sgci.domain.entity.TvaDeductibleStock s : stocks) {
+            if (reste.signum() <= 0) {
+                break;
+            }
+            BigDecimal consomme = nz(s.getMontantInitial()).subtract(nz(s.getMontantRestant()));
+            if (consomme.signum() <= 0) {
+                continue;
+            }
+            BigDecimal rendu = consomme.min(reste);
+            s.setMontantRestant(nz(s.getMontantRestant()).add(rendu));
+            reste = reste.subtract(rendu);
+            tvaStockRepository.save(s);
+        }
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v != null ? v : BigDecimal.ZERO;
     }
 
     private void consumeTvaDeductible(Long certificatCreditId, BigDecimal amount) {
@@ -1397,9 +1589,10 @@ public class UtilisationCreditOperations {
     /**
      * Étape DGTCP : contrôle du dossier et transmission au Président.
      *
-     * <p>La DGTCP vérifie que le dossier est complet — bulletin visé par la DGD, chèque certifié
-     * couvrant la part à payer — avant de le présenter au Président, qui émettra le certificat.
-     * Aucune opération financière ici : les soldes ne bougent qu'à la liquidation.
+     * <p>Une fois le crédit débité — liquidation en douane, apurement en TVA intérieure — la DGTCP
+     * présente le dossier au Président, qui peut encore corriger les montants
+     * ({@link #modifierMontantsPresident}) avant d'émettre le certificat. Le certificat porte ainsi
+     * les montants définitifs et les soldes après débit.
      *
      * <p>Statut résultant : {@link StatutUtilisation#TRANSMISE_AU_PRESIDENT}.
      */
@@ -1408,40 +1601,31 @@ public class UtilisationCreditOperations {
         UtilisationCredit entity = repository.findById(id)
                 .orElseThrow(() -> ApiException.notFound(ApiErrorCode.RESOURCE_NOT_FOUND,
                         "Utilisation non trouvée: " + id));
-        if (!(entity instanceof UtilisationDouaniere d)) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                    "Cette utilisation n'est pas de type Douane");
-        }
         // Idempotence : un double clic du front ne doit pas produire un 409.
         if (entity.getStatut() == StatutUtilisation.TRANSMISE_AU_PRESIDENT) {
             return toDto(entity);
         }
-        if (entity.getStatut() != StatutUtilisation.CHEQUE_SAISI) {
+        // Le crédit est débité avant le certificat, pour que celui-ci porte les montants définitifs :
+        // la DGTCP transmet après la liquidation (douane) ou l'apurement (TVA intérieure).
+        StatutUtilisation debite = statutCreditDebite(entity);
+        if (entity.getStatut() != debite || !entity.creditDebite()) {
             throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.STATUT_INCOMPATIBLE,
-                    "La transmission suppose le chèque certifié saisi par l'entreprise. Statut actuel : "
-                            + entity.getStatut());
+                    "La transmission au Président suppose le crédit débité (statut " + debite
+                            + "). Statut actuel : " + entity.getStatut());
         }
         workflow.validateTransition(entity.getStatut(), StatutUtilisation.TRANSMISE_AU_PRESIDENT);
-        assertActorCanTransition(entity, StatutUtilisation.TRANSMISE_AU_PRESIDENT, user);
         if (user == null || user.getRole() != Role.DGTCP) {
             throw ApiException.forbidden(ApiErrorCode.ROLE_FORBIDDEN,
                     "Seul DGTCP peut transmettre le dossier au Président");
         }
-
-        // La substance du contrôle : c'est ce que la DGTCP atteste en transmettant.
-        if (d.getNumeroCheque() == null || d.getNumeroCheque().isBlank()
-                || d.getMontantCheque() == null) {
-            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
-                    "Le chèque certifié doit être saisi avant la transmission au Président");
-        }
-        if (documentUtilisationCreditRepository
+        if (entity instanceof UtilisationDouaniere d && documentUtilisationCreditRepository
                 .findByUtilisationCreditIdAndCodeDocumentAndActifTrue(id, "BULLETIN_ANNOTE").isEmpty()) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Le bulletin annoté par la DGD doit être au dossier avant la transmission");
         }
 
-        d.setStatut(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
-        entity = repository.save(d);
+        entity.setStatut(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
+        entity = repository.save(entity);
         UtilisationCreditDto result = toDto(entity);
         auditService.log(AuditAction.UPDATE, "UtilisationCredit", String.valueOf(id), result);
         notifyUtilisationStatutChange(entity, StatutUtilisation.TRANSMISE_AU_PRESIDENT, user);
@@ -1460,10 +1644,12 @@ public class UtilisationCreditOperations {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION, "Cette utilisation n'est pas de type Douane");
         }
 
-        // Le Trésor encaisse sur présentation du certificat : sans lui, l'envoi n'a pas d'objet.
-        if (entity.getStatut() != StatutUtilisation.CERTIFICAT_EMIS) {
-            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.CERTIFICAT_UTILISATION_NON_EMIS,
-                    "Le certificat d'utilisation doit être émis par le Président avant l'envoi au Trésor. "
+        // Le chèque saisi, le dossier part au Trésor ; le certificat viendra après la liquidation.
+        // Un dossier engagé sous l'ancien ordre part, lui, de son certificat déjà émis.
+        boolean ancienOrdre = entity.getStatut() == StatutUtilisation.CERTIFICAT_EMIS && !entity.creditDebite();
+        if (entity.getStatut() != StatutUtilisation.CHEQUE_SAISI && !ancienOrdre) {
+            throw new ApiException(HttpStatus.CONFLICT.value(), ApiErrorCode.STATUT_INCOMPATIBLE,
+                    "L'envoi au Trésor suppose le chèque certifié saisi par l'entreprise. "
                             + "Statut actuel : " + entity.getStatut());
         }
         workflow.validateTransition(entity.getStatut(), StatutUtilisation.ENVOYEE_AU_TRESOR);
@@ -1609,10 +1795,13 @@ public class UtilisationCreditOperations {
             throw ApiException.badRequest(ApiErrorCode.VALIDATION_FAILED,
                     "Le motif est obligatoire pour une clôture par substitution administrative");
         }
+        // Ordre actuel : débité puis certificat émis. Ancien ordre et reprises d'archive : débité
+        // (LIQUIDEE / APUREE), le certificat étant déjà émis ou non requis.
         StatutUtilisation debite = statutCreditDebite(entity);
-        if (entity.getStatut() != debite) {
+        boolean certificatFinal = entity.getStatut() == StatutUtilisation.CERTIFICAT_EMIS && entity.creditDebite();
+        if (entity.getStatut() != debite && !certificatFinal) {
             throw ApiException.badRequest(ApiErrorCode.STATUT_INCOMPATIBLE,
-                    "La clôture suppose le crédit débité (statut " + debite + "). Statut actuel : "
+                    "La clôture suppose le crédit débité et le certificat d'utilisation émis. Statut actuel : "
                             + entity.getStatut());
         }
         workflow.validateTransition(entity.getStatut(), StatutUtilisation.CLOTUREE);
@@ -1927,9 +2116,10 @@ public class UtilisationCreditOperations {
       * après le calcul financier qui la suit.
       */
     private static StatutUtilisation statutPrealableEmission(UtilisationCredit u) {
-        return u.getType() == TypeUtilisation.DOUANIER
-                ? StatutUtilisation.TRANSMISE_AU_PRESIDENT
-                : StatutUtilisation.VALIDEE;
+        // Les deux branches : le dossier débité, transmis par la DGTCP. Un dossier douane transmis
+        // sous l'ancien ordre (sans débit) est aussi à ce statut et s'émet de même ; un dossier TVA
+        // validé sous l'ancien ordre suit désormais la quittance DGI puis l'apurement.
+        return StatutUtilisation.TRANSMISE_AU_PRESIDENT;
     }
 
     /** Exception correspondant à un code de blocage : message et code restent solidaires. */
@@ -2038,6 +2228,14 @@ public class UtilisationCreditOperations {
         if (statut == StatutUtilisation.TRANSMISE_AU_PRESIDENT) {
             throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
                     "Transmission au Président : veuillez utiliser POST /{id}/transmission-president");
+        }
+        if (statut == StatutUtilisation.ENVOYEE_AU_TRESOR || statut == StatutUtilisation.QUITTANCE_DGI_ENREGISTREE) {
+            throw ApiException.badRequest(ApiErrorCode.BUSINESS_RULE_VIOLATION,
+                    "Étape de paiement : veuillez utiliser la route dédiée (envoi au Trésor, quittance DGI)");
+        }
+        if ((statut == StatutUtilisation.REJETEE || statut == StatutUtilisation.INCOMPLETE) && entity.creditDebite()) {
+            throw ApiException.conflict(ApiErrorCode.STATUT_INCOMPATIBLE,
+                    "Le crédit est déjà débité : le Président corrige les montants au lieu de rejeter");
         }
         if (statut == StatutUtilisation.EN_VERIFICATION) {
             assertRequiredDocumentsPresent(entity);
@@ -2267,6 +2465,10 @@ public class UtilisationCreditOperations {
 
         UtilisationCreditDto.UtilisationCreditDtoBuilder b = UtilisationCreditDto.builder()
                 .origineArchiveLibelle(u.getOrigineArchiveLibelle())
+                .montantImputeAvantModification(u.getMontantImputeAvantModification())
+                .motifModificationPresident(u.getMotifModificationPresident())
+                .dateModificationPresident(u.getDateModificationPresident())
+                .creditDebite(u.creditDebite())
                 // Portes par la classe mere : les deux branches ont un certificat d'utilisation.
                 .numeroCertificatUtilisation(u.getNumeroCertificatUtilisation())
                 .dateCertificatUtilisation(u.getDateCertificatUtilisation())

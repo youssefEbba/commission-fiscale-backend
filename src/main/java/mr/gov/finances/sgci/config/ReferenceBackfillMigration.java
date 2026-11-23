@@ -6,11 +6,15 @@ import mr.gov.finances.sgci.domain.entity.CertificatCredit;
 import mr.gov.finances.sgci.domain.entity.DemandeCorrection;
 import mr.gov.finances.sgci.domain.entity.Marche;
 import mr.gov.finances.sgci.domain.entity.TransfertCredit;
+import mr.gov.finances.sgci.domain.entity.SousTraitance;
+import mr.gov.finances.sgci.domain.entity.ClotureCredit;
 import mr.gov.finances.sgci.domain.entity.UtilisationCredit;
 import mr.gov.finances.sgci.repository.CertificatCreditRepository;
 import mr.gov.finances.sgci.repository.DemandeCorrectionRepository;
 import mr.gov.finances.sgci.repository.MarcheRepository;
 import mr.gov.finances.sgci.repository.TransfertCreditRepository;
+import mr.gov.finances.sgci.repository.SousTraitanceRepository;
+import mr.gov.finances.sgci.repository.ClotureCreditRepository;
 import mr.gov.finances.sgci.repository.UtilisationCreditRepository;
 import mr.gov.finances.sgci.service.ReferenceSequenceGenerator;
 import mr.gov.finances.sgci.service.archive.ImportArchiveCreditService;
@@ -37,6 +41,8 @@ public class ReferenceBackfillMigration {
     private final MarcheRepository marcheRepository;
     private final UtilisationCreditRepository utilisationCreditRepository;
     private final TransfertCreditRepository transfertCreditRepository;
+    private final SousTraitanceRepository sousTraitanceRepository;
+    private final ClotureCreditRepository clotureCreditRepository;
     private final ReferenceSequenceGenerator referenceSequenceGenerator;
 
     @Transactional
@@ -68,6 +74,16 @@ public class ReferenceBackfillMigration {
                 transfertCreditRepository.findAll(),
                 TransfertCredit::getId, TransfertCredit::getReference,
                 TransfertCredit::setReference, transfertCreditRepository::save);
+
+        backfill("SousTraitance", ReferenceSequenceGenerator.PREFIX_SOUS_TRAITANCE,
+                sousTraitanceRepository.findAll(),
+                SousTraitance::getId, SousTraitance::getReference,
+                SousTraitance::setReference, sousTraitanceRepository::save);
+
+        backfill("ClotureCredit", ReferenceSequenceGenerator.PREFIX_CLOTURE,
+                clotureCreditRepository.findAll(),
+                ClotureCredit::getId, ClotureCredit::getReference,
+                ClotureCredit::setReference, clotureCreditRepository::save);
     }
 
     /** Les transferts repris de l'archive avant l'ajout de la référence reçoivent {@code ARCHIVE-TR-…}. */

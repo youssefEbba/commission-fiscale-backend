@@ -41,6 +41,25 @@ public abstract class UtilisationCredit {
     private Instant dateLiquidation;
 
     /**
+     * Le crédit a été débité : la liquidation (douane) ou l'apurement (TVA intérieure) posent
+     * {@code dateLiquidation}. Depuis le 23/11/2026 le débit précède le certificat d'utilisation ;
+     * un dossier engagé avant, chez le Président sans débit, termine l'ancien ordre.
+     */
+    /** Montant imputé sur le crédit avant la première correction du Président ; nul sans correction. */
+    @Column(name = "montant_impute_avant_modification", precision = 19, scale = 4)
+    private BigDecimal montantImputeAvantModification;
+
+    @Column(name = "motif_modification_president", length = 500)
+    private String motifModificationPresident;
+
+    @Column(name = "date_modification_president")
+    private Instant dateModificationPresident;
+
+    public boolean creditDebite() {
+        return dateLiquidation != null;
+    }
+
+    /**
      * Numéro du certificat d'utilisation ({@code CU-001/2026}), attribué une seule fois par le
      * Président à l'émission. Porté par la classe mère : les deux branches en ont un, la douane
      * comme la TVA intérieure. Héritage SINGLE_TABLE, donc même colonne physique qu'avant.

@@ -42,6 +42,7 @@ public class SousTraitanceService {
     private final UtilisateurRepository utilisateurRepository;
     private final CertificatCreditRepository certificatRepository;
     private final SousTraitanceRepository repository;
+    private final ReferenceSequenceGenerator referenceSequenceGenerator;
     private final EntrepriseRepository entrepriseRepository;
     private final DocumentSousTraitanceService documentService;
     private final DocumentRequirementValidator requirementValidator;
@@ -210,7 +211,9 @@ public class SousTraitanceService {
 
         SousTraitance st = repository.findByCertificatCreditId(c.getId()).orElse(null);
         if (st == null) {
-            st = SousTraitance.builder().certificatCredit(c).build();
+            st = SousTraitance.builder().certificatCredit(c)
+                    .reference(referenceSequenceGenerator.next(ReferenceSequenceGenerator.PREFIX_SOUS_TRAITANCE))
+                    .build();
         } else if (!REMPLACABLE.contains(st.getStatut())) {
             // Une seule sous-traitance par crédit : la réécrire retirait sans prévenir l'autorisation
             // déjà donnée par la DGTCP (et pouvait changer de sous-traitant). Il faut d'abord la révoquer.
@@ -475,6 +478,7 @@ public class SousTraitanceService {
         CertificatCredit c = st.getCertificatCredit();
         return SousTraitanceDto.builder()
                 .id(st.getId())
+                .reference(st.getReference())
                 .certificatCreditId(c != null ? c.getId() : null)
                 .certificatNumero(c != null ? c.getNumero() : null)
                 .certificatReference(c != null ? c.getReference() : null)

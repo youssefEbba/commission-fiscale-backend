@@ -35,22 +35,29 @@ public class UtilisationCreditWorkflow {
             // CHEQUE_SAISI reste atteignable depuis EN_CONTROLE_DGD pour les dossiers antérieurs à
             // l'introduction de VISE ; le service exige alors qu'un visa DGD existe.
             Map.entry(EN_CONTROLE_DGD, EnumSet.of(EN_CONTROLE_DGD, VISE, INCOMPLETE, CHEQUE_SAISI, REJETEE, CLOTUREE)),
-            // Le chèque couvre la part A_PAYER ; la DGTCP contrôle alors le dossier et le transmet
-            // au Président. Retirer CERTIFICAT_EMIS d'ici est ce qui rend l'étape incontournable.
-            Map.entry(CHEQUE_SAISI, EnumSet.of(INCOMPLETE, TRANSMISE_AU_PRESIDENT, REJETEE, CLOTUREE)),
+            // Le chèque couvre la part A_PAYER ; la DGTCP envoie alors le dossier au Trésor. Le
+            // crédit est débité (liquidation) avant que le Président n'émette le certificat, pour
+            // que celui-ci porte les montants définitifs. TRANSMISE_AU_PRESIDENT reste atteignable
+            // d'ici pour les dossiers engagés sous l'ancien ordre.
+            Map.entry(CHEQUE_SAISI, EnumSet.of(INCOMPLETE, ENVOYEE_AU_TRESOR, TRANSMISE_AU_PRESIDENT, REJETEE, CLOTUREE)),
             Map.entry(TRANSMISE_AU_PRESIDENT, EnumSet.of(CERTIFICAT_EMIS, INCOMPLETE, REJETEE, CLOTUREE)),
             Map.entry(ENVOYEE_AU_TRESOR, EnumSet.of(QUITTANCES_ENREGISTREES, REJETEE, CLOTUREE)),
             Map.entry(QUITTANCES_ENREGISTREES, EnumSet.of(LIQUIDEE, REJETEE, CLOTUREE)),
             // TVA intérieure : le certificat s'émet après la validation, et c'est lui que l'entreprise
             // présente à la DGI pour obtenir la quittance. APUREE et LIQUIDEE restent atteignables
             // depuis VALIDEE pour les parcours antérieurs ; les services exigent, eux, la quittance.
-            Map.entry(VALIDEE, EnumSet.of(CERTIFICAT_EMIS, LIQUIDEE, APUREE, REJETEE, CLOTUREE)),
+            // Depuis le 23/11/2026 la quittance DGI suit directement la validation ; CERTIFICAT_EMIS
+            // reste atteignable pour les dossiers engagés sous l'ancien ordre.
+            Map.entry(VALIDEE, EnumSet.of(QUITTANCE_DGI_ENREGISTREE, CERTIFICAT_EMIS, LIQUIDEE, APUREE, REJETEE, CLOTUREE)),
             // Auto-transition autorisée : un dépôt de quittance peut en remplacer un précédent.
             Map.entry(QUITTANCE_DGI_ENREGISTREE,
                     EnumSet.of(QUITTANCE_DGI_ENREGISTREE, APUREE, REJETEE, CLOTUREE)),
             // Le certificat émis est la pièce qui ouvre l'étape de paiement : au Trésor en douane,
             // à la DGI en TVA intérieure. Une seule valeur de statut pour les deux branches, que le
             // service oriente ensuite selon le type.
+            // Dans l'ordre actuel le certificat est la dernière pièce : le dossier, déjà débité, est
+            // clôturé. ENVOYEE_AU_TRESOR et QUITTANCE_DGI_ENREGISTREE servent aux dossiers engagés
+            // sous l'ancien ordre (certificat avant débit) ; les services tranchent.
             Map.entry(CERTIFICAT_EMIS,
                     EnumSet.of(ENVOYEE_AU_TRESOR, QUITTANCE_DGI_ENREGISTREE, INCOMPLETE, REJETEE, CLOTUREE)),
             // Le calcul financier de la DGTCP clôt l'instruction ; l'entreprise accuse réception.
@@ -58,8 +65,10 @@ public class UtilisationCreditWorkflow {
             // en APUREE sans numéro CU- et n'ont jamais traversé ce circuit. Le verrou métier vit
             // dans le service (assertCertificatEmisAvantCloture), où il peut exempter ces dossiers ;
             // ce graphe, lui, reste purement structurel.
-            Map.entry(LIQUIDEE, EnumSet.of(CLOTUREE)),
-            Map.entry(APUREE, EnumSet.of(CLOTUREE)),
+            // Débité, le dossier est transmis au Président pour le certificat. CLOTUREE reste
+            // atteignable pour l'ancien ordre (certificat déjà émis) et les reprises d'archive.
+            Map.entry(LIQUIDEE, EnumSet.of(TRANSMISE_AU_PRESIDENT, CLOTUREE)),
+            Map.entry(APUREE, EnumSet.of(TRANSMISE_AU_PRESIDENT, CLOTUREE)),
             Map.entry(REJETEE, EnumSet.noneOf(StatutUtilisation.class)),
             Map.entry(CLOTUREE, EnumSet.noneOf(StatutUtilisation.class))
     );

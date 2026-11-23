@@ -14,6 +14,8 @@ import java.time.Instant;
 public class SousTraitanceDto {
 
     private Long id;
+    /** Référence lisible ({@code ST-…}) à afficher à la place de l'id. */
+    private String reference;
     private Long certificatCreditId;
     private String certificatNumero;
     /** Référence lisible du crédit (CR-…), à afficher ; le numéro sert de code de vérification. */
