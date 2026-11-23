@@ -44,6 +44,13 @@ public class UtilisationCreditDto {
     private Boolean demandeurEstSousTraitant;
 
     /** Champs spécifiques utilisation douanière */
+    /** Montant imputé avant la correction du Président (à mentionner sur le certificat) ; nul sans correction. */
+    private BigDecimal montantImputeAvantModification;
+    private String motifModificationPresident;
+    private Instant dateModificationPresident;
+    /** Le crédit a été débité (liquidation ou apurement) : le certificat porte alors les montants définitifs. */
+    private boolean creditDebite;
+
     /** Libellé de l'opération dans le relevé de l'ancienne application, pour une utilisation reprise de l'archive. */
     private String origineArchiveLibelle;
 

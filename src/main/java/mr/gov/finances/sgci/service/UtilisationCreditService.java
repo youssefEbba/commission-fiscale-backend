@@ -108,6 +108,11 @@ public class UtilisationCreditService {
         return tresor.liquiderDouane(id, user);
     }
 
+    public UtilisationCreditDto modifierMontantsPresident(Long id,
+            mr.gov.finances.sgci.web.dto.ModificationMontantsPresidentRequest request, AuthenticatedUser user) {
+        return certificat.modifierMontantsPresident(id, request, user);
+    }
+
     public UtilisationCreditDto emettreCertificatUtilisation(Long id, AuthenticatedUser user) {
         return certificat.emettreCertificatUtilisation(id, user);
     }

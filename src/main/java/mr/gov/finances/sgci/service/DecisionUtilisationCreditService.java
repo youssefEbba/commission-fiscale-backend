@@ -123,6 +123,10 @@ public class DecisionUtilisationCreditService {
                     "Décision interdite: l'utilisation est en statut "
                             + utilisation.getStatut() + " (liquidée, apurée ou rejetée définitivement)");
         }
+        if (decision == DecisionCorrectionType.REJET_TEMP && utilisation.creditDebite()) {
+            throw ApiException.conflict(ApiErrorCode.STATUT_INCOMPATIBLE,
+                    "Le crédit est déjà débité : le Président corrige les montants au lieu de rejeter");
+        }
         if (decision == DecisionCorrectionType.REJET_TEMP) {
             documentsDemandes = documentRequirementValidator.piecesDemandeesParRejet(
                     VisibiliteDocumentService.processusDe(utilisation), documentsDemandes);

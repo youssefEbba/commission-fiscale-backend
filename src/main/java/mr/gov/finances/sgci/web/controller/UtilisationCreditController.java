@@ -261,6 +261,21 @@ public class UtilisationCreditController {
      * certificat signé par le Président déclenche déjà l'émission : cette route reste pour les
      * clients qui l'appellent après le dépôt. Idempotent.
      */
+    /**
+     * Le Président corrige les montants d'une utilisation débitée et transmise, avant d'émettre le
+     * certificat : en douane il ne peut que réduire le montant imputé ; en TVA intérieure il corrige
+     * la TVA collectée et la TVA déductible. Les soldes du crédit sont réajustés. Motif obligatoire.
+     */
+    @PatchMapping("/{id}/montants-president")
+    @PreAuthorize("hasAnyAuthority('utilisation.president.certificat.emettre', 'utilisation.admin_override')")
+    public UtilisationCreditDto modifierMontantsPresident(
+            @PathVariable Long id,
+            @Valid @RequestBody mr.gov.finances.sgci.web.dto.ModificationMontantsPresidentRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.modifierMontantsPresident(id, request, user);
+    }
+
     @PostMapping("/{id}/certificat-utilisation")
     @PreAuthorize("hasAuthority('utilisation.president.certificat.emettre')")
     public UtilisationCreditDto emettreCertificatUtilisation(

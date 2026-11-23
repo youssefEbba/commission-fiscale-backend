@@ -162,8 +162,10 @@ class UtilisationCertificatPresidentIT {
 
     @Test
     @Transactional
-    void tvaValidee_presidentEmet_avantLaQuittanceDgi() {
-        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.VALIDEE);
+    void tvaApureeEtTransmise_presidentEmet() {
+        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
+        util.setDateLiquidation(Instant.now());
+        utilisationRepository.save(util);
 
         UtilisationCreditDto dto = emettreSigne(util.getId());
 
@@ -227,12 +229,12 @@ class UtilisationCertificatPresidentIT {
                 });
     }
 
-    // ── l'ordre imposé : le certificat précède le paiement ─────────────────────────────────────
+    // ── l'ordre imposé : le paiement et le débit précèdent le certificat ───────────────────────
 
     @Test
     @Transactional
-    void envoiAuTresorRefuseTantQueLeCertificatNestPasEmis() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
+    void envoiAuTresorRefuseAvantLeCheque() {
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.VISE);
         util.setNumeroCheque("CHQ-001");
         utilisationRepository.save(util);
 
@@ -241,13 +243,14 @@ class UtilisationCertificatPresidentIT {
                 .satisfies(e -> {
                     ApiException api = (ApiException) e;
                     assertThat(api.getStatus()).isEqualTo(409);
-                    assertThat(api.getCode()).isEqualTo(ApiErrorCode.CERTIFICAT_UTILISATION_NON_EMIS);
+                    assertThat(api.getCode()).isEqualTo(ApiErrorCode.STATUT_INCOMPATIBLE);
                 });
     }
 
+    /** Ancien ordre : un dossier transmis sans débit garde son circuit (certificat, puis Trésor). */
     @Test
     @Transactional
-    void certificatEmis_puisEnvoiAuTresorAccepte() {
+    void ancienOrdre_certificatEmis_puisEnvoiAuTresorAccepte() {
         UtilisationDouaniere util = douaneAu(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
         util.setNumeroCheque("CHQ-002");
         utilisationRepository.save(util);
@@ -261,21 +264,20 @@ class UtilisationCertificatPresidentIT {
 
     @Test
     @Transactional
-    void quittanceDgiRefuseeTantQueLeCertificatNestPasEmis() throws Exception {
-        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.VALIDEE);
+    void quittanceDgiRefuseeAvantLaValidation() throws Exception {
+        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.EN_VERIFICATION);
 
         assertThatThrownBy(() -> service.deposerQuittanceDgi(
                 util.getId(), "Q-001", Instant.now(), BigDecimal.valueOf(50), null, dgi))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getCode())
-                        .isEqualTo(ApiErrorCode.CERTIFICAT_UTILISATION_NON_EMIS));
+                        .isEqualTo(ApiErrorCode.STATUT_INCOMPATIBLE));
     }
 
     @Test
     @Transactional
-    void certificatEmis_puisQuittanceDgiAcceptee() throws Exception {
+    void tvaValidee_quittanceDgiAccepteeSansCertificat() throws Exception {
         UtilisationTVAInterieure util = tvaAu(StatutUtilisation.VALIDEE);
-        emettreSigne(util.getId());
 
         // Le justificatif est obligatoire au premier dépôt : c'est la pièce qui atteste le paiement.
         MockMultipartFile justificatif = new MockMultipartFile(
@@ -420,13 +422,13 @@ class UtilisationCertificatPresidentIT {
 
     @Test
     @Transactional
-    void etatEmission_tvaAttendLaValidation() {
-        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.EN_VERIFICATION);
+    void etatEmission_tvaAttendLaTransmission() {
+        UtilisationTVAInterieure util = tvaAu(StatutUtilisation.VALIDEE);
 
         CertificatUtilisationEmissionDto etat = service.etatEmissionCertificat(util.getId(), president);
 
         assertThat(etat.isEmissible()).isFalse();
-        assertThat(etat.getStatutPrealableAttendu()).isEqualTo(StatutUtilisation.VALIDEE);
+        assertThat(etat.getStatutPrealableAttendu()).isEqualTo(StatutUtilisation.TRANSMISE_AU_PRESIDENT);
     }
 
     // ── fixtures ───────────────────────────────────────────────────────────────────────────────

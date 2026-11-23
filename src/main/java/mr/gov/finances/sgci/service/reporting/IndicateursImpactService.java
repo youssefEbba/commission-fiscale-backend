@@ -87,12 +87,12 @@ public class IndicateursImpactService {
     private static final List<DefinitionPhase> PHASES_UTILISATION = List.of(
             new DefinitionPhase("Dépôt → prise en charge", Set.of(DEPOT),
                     noms(StatutUtilisation.EN_VERIFICATION, StatutUtilisation.VISE, StatutUtilisation.EN_CONTROLE_DGD)),
-            new DefinitionPhase("Instruction → certificat d'utilisation", Set.of(DEPOT),
-                    noms(StatutUtilisation.CERTIFICAT_EMIS)),
-            new DefinitionPhase("Certificat → débit du crédit", noms(StatutUtilisation.CERTIFICAT_EMIS),
+            new DefinitionPhase("Instruction → débit du crédit", Set.of(DEPOT),
                     noms(StatutUtilisation.LIQUIDEE, StatutUtilisation.APUREE)),
-            new DefinitionPhase("Total : dépôt → débit du crédit", Set.of(DEPOT),
-                    noms(StatutUtilisation.LIQUIDEE, StatutUtilisation.APUREE)));
+            new DefinitionPhase("Débit → certificat d'utilisation", noms(StatutUtilisation.LIQUIDEE, StatutUtilisation.APUREE),
+                    noms(StatutUtilisation.CERTIFICAT_EMIS)),
+            new DefinitionPhase("Total : dépôt → certificat d'utilisation", Set.of(DEPOT),
+                    noms(StatutUtilisation.CERTIFICAT_EMIS)));
 
     private static final List<DefinitionPhase> PHASES_TRANSFERT = List.of(
             new DefinitionPhase("Total : dépôt → décision", Set.of(DEPOT),

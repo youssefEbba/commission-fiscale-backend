@@ -13,7 +13,8 @@ public enum StatutUtilisation {
     /** Entreprise a fourni le chèque certifié (banque, N°, montant). */
     CHEQUE_SAISI,
     /**
-     * La DGTCP a contrôlé le dossier — chèque et bulletin visé — et l'a transmis au Président.
+     * Le crédit est débité (liquidation en douane, apurement en TVA intérieure) et la DGTCP a transmis
+     * le dossier au Président, qui peut corriger les montants avant d'émettre le certificat.
      *
      * <p>Nommé comme {@link #ENVOYEE_AU_TRESOR}, son jumeau structurel : un statut est lu par celui
      * qui doit agir ensuite, et celui-ci dit au Président que la main est à lui.
@@ -35,9 +36,10 @@ public enum StatutUtilisation {
     /**
      * Le Président a émis le certificat d'utilisation (numérotation {@code CU-nnn/AAAA}).
      *
-     * <p>Acte strictement présidentiel, placé avant l'étape de paiement : le certificat est la
-     * pièce présentée au Trésor en douane, à la DGI en TVA intérieure. Il suit
-     * {@link #TRANSMISE_AU_PRESIDENT} en douane, {@link #VALIDEE} en TVA intérieure.
+     * <p>Acte strictement présidentiel et dernière pièce du dossier : depuis le 23/11/2026 il suit le
+     * débit du crédit ({@link #TRANSMISE_AU_PRESIDENT} pour les deux branches), et porte donc les
+     * montants définitifs. Les dossiers engagés avant gardent l'ancien ordre (certificat, puis Trésor
+     * ou DGI, puis débit).
      */
     CERTIFICAT_EMIS,
     REJETEE,

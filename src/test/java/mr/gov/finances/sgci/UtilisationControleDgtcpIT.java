@@ -29,12 +29,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * La DGTCP contrôle le dossier et le transmet au Président.
+ * La DGTCP transmet au Président un dossier dont le crédit est déjà débité.
  *
- * <p>Étape intercalée entre la saisie du chèque par l'entreprise et l'émission du certificat : la
- * DGTCP atteste que le bulletin est visé et le chèque certifié saisi avant de présenter le dossier.
- * Ces tests verrouillent l'ordre, les deux contrôles de substance, et le fait que la route de statut
- * générique ne permette pas de court-circuiter l'étape.
+ * <p>Depuis le 23/11/2026, la liquidation précède le certificat : chèque → Trésor → quittances →
+ * liquidation → transmission → certificat. Ces tests verrouillent l'ordre, le contrôle du bulletin
+ * annoté, et le fait que la route de statut générique ne permette pas de court-circuiter l'étape.
  *
  * <p>Niveau service : Tomcat ne démarre pas sur ce poste, tout test {@code RANDOM_PORT} y serait une
  * couverture morte.
@@ -72,7 +71,7 @@ class UtilisationControleDgtcpIT {
 
     @Test
     @Transactional
-    void chequeSaisi_dgtcpTransmet() {
+    void liquidee_dgtcpTransmet() {
         UtilisationDouaniere util = dossierPretATransmettre();
 
         UtilisationCreditDto dto = service.transmettreAuPresident(util.getId(), dgtcp);
@@ -104,14 +103,14 @@ class UtilisationControleDgtcpIT {
                     assertThat(api.getCode()).isEqualTo(ApiErrorCode.ROLE_FORBIDDEN);
                 });
         assertThat(utilisationRepository.findById(util.getId()).orElseThrow().getStatut())
-                .isEqualTo(StatutUtilisation.CHEQUE_SAISI);
+                .isEqualTo(StatutUtilisation.LIQUIDEE);
     }
 
     // ── l'étape est incontournable ─────────────────────────────────────────────────────────────
 
     @Test
     @Transactional
-    void lePresidentNePeutPlusEmettreDepuisChequeSaisi() {
+    void lePresidentNEmetPasAvantLaTransmission() {
         UtilisationDouaniere util = dossierPretATransmettre();
 
         assertThatThrownBy(() -> service.emettreCertificatUtilisation(util.getId(), president))
@@ -177,23 +176,37 @@ class UtilisationControleDgtcpIT {
 
     @Test
     @Transactional
-    void sansCheque_transmissionRefusee() {
-        UtilisationDouaniere util = dossierPretATransmettre();
-        util.setNumeroCheque(null);
+    void avantLaLiquidation_transmissionRefusee() {
+        // Chèque saisi mais crédit non débité : le certificat porterait des montants provisoires.
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        util.setNumeroCheque("CHQ-900");
+        util.setMontantCheque(BigDecimal.valueOf(500));
         utilisationRepository.save(util);
+        deposerBulletinAnnote(util);
 
         assertThatThrownBy(() -> service.transmettreAuPresident(util.getId(), dgtcp))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getCode())
-                        .isEqualTo(ApiErrorCode.BUSINESS_RULE_VIOLATION));
+                        .isEqualTo(ApiErrorCode.STATUT_INCOMPATIBLE));
+    }
+
+    @Test
+    @Transactional
+    void chequeSaisi_envoiAuTresorSansCertificat() {
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        util.setNumeroCheque("CHQ-901");
+        util.setMontantCheque(BigDecimal.valueOf(500));
+        utilisationRepository.save(util);
+
+        assertThat(service.envoyerAuTresor(util.getId(), dgtcp).getStatut())
+                .isEqualTo(StatutUtilisation.ENVOYEE_AU_TRESOR);
     }
 
     @Test
     @Transactional
     void sansBulletinAnnote_transmissionRefusee() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
-        util.setNumeroCheque("CHQ-900");
-        util.setMontantCheque(BigDecimal.valueOf(500));
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.LIQUIDEE);
+        util.setDateLiquidation(Instant.now());
         utilisationRepository.save(util);
         // Aucun BULLETIN_ANNOTE déposé : la DGD n'a pas matérialisé sa décision.
 
@@ -246,10 +259,12 @@ class UtilisationControleDgtcpIT {
 
     // ── fixtures ───────────────────────────────────────────────────────────────────────────────
 
+    /** Chèque saisi, quittances enregistrées et crédit liquidé : prêt pour le Président. */
     private UtilisationDouaniere dossierPretATransmettre() {
-        UtilisationDouaniere util = douaneAu(StatutUtilisation.CHEQUE_SAISI);
+        UtilisationDouaniere util = douaneAu(StatutUtilisation.LIQUIDEE);
         util.setNumeroCheque("CHQ-" + System.nanoTime());
         util.setMontantCheque(BigDecimal.valueOf(500));
+        util.setDateLiquidation(Instant.now());
         util = (UtilisationDouaniere) utilisationRepository.save(util);
         deposerBulletinAnnote(util);
         return util;

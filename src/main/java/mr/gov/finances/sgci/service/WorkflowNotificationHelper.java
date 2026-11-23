@@ -456,15 +456,15 @@ public class WorkflowNotificationHelper {
         if (douane) {
             return switch (statut) {
                 case "DEMANDEE", "EN_CONTROLE_DGD", "VISE" -> List.of(Role.DGD);
-                // Le chèque est saisi : la DGTCP contrôle le dossier avant de le transmettre.
+                // Le chèque est saisi : la DGTCP envoie le dossier au Trésor.
                 case "CHEQUE_SAISI" -> List.of(Role.DGTCP);
-                // Dossier transmis : la main passe au Président, qui doit émettre le certificat.
-                case "TRANSMISE_AU_PRESIDENT" -> List.of(Role.PRESIDENT);
-                // Certificat émis : la DGTCP peut le présenter au Trésor.
-                case "CERTIFICAT_EMIS" -> List.of(Role.DGTCP);
                 case "ENVOYEE_AU_TRESOR", "QUITTANCES_ENREGISTREES", "CLOTUREE" -> List.of(Role.DGTCP);
-                // Liquidation faite : plus d'action de rôle, l'entreprise est notifiée via entrepriseId.
-                case "LIQUIDEE" -> List.of();
+                // Liquidation faite : la DGTCP transmet au Président.
+                case "LIQUIDEE" -> List.of(Role.DGTCP);
+                // Dossier débité et transmis : le Président corrige éventuellement, puis émet.
+                case "TRANSMISE_AU_PRESIDENT" -> List.of(Role.PRESIDENT);
+                // Certificat émis : la DGTCP clôture (ancien ordre : elle l'envoie au Trésor).
+                case "CERTIFICAT_EMIS" -> List.of(Role.DGTCP);
                 case "REJETEE" -> List.of(Role.DGD, Role.DGTCP);
                 default -> List.of();
             };
@@ -472,14 +472,16 @@ public class WorkflowNotificationHelper {
         return switch (statut) {
             case "DEMANDEE", "EN_VERIFICATION", "REJETEE", "INCOMPLETE", "A_RECONTROLER" ->
                     List.of(Role.DGTCP);
-            // Dossier validé : la main passe au Président, qui doit émettre le certificat.
-            case "VALIDEE" -> List.of(Role.PRESIDENT);
-            // Certificat émis : l'entreprise peut le présenter à la DGI, qui délivre la quittance.
-            case "CERTIFICAT_EMIS" -> List.of(Role.DGI);
+            // Dossier validé : la DGI délivre la quittance.
+            case "VALIDEE" -> List.of(Role.DGI);
             // Quittance déposée : la DGTCP peut apurer. L'entreprise est notifiée via entrepriseId.
             case "QUITTANCE_DGI_ENREGISTREE" -> List.of(Role.DGTCP);
-            // Apurement fait : plus d'action de rôle.
-            case "APUREE" -> List.of();
+            // Apurement fait : la DGTCP transmet au Président.
+            case "APUREE" -> List.of(Role.DGTCP);
+            // Dossier débité et transmis : le Président corrige éventuellement, puis émet.
+            case "TRANSMISE_AU_PRESIDENT" -> List.of(Role.PRESIDENT);
+            // Certificat émis : la DGTCP clôture (ancien ordre : la DGI délivre la quittance).
+            case "CERTIFICAT_EMIS" -> List.of(Role.DGTCP, Role.DGI);
             default -> List.of();
         };
     }
