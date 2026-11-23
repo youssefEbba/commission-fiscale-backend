@@ -53,8 +53,12 @@ public final class ExigencesProduction {
         } else if (cleJwt.getBytes(StandardCharsets.UTF_8).length < OCTETS_MIN_CLE_JWT) {
             manquements.add("APP_JWT_SECRET : clé trop courte, il faut au moins 256 bits (32 caractères)");
         }
-        if (inutilisable(env.getProperty("spring.datasource.password", ""))) {
-            manquements.add("SPRING_DATASOURCE_PASSWORD : mot de passe de la base absent ou déjà publié");
+        String motDePasseBase = env.getProperty("spring.datasource.password", "");
+        if (motDePasseBase == null || motDePasseBase.isBlank()) {
+            manquements.add("SPRING_DATASOURCE_PASSWORD : mot de passe de la base absent");
+        } else if (inutilisable(motDePasseBase) && !derogationMotDePasseBase(env)) {
+            manquements.add("SPRING_DATASOURCE_PASSWORD : mot de passe de la base déjà publié "
+                    + "(à changer ; APP_ALLOW_LEGACY_DB_PASSWORD=true l'accepte provisoirement)");
         }
         if (!"local".equalsIgnoreCase(env.getProperty("app.storage.backend", "minio"))) {
             if (inutilisable(env.getProperty("minio.access-key", ""))) {
@@ -65,6 +69,22 @@ public final class ExigencesProduction {
             }
         }
         return manquements;
+    }
+
+    /**
+     * Dérogation provisoire : {@code APP_ALLOW_LEGACY_DB_PASSWORD=true} laisse démarrer un serveur dont
+     * le mot de passe MySQL fait partie des valeurs publiées, le temps de le changer. Elle ne couvre
+     * que ce mot de passe, jamais un mot de passe vide, ni la clé des jetons ni MinIO ; le démarrage
+     * le signale dans le journal ({@link SecuriteAuDemarrage}).
+     */
+    public static boolean derogationMotDePasseBase(Environment env) {
+        return Boolean.TRUE.equals(env.getProperty("app.allow-legacy-db-password", Boolean.class, false));
+    }
+
+    /** Le mot de passe de la base est une valeur publiée, acceptée par la dérogation. */
+    public static boolean motDePasseBasePublieTolere(Environment env) {
+        return estProduction(env) && derogationMotDePasseBase(env)
+                && inutilisable(env.getProperty("spring.datasource.password", ""));
     }
 
     /** Vide, ou connu de quiconque a lu le dépôt. */
