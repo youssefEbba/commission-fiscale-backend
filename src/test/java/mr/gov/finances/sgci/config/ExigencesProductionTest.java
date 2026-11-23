@@ -62,6 +62,20 @@ class ExigencesProductionTest {
     }
 
     @Test
+    void laDerogationAccepteUnMotDePassePublieMaisJamaisUnMotDePasseVide() {
+        MockEnvironment publie = production().withProperty("spring.datasource.password", "123456");
+        assertThat(ExigencesProduction.manquements(publie)).anyMatch(m -> m.contains("SPRING_DATASOURCE_PASSWORD"));
+
+        publie.setProperty("app.allow-legacy-db-password", "true");
+        assertThat(ExigencesProduction.manquements(publie)).noneMatch(m -> m.contains("SPRING_DATASOURCE_PASSWORD"));
+        assertThat(ExigencesProduction.motDePasseBasePublieTolere(publie)).isTrue();
+
+        MockEnvironment vide = production().withProperty("spring.datasource.password", "")
+                .withProperty("app.allow-legacy-db-password", "true");
+        assertThat(ExigencesProduction.manquements(vide)).anyMatch(m -> m.contains("SPRING_DATASOURCE_PASSWORD"));
+    }
+
+    @Test
     void lesIdentifiantsMinioParDefautSontRefuses() {
         assertThat(ExigencesProduction.manquements(production()
                 .withProperty("minio.access-key", "admin")

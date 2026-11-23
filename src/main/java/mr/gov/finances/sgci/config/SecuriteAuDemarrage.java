@@ -40,6 +40,10 @@ public class SecuriteAuDemarrage implements InitializingBean {
             throw new IllegalStateException("Démarrage en production refusé, secrets à définir dans l'environnement :\n - "
                     + String.join("\n - ", manquements));
         }
+        if (ExigencesProduction.motDePasseBasePublieTolere(environment)) {
+            log.warn("SÉCURITÉ : le mot de passe de la base fait partie des valeurs publiées dans le dépôt ; "
+                    + "il est accepté par APP_ALLOW_LEGACY_DB_PASSWORD, à changer au plus tôt");
+        }
         String cle = jwtProperties.getSecret();
         if (cle == null || cle.isBlank()) {
             byte[] octets = new byte[48];
