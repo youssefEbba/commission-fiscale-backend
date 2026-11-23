@@ -20,6 +20,10 @@ public class SousTraitance {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Référence lisible ({@code ST-NNNN-MM-AAAA}) : c'est elle qu'on affiche, jamais l'id technique. */
+    @Column(length = 64)
+    private String reference;
+
     private Boolean contratEnregistre;
 
     @Column(precision = 19, scale = 4)
