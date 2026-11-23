@@ -26,7 +26,9 @@ docs/
 /Manuex.pdf
 
 # --- Scripts utilitaires (SQL ad hoc, génération PDF/diagrammes, tests manuels) ---
-scripts/
+# Sauf les scripts de déploiement en production, qui doivent arriver sur le serveur.
+scripts/*
+!scripts/deploiement/
 /test-api.ps1
 
 # --- Données runtime / uploads locaux ---
